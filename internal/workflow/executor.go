@@ -22,15 +22,17 @@ type Executor struct {
 	parser            *Parser
 	extractedDataRepo *storage.ExtractedDataRepository
 	nodeExecRepo      *storage.NodeExecutionRepository
+	executionRepo     *storage.ExecutionRepository
 }
 
-func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedDataRepo *storage.ExtractedDataRepository, nodeExecRepo *storage.NodeExecutionRepository) *Executor {
+func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedDataRepo *storage.ExtractedDataRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository) *Executor {
 	return &Executor{
 		browserPool:       browserPool,
 		urlQueue:          urlQueue,
 		parser:            NewParser(),
 		extractedDataRepo: extractedDataRepo,
 		nodeExecRepo:      nodeExecRepo,
+		executionRepo:     executionRepo,
 	}
 }
 
@@ -43,6 +45,20 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 		zap.Any("start_urls", workflow.Config.StartURLs),
 	)
 
+	// Initialize execution stats
+	startTime := time.Now()
+	stats := models.ExecutionStats{
+		URLsDiscovered:  0,
+		URLsProcessed:   0,
+		URLsFailed:      0,
+		ItemsExtracted:  0,
+		BytesDownloaded: 0,
+		Duration:        0,
+		NodesExecuted:   0,
+		NodesFailed:     0,
+		LastUpdate:      time.Now(),
+	}
+
 	// Enqueue start URLs
 	for _, startURL := range workflow.Config.StartURLs {
 		item := &models.URLQueueItem{
@@ -53,14 +69,47 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 		}
 		if err := e.urlQueue.Enqueue(ctx, item); err != nil {
 			logger.Error("Failed to enqueue start URL", zap.Error(err), zap.String("url", startURL))
+		} else {
+			stats.URLsDiscovered++
 		}
 	}
+
+	// Update stats periodically
+	updateTicker := time.NewTicker(5 * time.Second)
+	defer updateTicker.Stop()
 
 	// Process URLs from queue
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-updateTicker.C:
+			// Update execution stats
+			stats.Duration = time.Since(startTime).Milliseconds()
+			stats.LastUpdate = time.Now()
+
+			// Get node execution stats from database
+			if e.nodeExecRepo != nil {
+				nodeStats, err := e.nodeExecRepo.GetStatsByExecutionID(ctx, executionID)
+				if err == nil {
+					stats.NodesExecuted = nodeStats["completed"]
+					stats.NodesFailed = nodeStats["failed"]
+				}
+			}
+
+			// Get extracted data count from database
+			if e.extractedDataRepo != nil {
+				count, err := e.extractedDataRepo.Count(ctx, executionID)
+				if err == nil {
+					stats.ItemsExtracted = int(count)
+				}
+			}
+
+			if e.executionRepo != nil {
+				if err := e.executionRepo.UpdateStats(ctx, executionID, stats); err != nil {
+					logger.Error("Failed to update execution stats", zap.Error(err))
+				}
+			}
 		default:
 			// Dequeue next URL
 			item, err := e.urlQueue.Dequeue(ctx, executionID)
@@ -71,8 +120,36 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 			}
 
 			if item == nil {
-				// No more URLs in queue
-				logger.Info("No more URLs to process")
+				// No more URLs in queue - update final stats
+				stats.Duration = time.Since(startTime).Milliseconds()
+				stats.LastUpdate = time.Now()
+
+				// Get final node execution stats
+				if e.nodeExecRepo != nil {
+					nodeStats, err := e.nodeExecRepo.GetStatsByExecutionID(ctx, executionID)
+					if err == nil {
+						stats.NodesExecuted = nodeStats["completed"]
+						stats.NodesFailed = nodeStats["failed"]
+					}
+				}
+
+				// Get final extracted data count
+				if e.extractedDataRepo != nil {
+					count, err := e.extractedDataRepo.Count(ctx, executionID)
+					if err == nil {
+						stats.ItemsExtracted = int(count)
+					}
+				}
+
+				if e.executionRepo != nil {
+					e.executionRepo.UpdateStats(ctx, executionID, stats)
+					e.executionRepo.UpdateStatus(ctx, executionID, models.ExecutionStatusCompleted, "")
+				}
+				logger.Info("No more URLs to process",
+					zap.Int("urls_processed", stats.URLsProcessed),
+					zap.Int("items_extracted", stats.ItemsExtracted),
+					zap.Int("nodes_executed", stats.NodesExecuted),
+				)
 				return nil
 			}
 
@@ -83,6 +160,7 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 					zap.String("url", item.URL),
 				)
 				e.urlQueue.MarkFailed(ctx, item.ID, err.Error(), item.RetryCount < 3)
+				stats.URLsFailed++
 				continue
 			}
 
@@ -90,6 +168,7 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 			if err := e.urlQueue.MarkCompleted(ctx, item.ID); err != nil {
 				logger.Error("Failed to mark URL as completed", zap.Error(err))
 			}
+			stats.URLsProcessed++
 		}
 	}
 }
@@ -153,6 +232,12 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 	}
 
 	return nil
+}
+
+// updateExecutionStatsForURL updates stats based on URL processing results
+func (e *Executor) updateExecutionStatsForURL(ctx context.Context, executionID string, extracted bool, nodesExecuted int, nodesFailed int) {
+	// This can be called periodically or after each URL
+	// For now, we'll rely on the periodic updates in ExecuteWorkflow
 }
 
 // executeNodeGroup executes a group of nodes in DAG order

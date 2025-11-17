@@ -41,7 +41,7 @@ func NewExecutionHandler(
 		nodeExecRepo:      nodeExecRepo,
 		browserPool:       browserPool,
 		urlQueue:          urlQueue,
-		executor:          workflow.NewExecutor(browserPool, urlQueue, extractedDataRepo, nodeExecRepo),
+		executor:          workflow.NewExecutor(browserPool, urlQueue, extractedDataRepo, nodeExecRepo, executionRepo),
 	}
 }
 
