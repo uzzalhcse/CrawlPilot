@@ -21,14 +21,16 @@ type Executor struct {
 	urlQueue          *queue.URLQueue
 	parser            *Parser
 	extractedDataRepo *storage.ExtractedDataRepository
+	nodeExecRepo      *storage.NodeExecutionRepository
 }
 
-func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedDataRepo *storage.ExtractedDataRepository) *Executor {
+func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedDataRepo *storage.ExtractedDataRepository, nodeExecRepo *storage.NodeExecutionRepository) *Executor {
 	return &Executor{
 		browserPool:       browserPool,
 		urlQueue:          urlQueue,
 		parser:            NewParser(),
 		extractedDataRepo: extractedDataRepo,
+		nodeExecRepo:      nodeExecRepo,
 	}
 }
 
@@ -184,6 +186,26 @@ func (e *Executor) executeNodeGroup(ctx context.Context, nodes []models.Node, br
 func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
 	logger.Debug("Executing node", zap.String("node_id", node.ID), zap.String("type", string(node.Type)))
 
+	// Create node execution record
+	var nodeExecID string
+	if e.nodeExecRepo != nil {
+		inputData, _ := json.Marshal(node.Params)
+		nodeExec := &models.NodeExecution{
+			ExecutionID: executionID,
+			NodeID:      node.ID,
+			Status:      models.ExecutionStatusRunning,
+			StartedAt:   time.Now(),
+			Input:       inputData,
+			RetryCount:  0,
+		}
+
+		if err := e.nodeExecRepo.Create(ctx, nodeExec); err != nil {
+			logger.Error("Failed to create node execution record", zap.Error(err))
+		} else {
+			nodeExecID = nodeExec.ID
+		}
+	}
+
 	interactionEngine := browser.NewInteractionEngine(browserCtx)
 	extractionEngine := extraction.NewExtractionEngine(browserCtx.Page)
 
@@ -252,6 +274,19 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 	// Store result in context if output key is specified
 	if node.OutputKey != "" && result != nil {
 		execCtx.Set(node.OutputKey, result)
+	}
+
+	// Update node execution status
+	if e.nodeExecRepo != nil && nodeExecID != "" {
+		if err != nil {
+			if updateErr := e.nodeExecRepo.MarkFailed(ctx, nodeExecID, err.Error()); updateErr != nil {
+				logger.Error("Failed to mark node execution as failed", zap.Error(updateErr))
+			}
+		} else {
+			if updateErr := e.nodeExecRepo.MarkCompleted(ctx, nodeExecID, result); updateErr != nil {
+				logger.Error("Failed to mark node execution as completed", zap.Error(updateErr))
+			}
+		}
 	}
 
 	if err != nil && node.Retry.MaxRetries > 0 {

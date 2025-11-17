@@ -19,6 +19,7 @@ type ExecutionHandler struct {
 	workflowRepo      *storage.WorkflowRepository
 	executionRepo     *storage.ExecutionRepository
 	extractedDataRepo *storage.ExtractedDataRepository
+	nodeExecRepo      *storage.NodeExecutionRepository
 	browserPool       *browser.BrowserPool
 	urlQueue          *queue.URLQueue
 	executor          *workflow.Executor
@@ -29,6 +30,7 @@ func NewExecutionHandler(
 	workflowRepo *storage.WorkflowRepository,
 	executionRepo *storage.ExecutionRepository,
 	extractedDataRepo *storage.ExtractedDataRepository,
+	nodeExecRepo *storage.NodeExecutionRepository,
 	browserPool *browser.BrowserPool,
 	urlQueue *queue.URLQueue,
 ) *ExecutionHandler {
@@ -36,9 +38,10 @@ func NewExecutionHandler(
 		workflowRepo:      workflowRepo,
 		executionRepo:     executionRepo,
 		extractedDataRepo: extractedDataRepo,
+		nodeExecRepo:      nodeExecRepo,
 		browserPool:       browserPool,
 		urlQueue:          urlQueue,
-		executor:          workflow.NewExecutor(browserPool, urlQueue, extractedDataRepo),
+		executor:          workflow.NewExecutor(browserPool, urlQueue, extractedDataRepo, nodeExecRepo),
 	}
 }
 

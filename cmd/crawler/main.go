@@ -49,6 +49,7 @@ func main() {
 	workflowRepo := storage.NewWorkflowRepository(db)
 	executionRepo := storage.NewExecutionRepository(db)
 	extractedDataRepo := storage.NewExtractedDataRepository(db)
+	nodeExecRepo := storage.NewNodeExecutionRepository(db)
 
 	// Initialize URL queue
 	urlQueue := queue.NewURLQueue(db)
@@ -97,7 +98,7 @@ func main() {
 
 	// Initialize handlers
 	workflowHandler := handlers.NewWorkflowHandler(workflowRepo)
-	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedDataRepo, browserPool, urlQueue)
+	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedDataRepo, nodeExecRepo, browserPool, urlQueue)
 
 	// Routes
 	setupRoutes(app, workflowHandler, executionHandler)
