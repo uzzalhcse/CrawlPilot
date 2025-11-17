@@ -1,0 +1,193 @@
+# E-commerce product scraper workflow
+# This workflow demonstrates complex interactions and structured data extraction
+
+start_urls:
+  - "https://example-shop.com/products"
+
+max_depth: 3
+max_pages: 500
+rate_limit_delay: 2000
+
+headers:
+  User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+  Accept-Language: "en-US,en;q=0.9"
+
+# URL Discovery: Navigate pagination and extract product links
+url_discovery:
+  - id: "wait_for_products"
+    type: "wait_for"
+    name: "Wait for product grid to load"
+    params:
+      selector: ".product-grid"
+      timeout: 10000
+      state: "visible"
+
+  - id: "scroll_to_bottom"
+    type: "scroll"
+    name: "Scroll to load lazy-loaded content"
+    params:
+      x: 0
+      y: 1000
+    dependencies:
+      - "wait_for_products"
+
+  - id: "wait_after_scroll"
+    type: "wait"
+    name: "Wait for lazy-loaded content"
+    params:
+      duration: 2000
+    dependencies:
+      - "scroll_to_bottom"
+
+  - id: "extract_product_links"
+    type: "extract_links"
+    name: "Extract product page links"
+    params:
+      selector: ".product-card a.product-link"
+    output_key: "product_urls"
+    dependencies:
+      - "wait_after_scroll"
+
+  - id: "extract_next_page"
+    type: "extract_links"
+    name: "Extract next page link"
+    params:
+      selector: ".pagination .next"
+    output_key: "next_page"
+    dependencies:
+      - "wait_after_scroll"
+
+# Data Extraction: Extract structured product data
+data_extraction:
+  - id: "wait_for_product"
+    type: "wait_for"
+    name: "Wait for product details to load"
+    params:
+      selector: ".product-details"
+      timeout: 10000
+
+  - id: "extract_product_data"
+    type: "extract"
+    name: "Extract product information"
+    params:
+      selector: ".product-details"
+      type: "text"
+      fields:
+        title:
+          selector: "h1.product-title"
+          type: "text"
+          transform:
+            - type: "trim"
+
+        price:
+          selector: ".price-current"
+          type: "text"
+          transform:
+            - type: "trim"
+            - type: "regex"
+              params:
+                pattern: "[^0-9.]"
+                replacement: ""
+            - type: "parse_float"
+
+        original_price:
+          selector: ".price-original"
+          type: "text"
+          transform:
+            - type: "trim"
+            - type: "regex"
+              params:
+                pattern: "[^0-9.]"
+                replacement: ""
+            - type: "parse_float"
+          default_value: 0
+
+        currency:
+          selector: ".price-current .currency"
+          type: "text"
+          default_value: "USD"
+
+        description:
+          selector: ".product-description"
+          type: "text"
+          transform:
+            - type: "trim"
+
+        brand:
+          selector: ".product-brand"
+          type: "text"
+          transform:
+            - type: "trim"
+
+        sku:
+          selector: ".product-sku"
+          type: "text"
+          transform:
+            - type: "trim"
+
+        availability:
+          selector: ".stock-status"
+          type: "text"
+          transform:
+            - type: "trim"
+            - type: "lowercase"
+
+        rating:
+          selector: ".product-rating"
+          type: "attr"
+          attribute: "data-rating"
+          transform:
+            - type: "parse_float"
+          default_value: 0
+
+        review_count:
+          selector: ".review-count"
+          type: "text"
+          transform:
+            - type: "regex"
+              params:
+                pattern: "[^0-9]"
+                replacement: ""
+            - type: "parse_int"
+          default_value: 0
+
+        images:
+          selector: ".product-images img"
+          type: "attr"
+          attribute: "src"
+          multiple: true
+
+        category:
+          selector: ".breadcrumb a"
+          type: "text"
+          multiple: true
+    output_key: "product"
+    dependencies:
+      - "wait_for_product"
+
+  - id: "extract_specifications"
+    type: "extract"
+    name: "Extract product specifications"
+    params:
+      selector: ".specifications-table tr"
+      type: "text"
+      multiple: true
+      fields:
+        name:
+          selector: "td:first-child"
+          type: "text"
+          transform:
+            - type: "trim"
+        value:
+          selector: "td:last-child"
+          type: "text"
+          transform:
+            - type: "trim"
+    output_key: "specifications"
+    optional: true
+    dependencies:
+      - "wait_for_product"
+
+storage:
+  type: "database"
+  table_name: "products"

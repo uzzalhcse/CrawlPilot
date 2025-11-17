@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# IDE
+.idea
+.vscode
+
+# Build artifacts
+crawlify
+dist/
+build/
+
+# Tests
+*_test.go
+coverage.out
+
+# Development
+.env
+.env.local
+config.local.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+# Data
+data/
+screenshots/
+logs/

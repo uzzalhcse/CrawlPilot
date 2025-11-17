@@ -1,0 +1,100 @@
+# Interactive form submission workflow
+# This demonstrates form filling and navigation
+
+start_urls:
+  - "https://example.com/search"
+
+max_depth: 1
+max_pages: 50
+rate_limit_delay: 1500
+
+# URL Discovery: Interact with search form and extract results
+url_discovery:
+  - id: "wait_for_form"
+    type: "wait_for"
+    name: "Wait for search form"
+    params:
+      selector: "#search-form"
+      timeout: 5000
+
+  - id: "fill_search_query"
+    type: "type"
+    name: "Fill search input"
+    params:
+      selector: "input[name='q']"
+      text: "web scraping"
+      delay: 100
+    dependencies:
+      - "wait_for_form"
+
+  - id: "select_category"
+    type: "click"
+    name: "Select category dropdown"
+    params:
+      selector: "#category-select"
+    dependencies:
+      - "fill_search_query"
+    optional: true
+
+  - id: "click_search"
+    type: "click"
+    name: "Click search button"
+    params:
+      selector: "button[type='submit']"
+    dependencies:
+      - "fill_search_query"
+
+  - id: "wait_for_results"
+    type: "wait_for"
+    name: "Wait for search results"
+    params:
+      selector: ".search-results"
+      timeout: 10000
+    dependencies:
+      - "click_search"
+
+  - id: "extract_result_links"
+    type: "extract_links"
+    name: "Extract result page links"
+    params:
+      selector: ".search-result a.result-link"
+    output_key: "result_links"
+    dependencies:
+      - "wait_for_results"
+
+# Data Extraction: Extract search results
+data_extraction:
+  - id: "extract_results"
+    type: "extract"
+    name: "Extract search result items"
+    params:
+      selector: ".search-result"
+      type: "text"
+      multiple: true
+      fields:
+        title:
+          selector: ".result-title"
+          type: "text"
+          transform:
+            - type: "trim"
+
+        url:
+          selector: "a.result-link"
+          type: "href"
+
+        snippet:
+          selector: ".result-snippet"
+          type: "text"
+          transform:
+            - type: "trim"
+
+        date:
+          selector: ".result-date"
+          type: "text"
+          transform:
+            - type: "trim"
+    output_key: "search_results"
+
+storage:
+  type: "database"
+  table_name: "search_results"
