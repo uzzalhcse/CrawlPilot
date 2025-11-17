@@ -25,8 +25,8 @@ redis:
 
 browser:
   pool_size: 5
-  headless: true
-  timeout: 30000
+  headless: false
+  timeout: 60000
   max_concurrency: 10
   context_lifetime: 300
 

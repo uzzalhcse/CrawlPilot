@@ -1,0 +1,368 @@
+{
+  "name": "Books to Scrape - Full Site Crawler",
+  "description": "Comprehensive crawler for books.toscrape.com that extracts all books from all categories with pagination support. Captures book details including title, price, rating, availability, description, and product information.",
+  "config": {
+    "start_urls": [
+      "http://books.toscrape.com/"
+    ],
+    "max_depth": 4,
+    "max_pages": 2000,
+    "rate_limit_delay": 1000,
+    "headers": {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9"
+    },
+    "url_discovery": [
+      {
+        "id": "wait_for_page_load",
+        "type": "wait_for",
+        "name": "Wait for page content to load",
+        "params": {
+          "selector": "body",
+          "timeout": 10000,
+          "state": "visible"
+        }
+      },
+      {
+        "id": "extract_category_links",
+        "type": "extract_links",
+        "name": "Extract all category links from sidebar",
+        "params": {
+          "selector": ".side_categories ul.nav-list ul li a"
+        },
+        "output_key": "category_urls",
+        "dependencies": ["wait_for_page_load"]
+      },
+      {
+        "id": "extract_book_links",
+        "type": "extract_links",
+        "name": "Extract book detail page links",
+        "params": {
+          "selector": "article.product_pod h3 a"
+        },
+        "output_key": "book_urls",
+        "dependencies": ["wait_for_page_load"]
+      },
+      {
+        "id": "extract_pagination_next",
+        "type": "extract_links",
+        "name": "Extract next page link for pagination",
+        "params": {
+          "selector": "ul.pager li.next a"
+        },
+        "output_key": "next_page_url",
+        "dependencies": ["wait_for_page_load"]
+      },
+      {
+        "id": "filter_discovered_urls",
+        "type": "filter_urls",
+        "name": "Filter URLs to books.toscrape.com domain",
+        "params": {
+          "same_domain": true,
+          "exclude_patterns": [
+            ".*\\.jpg$",
+            ".*\\.png$",
+            ".*\\.gif$",
+            ".*\\.css$",
+            ".*\\.js$"
+          ]
+        },
+        "dependencies": ["extract_category_links", "extract_book_links", "extract_pagination_next"]
+      }
+    ],
+    "data_extraction": [
+      {
+        "id": "wait_for_book_details",
+        "type": "wait_for",
+        "name": "Wait for book details to load",
+        "params": {
+          "selector": ".product_page, article.product_pod",
+          "timeout": 10000,
+          "state": "visible"
+        }
+      },
+      {
+        "id": "extract_book_title",
+        "type": "extract",
+        "name": "Extract book title",
+        "params": {
+          "selector": "h1, article.product_pod h3 a",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ]
+        },
+        "output_key": "title",
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_book_price",
+        "type": "extract",
+        "name": "Extract book price",
+        "params": {
+          "selector": "p.price_color",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "[£$€]",
+                "replacement": ""
+              }
+            }
+          ]
+        },
+        "output_key": "price",
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_currency",
+        "type": "extract",
+        "name": "Extract currency symbol",
+        "params": {
+          "selector": "p.price_color",
+          "type": "text",
+          "transform": [
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "([£$€]).*",
+                "replacement": "$1"
+              }
+            }
+          ],
+          "default_value": "£"
+        },
+        "output_key": "currency",
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_rating",
+        "type": "extract",
+        "name": "Extract book rating",
+        "params": {
+          "selector": "p.star-rating",
+          "type": "attr",
+          "attribute": "class",
+          "transform": [
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "star-rating (\\w+)",
+                "replacement": "$1"
+              }
+            }
+          ],
+          "default_value": "Not Rated"
+        },
+        "output_key": "rating",
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_availability",
+        "type": "extract",
+        "name": "Extract book availability status",
+        "params": {
+          "selector": "p.instock.availability, p.availability",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": "Unknown"
+        },
+        "output_key": "availability",
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_book_image",
+        "type": "extract",
+        "name": "Extract book cover image URL",
+        "params": {
+          "selector": "#product_gallery img, article.product_pod .image_container img",
+          "type": "attr",
+          "attribute": "src",
+          "default_value": ""
+        },
+        "output_key": "image_url",
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_description",
+        "type": "extract",
+        "name": "Extract product description",
+        "params": {
+          "selector": "#product_description + p, #content_inner p",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "description",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_upc",
+        "type": "extract",
+        "name": "Extract UPC code",
+        "params": {
+          "selector": "table.table-striped tr:nth-child(1) td",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "upc",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_product_type",
+        "type": "extract",
+        "name": "Extract product type",
+        "params": {
+          "selector": "table.table-striped tr:nth-child(2) td",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "product_type",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_price_excl_tax",
+        "type": "extract",
+        "name": "Extract price excluding tax",
+        "params": {
+          "selector": "table.table-striped tr:nth-child(3) td",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "[£$€]",
+                "replacement": ""
+              }
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "price_excl_tax",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_price_incl_tax",
+        "type": "extract",
+        "name": "Extract price including tax",
+        "params": {
+          "selector": "table.table-striped tr:nth-child(4) td",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "[£$€]",
+                "replacement": ""
+              }
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "price_incl_tax",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_tax",
+        "type": "extract",
+        "name": "Extract tax amount",
+        "params": {
+          "selector": "table.table-striped tr:nth-child(5) td",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "[£$€]",
+                "replacement": ""
+              }
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "tax",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_num_reviews",
+        "type": "extract",
+        "name": "Extract number of reviews",
+        "params": {
+          "selector": "table.table-striped tr:nth-child(7) td",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": "0"
+        },
+        "output_key": "number_of_reviews",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      },
+      {
+        "id": "extract_category",
+        "type": "extract",
+        "name": "Extract book category from breadcrumb",
+        "params": {
+          "selector": "ul.breadcrumb li:nth-child(3) a",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": "Uncategorized"
+        },
+        "output_key": "category",
+        "optional": true,
+        "dependencies": ["wait_for_book_details"]
+      }
+    ],
+    "storage": {
+      "type": "database",
+      "table_name": "books_toscrape_data"
+    }
+  }
+}
