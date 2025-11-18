@@ -49,23 +49,23 @@ CREATE TABLE IF NOT EXISTS url_queue (
     depth INTEGER NOT NULL DEFAULT 0,
     priority INTEGER NOT NULL DEFAULT 0,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    
+
     -- Hierarchy tracking fields
     parent_url_id UUID REFERENCES url_queue(id) ON DELETE SET NULL,
     discovered_by_node VARCHAR(255),
     url_type VARCHAR(50) DEFAULT 'page',
-    
+
     -- Processing metadata
     retry_count INTEGER DEFAULT 0,
     error TEXT,
     metadata JSONB,
-    
+
     -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     processed_at TIMESTAMP WITH TIME ZONE,
     locked_at TIMESTAMP WITH TIME ZONE,
     locked_by VARCHAR(255),
-    
+
     UNIQUE(execution_id, url_hash)
 );
 
@@ -89,21 +89,21 @@ CREATE TABLE IF NOT EXISTS node_executions (
     execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
     node_id VARCHAR(255) NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    
+
     -- Hierarchy and tracking
     url_id UUID REFERENCES url_queue(id) ON DELETE SET NULL,
     parent_node_execution_id UUID REFERENCES node_executions(id) ON DELETE SET NULL,
     node_type VARCHAR(50),
-    
+
     -- Metrics
     urls_discovered INTEGER DEFAULT 0,
     items_extracted INTEGER DEFAULT 0,
     duration_ms INTEGER,
-    
+
     -- Timing
     started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP WITH TIME ZONE,
-    
+
     -- Data
     input JSONB,
     output JSONB,
@@ -134,11 +134,11 @@ CREATE TABLE IF NOT EXISTS extracted_items (
     execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
     url_id UUID NOT NULL REFERENCES url_queue(id) ON DELETE CASCADE,
     node_execution_id UUID REFERENCES node_executions(id) ON DELETE SET NULL,
-    
+
     -- Item classification
     item_type VARCHAR(100) NOT NULL,
     schema_name VARCHAR(255),
-    
+
     -- Common structured fields for fast queries
     title TEXT,
     price DECIMAL(10,2),
@@ -146,13 +146,13 @@ CREATE TABLE IF NOT EXISTS extracted_items (
     availability VARCHAR(50),
     rating DECIMAL(3,2),
     review_count INTEGER,
-    
+
     -- Flexible additional data
     attributes JSONB,
-    
+
     -- Metadata
     extracted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
+
     CONSTRAINT unique_extracted_item_per_url_schema UNIQUE(execution_id, url_id, schema_name)
 );
 
@@ -178,7 +178,7 @@ CREATE INDEX idx_extracted_items_attrs ON extracted_items USING gin(attributes);
 
 -- View for execution statistics
 CREATE OR REPLACE VIEW execution_stats AS
-SELECT 
+SELECT
     we.id as execution_id,
     we.workflow_id,
     w.name as workflow_name,
