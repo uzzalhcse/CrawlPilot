@@ -3,11 +3,14 @@
   "description": "Scrapes Amazon best sellers with complete URL hierarchy tracking and structured data extraction",
   "config": {
     "start_urls": [
-      "https://www.amazon.com/Best-Sellers/zgbs"
+      "https://www.amazon.com/Best-Sellers-Pet-Supplies-Pet-Bird-Supplies/zgbs/pet-supplies/2975221011"
     ],
-    "max_depth": 4,
-    "max_pages": 1000,
-    "rate_limit_delay": 2000,
+    "max_depth": 1,
+    "max_pages": 10,
+    "rate_limit_delay": 3000,
+    "data_extraction_patterns": [
+      "*/dp/*"
+    ],
     "storage": {
       "type": "database"
     },
@@ -76,74 +79,55 @@
         "name": "Extract Product Data",
         "params": {
           "schema": "amazon_product",
-          "wait_for": "#productTitle, #title",
+          "wait_for": "span#productTitle",
           "fields": {
           "title": {
-            "selector": "#productTitle, #title",
+            "selector": "span#productTitle",
             "type": "text",
             "transform": "trim"
           },
           "price": {
-            "selector": ".a-price .a-offscreen, #priceblock_ourprice, #priceblock_dealprice, .a-price-whole",
+            "selector": "#corePrice_desktop .a-price .a-offscreen, .a-price .a-offscreen",
             "type": "text",
-            "transform": "extract_number"
-          },
-          "currency": {
-            "selector": ".a-price-symbol",
-            "type": "text",
-            "default": "USD"
+            "transform": "trim"
           },
           "rating": {
-            "selector": "#acrPopover .a-icon-alt, .a-icon-star .a-icon-alt, [data-hook='rating-out-of-text']",
-            "type": "text",
-            "transform": "extract_rating"
+            "selector": "span#acrPopover",
+            "type": "attribute",
+            "attribute": "title",
+            "transform": "trim"
           },
           "review_count": {
-            "selector": "#acrCustomerReviewText, [data-hook='total-review-count']",
-            "type": "text",
-            "transform": "extract_number"
-          },
-          "availability": {
-            "selector": "#availability span, #availability-brief",
+            "selector": "span#acrCustomerReviewText",
             "type": "text",
             "transform": "trim"
           },
           "brand": {
-            "selector": "#bylineInfo, .po-brand .po-break-word",
+            "selector": "a#bylineInfo",
             "type": "text",
             "transform": "trim"
           },
           "asin": {
-            "selector": "input[name='ASIN'], th:contains('ASIN') + td",
-            "type": "text"
-          },
-          "bestseller_rank": {
-            "selector": "#SalesRank, #productDetails_detailBullets_sections1 tr:contains('Best Sellers Rank') td, th:contains('Best Sellers Rank') + td",
-            "type": "text"
+            "selector": "input#ASIN",
+            "type": "attribute",
+            "attribute": "value"
           },
           "features": {
-            "selector": "#feature-bullets li span.a-list-item, #featurebullets_feature_div li span",
+            "selector": "div#feature-bullets ul.a-unordered-list li span.a-list-item",
             "type": "list",
             "multiple": true
           },
-          "description": {
-            "selector": "#productDescription p, #feature-bullets",
-            "type": "text"
-          },
           "image_url": {
-            "selector": "#landingImage, #imgBlkFront",
+            "selector": "img#landingImage",
             "type": "attribute",
             "attribute": "src"
           },
           "categories": {
-            "selector": "#wayfinding-breadcrumbs_feature_div a, .a-breadcrumb a",
+            "selector": "div#wayfinding-breadcrumbs_feature_div ul.a-unordered-list li a",
             "type": "list",
             "multiple": true
           }
-        },
-          "data_extraction_patterns": [
-            ".*/dp/[A-Z0-9]{10}.*"
-          ]
+        }
         }
       }
     ]
