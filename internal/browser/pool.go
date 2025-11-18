@@ -80,7 +80,7 @@ func NewBrowserPool(cfg *config.BrowserConfig) (*BrowserPool, error) {
 }
 
 func (p *BrowserPool) createContext() (playwright.BrowserContext, error) {
-	return p.browser.NewContext(playwright.BrowserNewContextOptions{
+	options := playwright.BrowserNewContextOptions{
 		UserAgent:         playwright.String("Crawlify/1.0"),
 		AcceptDownloads:   playwright.Bool(false),
 		IgnoreHttpsErrors: playwright.Bool(true),
@@ -89,7 +89,29 @@ func (p *BrowserPool) createContext() (playwright.BrowserContext, error) {
 			Width:  1920,
 			Height: 1080,
 		},
-	})
+	}
+
+	// Configure proxy if enabled
+	if p.config.Proxy.Enabled && p.config.Proxy.Server != "" {
+		proxyConfig := &playwright.Proxy{
+			Server: p.config.Proxy.Server,
+		}
+
+		// Add authentication if provided
+		if p.config.Proxy.Username != "" && p.config.Proxy.Password != "" {
+			proxyConfig.Username = playwright.String(p.config.Proxy.Username)
+			proxyConfig.Password = playwright.String(p.config.Proxy.Password)
+		}
+
+		options.Proxy = proxyConfig
+
+		logger.Info("Using proxy configuration",
+			zap.String("server", p.config.Proxy.Server),
+			zap.String("username", p.config.Proxy.Username),
+		)
+	}
+
+	return p.browser.NewContext(options)
 }
 
 // Acquire gets a browser context from the pool

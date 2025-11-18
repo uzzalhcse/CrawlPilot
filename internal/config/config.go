@@ -43,11 +43,19 @@ type RedisConfig struct {
 }
 
 type BrowserConfig struct {
-	PoolSize        int  `mapstructure:"pool_size"`
-	Headless        bool `mapstructure:"headless"`
-	Timeout         int  `mapstructure:"timeout"`
-	MaxConcurrency  int  `mapstructure:"max_concurrency"`
-	ContextLifetime int  `mapstructure:"context_lifetime"`
+	PoolSize        int         `mapstructure:"pool_size"`
+	Headless        bool        `mapstructure:"headless"`
+	Timeout         int         `mapstructure:"timeout"`
+	MaxConcurrency  int         `mapstructure:"max_concurrency"`
+	ContextLifetime int         `mapstructure:"context_lifetime"`
+	Proxy           ProxyConfig `mapstructure:"proxy"`
+}
+
+type ProxyConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Server   string `mapstructure:"server"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
 }
 
 type CrawlerConfig struct {
@@ -117,6 +125,12 @@ func setDefaults() {
 	viper.SetDefault("browser.timeout", 30000)
 	viper.SetDefault("browser.max_concurrency", 10)
 	viper.SetDefault("browser.context_lifetime", 300)
+
+	// Proxy defaults
+	viper.SetDefault("browser.proxy.enabled", false)
+	viper.SetDefault("browser.proxy.server", "")
+	viper.SetDefault("browser.proxy.username", "")
+	viper.SetDefault("browser.proxy.password", "")
 
 	// Crawler defaults
 	viper.SetDefault("crawler.max_depth", 3)

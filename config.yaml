@@ -29,6 +29,11 @@ browser:
   timeout: 60000
   max_concurrency: 10
   context_lifetime: 300
+  proxy:
+    enabled: true
+    server: "82.22.73.66:7272"
+    username: "lnvmpyru"
+    password: "5un1tb1azapa"
 
 crawler:
   max_depth: 3
