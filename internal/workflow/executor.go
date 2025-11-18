@@ -343,7 +343,50 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		var config extraction.ExtractConfig
 		configBytes, _ := json.Marshal(node.Params)
 		json.Unmarshal(configBytes, &config)
-		result, err = extractionEngine.Extract(config)
+
+		// Handle field-based extraction (when fields are defined but no top-level selector)
+		if len(config.Fields) > 0 && config.Selector == "" {
+			// For field-based extraction, we extract individual fields and combine results
+			fieldResults := make(map[string]interface{})
+
+			for fieldName, fieldConfigRaw := range config.Fields {
+				var fieldConfig extraction.ExtractConfig
+
+				// Convert field config to ExtractConfig
+				fieldConfigBytes, _ := json.Marshal(fieldConfigRaw)
+				if err := json.Unmarshal(fieldConfigBytes, &fieldConfig); err != nil {
+					logger.Warn("Failed to parse field config", zap.String("field", fieldName), zap.Error(err))
+					continue
+				}
+
+				// Extract field value
+				fieldValue, fieldErr := extractionEngine.Extract(fieldConfig)
+				if fieldErr != nil {
+					logger.Debug("Field extraction failed", zap.String("field", fieldName), zap.Error(fieldErr))
+					// Use default value if extraction fails and it's defined
+					if fieldConfig.DefaultValue != nil {
+						fieldResults[fieldName] = fieldConfig.DefaultValue
+					} else if defaultVal, ok := fieldConfigRaw.(map[string]interface{})["default"]; ok {
+						// Handle "default" key for backward compatibility
+						fieldResults[fieldName] = defaultVal
+					}
+					// Note: We still store the field with default value, not skip it
+				} else {
+					fieldResults[fieldName] = fieldValue
+				}
+			}
+
+			result = fieldResults
+			err = nil
+
+			// Always store field-based extraction results in context for database saving
+			for fieldName, fieldValue := range fieldResults {
+				execCtx.Set(fieldName, fieldValue)
+			}
+		} else {
+			// Normal extraction with top-level selector
+			result, err = extractionEngine.Extract(config)
+		}
 
 		// Store schema name if present for later use
 		if schema, ok := node.Params["schema"].(string); ok && schema != "" {
@@ -383,9 +426,15 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		logger.Warn("Unknown node type", zap.String("type", string(node.Type)))
 	}
 
-	// Store result in context if output key is specified
-	if node.OutputKey != "" && result != nil {
-		execCtx.Set(node.OutputKey, result)
+	// Store result in context
+	if result != nil {
+		if node.OutputKey != "" {
+			// Use specified output key
+			execCtx.Set(node.OutputKey, result)
+		} else if node.Type == models.NodeTypeExtract {
+			// For extraction nodes without output key, store result with node ID
+			execCtx.Set(node.ID, result)
+		}
 	}
 
 	// Update node execution status

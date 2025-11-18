@@ -210,8 +210,8 @@ func (bc *BrowserContext) Navigate(url string, options ...playwright.PageGotoOpt
 		opts = options[0]
 	} else {
 		opts = playwright.PageGotoOptions{
-			WaitUntil: playwright.WaitUntilStateNetworkidle,
-			Timeout:   playwright.Float(30000),
+			WaitUntil: playwright.WaitUntilStateDomcontentloaded,
+			Timeout:   playwright.Float(30000 * 2),
 		}
 	}
 

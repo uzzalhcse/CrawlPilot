@@ -20,7 +20,7 @@ type ExtractConfig struct {
 	Type         string                 `json:"type" yaml:"type"` // text, attr, html, href, src
 	Attribute    string                 `json:"attribute,omitempty" yaml:"attribute,omitempty"`
 	Multiple     bool                   `json:"multiple,omitempty" yaml:"multiple,omitempty"`
-	Transform    []TransformConfig      `json:"transform,omitempty" yaml:"transform,omitempty"`
+	Transform    interface{}            `json:"transform,omitempty" yaml:"transform,omitempty"` // Can be string or []TransformConfig
 	Fields       map[string]interface{} `json:"fields,omitempty" yaml:"fields,omitempty"`
 	DefaultValue interface{}            `json:"default_value,omitempty" yaml:"default_value,omitempty"`
 }
@@ -97,12 +97,15 @@ func (ee *ExtractionEngine) extractSingle(config ExtractConfig) (interface{}, er
 	}
 
 	// Apply transformations
-	if len(config.Transform) > 0 {
-		transformed, err := ee.applyTransformations(value, config.Transform)
-		if err != nil {
-			return config.DefaultValue, err
+	if config.Transform != nil {
+		transforms := ee.parseTransforms(config.Transform)
+		if len(transforms) > 0 {
+			transformed, err := ee.applyTransformations(value, transforms)
+			if err != nil {
+				return config.DefaultValue, err
+			}
+			return transformed, nil
 		}
-		return transformed, nil
 	}
 
 	return value, nil
@@ -179,10 +182,15 @@ func (ee *ExtractionEngine) extractMultiple(config ExtractConfig) (interface{}, 
 			}
 
 			// Apply transformations
-			if len(config.Transform) > 0 {
-				transformed, err := ee.applyTransformations(value, config.Transform)
-				if err == nil {
-					results = append(results, transformed)
+			if config.Transform != nil {
+				transforms := ee.parseTransforms(config.Transform)
+				if len(transforms) > 0 {
+					transformed, err := ee.applyTransformations(value, transforms)
+					if err == nil {
+						results = append(results, transformed)
+					}
+				} else {
+					results = append(results, value)
 				}
 			} else {
 				results = append(results, value)
@@ -243,11 +251,44 @@ func (ee *ExtractionEngine) extractFieldValue(locator playwright.Locator, config
 	}
 
 	// Apply transformations
-	if len(config.Transform) > 0 {
-		return ee.applyTransformations(value, config.Transform)
+	if config.Transform != nil {
+		transforms := ee.parseTransforms(config.Transform)
+		if len(transforms) > 0 {
+			return ee.applyTransformations(value, transforms)
+		}
 	}
 
 	return value, nil
+}
+
+// parseTransforms converts various transform formats to []TransformConfig
+func (ee *ExtractionEngine) parseTransforms(transform interface{}) []TransformConfig {
+	switch t := transform.(type) {
+	case string:
+		// Handle single string transform like "trim", "clean_html", "extract_price"
+		return []TransformConfig{{Type: t}}
+	case []interface{}:
+		// Handle array of transform configs
+		var transforms []TransformConfig
+		for _, item := range t {
+			if transformMap, ok := item.(map[string]interface{}); ok {
+				var tc TransformConfig
+				if transformType, ok := transformMap["type"].(string); ok {
+					tc.Type = transformType
+					if params, ok := transformMap["params"].(map[string]interface{}); ok {
+						tc.Params = params
+					}
+					transforms = append(transforms, tc)
+				}
+			}
+		}
+		return transforms
+	case []TransformConfig:
+		// Already in correct format
+		return t
+	default:
+		return []TransformConfig{}
+	}
 }
 
 // applyTransformations applies a chain of transformations to a value
@@ -303,6 +344,29 @@ func (ee *ExtractionEngine) applyTransformations(value string, transforms []Tran
 				f, err := strconv.ParseFloat(strings.TrimSpace(str), 64)
 				if err == nil {
 					result = f
+				}
+			}
+		case "clean_html":
+			if str, ok := result.(string); ok {
+				// Remove HTML tags and clean up text
+				re := regexp.MustCompile(`<[^>]*>`)
+				cleaned := re.ReplaceAllString(str, " ")
+				// Clean up multiple spaces and newlines
+				re = regexp.MustCompile(`\s+`)
+				cleaned = re.ReplaceAllString(cleaned, " ")
+				result = strings.TrimSpace(cleaned)
+			}
+		case "extract_price":
+			if str, ok := result.(string); ok {
+				// Extract price from strings like "¥123,456" or "$99.99"
+				re := regexp.MustCompile(`[\d,]+\.?\d*`)
+				matches := re.FindString(str)
+				if matches != "" {
+					// Remove commas and parse as float
+					priceStr := strings.ReplaceAll(matches, ",", "")
+					if f, err := strconv.ParseFloat(priceStr, 64); err == nil {
+						result = f
+					}
 				}
 			}
 		}
