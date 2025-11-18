@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-commerce Sandbox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+<header class="bg-white shadow-md sticky top-0 z-50">
+    <div class="container mx-auto px-4 py-6">
+        <h1 class="text-3xl font-bold text-gray-800 mb-4 cursor-pointer" id="siteTitle">E-commerce Sandbox</h1>
+        <nav class="overflow-x-auto">
+            <ul id="categories" class="flex space-x-2 min-w-max">
+                <!-- Categories will be rendered here -->
+            </ul>
+        </nav>
+    </div>
+</header>
+
+<main id="app" class="container mx-auto px-4 py-8 min-h-screen">
+    <div id="loading" class="flex justify-center items-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>
+</main>
+
+<footer class="bg-gray-800 text-white py-6 mt-12">
+    <div class="container mx-auto px-4 text-center">
+        <p>&copy; 2025 E-commerce Sandbox</p>
+    </div>
+</footer>
+
+<script>
+    const productsData = {
+        "products": [
+            {"id": 1, "name": "Laptop", "category": "Electronics", "price": 1200, "description": "A high-performance laptop for all your needs.", "image": "https://via.placeholder.com/300"},
+            {"id": 2, "name": "Smartphone", "category": "Electronics", "price": 800, "description": "A smartphone with a great camera and long battery life.", "image": "https://via.placeholder.com/300"},
+            {"id": 11, "name": "Headphones", "category": "Electronics", "price": 150, "description": "Noise-cancelling headphones for an immersive audio experience.", "image": "https://via.placeholder.com/300"},
+            {"id": 12, "name": "Keyboard", "category": "Electronics", "price": 75, "description": "A mechanical keyboard for a satisfying typing experience.", "image": "https://via.placeholder.com/300"},
+            {"id": 13, "name": "Mouse", "category": "Electronics", "price": 50, "description": "A wireless mouse for a clutter-free workspace.", "image": "https://via.placeholder.com/300"},
+            {"id": 14, "name": "Monitor", "category": "Electronics", "price": 300, "description": "A 27-inch monitor with a 4K resolution.", "image": "https://via.placeholder.com/300"},
+            {"id": 21, "name": "Tablet", "category": "Electronics", "price": 500, "description": "A versatile tablet for work and entertainment.", "image": "https://via.placeholder.com/300"},
+            {"id": 22, "name": "Smart Watch", "category": "Electronics", "price": 350, "description": "Track your fitness and stay connected on the go.", "image": "https://via.placeholder.com/300"},
+            {"id": 23, "name": "Wireless Earbuds", "category": "Electronics", "price": 120, "description": "Compact earbuds with premium sound quality.", "image": "https://via.placeholder.com/300"},
+            {"id": 24, "name": "Gaming Console", "category": "Electronics", "price": 450, "description": "Next-gen gaming console for immersive gameplay.", "image": "https://via.placeholder.com/300"},
+            {"id": 25, "name": "Webcam", "category": "Electronics", "price": 90, "description": "HD webcam for video calls and streaming.", "image": "https://via.placeholder.com/300"},
+            {"id": 26, "name": "External Hard Drive", "category": "Electronics", "price": 100, "description": "2TB external storage for all your files.", "image": "https://via.placeholder.com/300"},
+            {"id": 27, "name": "USB Hub", "category": "Electronics", "price": 35, "description": "Expand your connectivity with multiple USB ports.", "image": "https://via.placeholder.com/300"},
+            {"id": 28, "name": "Router", "category": "Electronics", "price": 120, "description": "High-speed WiFi router for seamless connectivity.", "image": "https://via.placeholder.com/300"},
+            {"id": 29, "name": "Speaker System", "category": "Electronics", "price": 200, "description": "Surround sound speakers for home entertainment.", "image": "https://via.placeholder.com/300"},
+            {"id": 30, "name": "Smart TV", "category": "Electronics", "price": 700, "description": "55-inch 4K Smart TV with streaming apps.", "image": "https://via.placeholder.com/300"},
+            {"id": 31, "name": "Printer", "category": "Electronics", "price": 180, "description": "All-in-one wireless printer, scanner, and copier.", "image": "https://via.placeholder.com/300"},
+            {"id": 32, "name": "Camera", "category": "Electronics", "price": 900, "description": "Mirrorless camera for stunning photography.", "image": "https://via.placeholder.com/300"},
+            {"id": 33, "name": "Drone", "category": "Electronics", "price": 650, "description": "HD camera drone with GPS navigation.", "image": "https://via.placeholder.com/300"},
+            {"id": 34, "name": "Power Bank", "category": "Electronics", "price": 45, "description": "20000mAh portable charger for your devices.", "image": "https://via.placeholder.com/300"},
+            {"id": 3, "name": "T-shirt", "category": "Apparel", "price": 25, "description": "A comfortable and stylish t-shirt.", "image": "https://via.placeholder.com/300"},
+            {"id": 4, "name": "Jeans", "category": "Apparel", "price": 75, "description": "A pair of jeans that will last you for years.", "image": "https://via.placeholder.com/300"},
+            {"id": 15, "name": "Hoodie", "category": "Apparel", "price": 50, "description": "A warm and cozy hoodie.", "image": "https://via.placeholder.com/300"},
+            {"id": 16, "name": "Jacket", "category": "Apparel", "price": 100, "description": "A stylish jacket for all seasons.", "image": "https://via.placeholder.com/300"},
+            {"id": 17, "name": "Socks", "category": "Apparel", "price": 10, "description": "A pair of comfortable socks.", "image": "https://via.placeholder.com/300"},
+            {"id": 35, "name": "Dress Shirt", "category": "Apparel", "price": 60, "description": "Formal dress shirt for professional occasions.", "image": "https://via.placeholder.com/300"},
+            {"id": 36, "name": "Polo Shirt", "category": "Apparel", "price": 40, "description": "Classic polo shirt for casual elegance.", "image": "https://via.placeholder.com/300"},
+            {"id": 37, "name": "Sweater", "category": "Apparel", "price": 65, "description": "Wool blend sweater for cold weather.", "image": "https://via.placeholder.com/300"},
+            {"id": 38, "name": "Cargo Pants", "category": "Apparel", "price": 70, "description": "Durable cargo pants with multiple pockets.", "image": "https://via.placeholder.com/300"},
+            {"id": 39, "name": "Shorts", "category": "Apparel", "price": 35, "description": "Comfortable shorts for summer activities.", "image": "https://via.placeholder.com/300"},
+            {"id": 40, "name": "Dress", "category": "Apparel", "price": 85, "description": "Elegant dress for special occasions.", "image": "https://via.placeholder.com/300"},
+            {"id": 41, "name": "Skirt", "category": "Apparel", "price": 45, "description": "Fashionable skirt for any outfit.", "image": "https://via.placeholder.com/300"},
+            {"id": 42, "name": "Leggings", "category": "Apparel", "price": 30, "description": "Stretchy leggings for comfort and style.", "image": "https://via.placeholder.com/300"},
+            {"id": 43, "name": "Blazer", "category": "Apparel", "price": 120, "description": "Professional blazer for business attire.", "image": "https://via.placeholder.com/300"},
+            {"id": 44, "name": "Winter Coat", "category": "Apparel", "price": 180, "description": "Insulated coat for harsh winter weather.", "image": "https://via.placeholder.com/300"},
+            {"id": 45, "name": "Raincoat", "category": "Apparel", "price": 90, "description": "Waterproof raincoat for wet days.", "image": "https://via.placeholder.com/300"},
+            {"id": 46, "name": "Scarf", "category": "Apparel", "price": 25, "description": "Soft scarf to keep you warm.", "image": "https://via.placeholder.com/300"},
+            {"id": 47, "name": "Gloves", "category": "Apparel", "price": 20, "description": "Thermal gloves for winter protection.", "image": "https://via.placeholder.com/300"},
+            {"id": 48, "name": "Hat", "category": "Apparel", "price": 22, "description": "Stylish hat for sun protection.", "image": "https://via.placeholder.com/300"},
+            {"id": 49, "name": "Belt", "category": "Apparel", "price": 35, "description": "Leather belt with adjustable buckle.", "image": "https://via.placeholder.com/300"},
+            {"id": 50, "name": "Sneakers", "category": "Apparel", "price": 95, "description": "Comfortable sneakers for everyday wear.", "image": "https://via.placeholder.com/300"},
+            {"id": 51, "name": "Boots", "category": "Apparel", "price": 130, "description": "Rugged boots for outdoor adventures.", "image": "https://via.placeholder.com/300"},
+            {"id": 52, "name": "Sandals", "category": "Apparel", "price": 40, "description": "Casual sandals for warm weather.", "image": "https://via.placeholder.com/300"},
+            {"id": 5, "name": "The Lord of the Rings", "category": "Books", "price": 20, "description": "The classic fantasy novel by J.R.R. Tolkien.", "image": "https://via.placeholder.com/300"},
+            {"id": 6, "name": "The Hobbit", "category": "Books", "price": 15, "description": "The prequel to The Lord of the Rings.", "image": "https://via.placeholder.com/300"},
+            {"id": 18, "name": "The Hitchhiker's Guide to the Galaxy", "category": "Books", "price": 15, "description": "The hilarious science fiction novel by Douglas Adams.", "image": "https://via.placeholder.com/300"},
+            {"id": 19, "name": "Dune", "category": "Books", "price": 20, "description": "The epic science fiction novel by Frank Herbert.", "image": "https://via.placeholder.com/300"},
+            {"id": 53, "name": "1984", "category": "Books", "price": 18, "description": "George Orwell's dystopian masterpiece.", "image": "https://via.placeholder.com/300"},
+            {"id": 54, "name": "Pride and Prejudice", "category": "Books", "price": 14, "description": "Jane Austen's romantic classic.", "image": "https://via.placeholder.com/300"},
+            {"id": 55, "name": "To Kill a Mockingbird", "category": "Books", "price": 16, "description": "Harper Lee's powerful story of justice.", "image": "https://via.placeholder.com/300"},
+            {"id": 56, "name": "Harry Potter and the Sorcerer's Stone", "category": "Books", "price": 22, "description": "The magical beginning of Harry Potter's journey.", "image": "https://via.placeholder.com/300"},
+            {"id": 57, "name": "The Great Gatsby", "category": "Books", "price": 15, "description": "F. Scott Fitzgerald's Jazz Age tale.", "image": "https://via.placeholder.com/300"},
+            {"id": 58, "name": "Moby Dick", "category": "Books", "price": 19, "description": "Herman Melville's epic sea adventure.", "image": "https://via.placeholder.com/300"},
+            {"id": 59, "name": "The Catcher in the Rye", "category": "Books", "price": 17, "description": "J.D. Salinger's coming-of-age story.", "image": "https://via.placeholder.com/300"},
+            {"id": 60, "name": "Brave New World", "category": "Books", "price": 16, "description": "Aldous Huxley's futuristic society.", "image": "https://via.placeholder.com/300"},
+            {"id": 61, "name": "The Chronicles of Narnia", "category": "Books", "price": 25, "description": "C.S. Lewis's magical fantasy series.", "image": "https://via.placeholder.com/300"},
+            {"id": 62, "name": "Jane Eyre", "category": "Books", "price": 15, "description": "Charlotte Brontë's Gothic romance.", "image": "https://via.placeholder.com/300"},
+            {"id": 63, "name": "The Alchemist", "category": "Books", "price": 18, "description": "Paulo Coelho's inspirational journey.", "image": "https://via.placeholder.com/300"},
+            {"id": 64, "name": "Crime and Punishment", "category": "Books", "price": 20, "description": "Dostoevsky's psychological thriller.", "image": "https://via.placeholder.com/300"},
+            {"id": 65, "name": "War and Peace", "category": "Books", "price": 28, "description": "Tolstoy's epic historical novel.", "image": "https://via.placeholder.com/300"},
+            {"id": 66, "name": "The Odyssey", "category": "Books", "price": 17, "description": "Homer's ancient Greek epic.", "image": "https://via.placeholder.com/300"},
+            {"id": 67, "name": "Frankenstein", "category": "Books", "price": 14, "description": "Mary Shelley's Gothic horror classic.", "image": "https://via.placeholder.com/300"},
+            {"id": 68, "name": "The Picture of Dorian Gray", "category": "Books", "price": 16, "description": "Oscar Wilde's philosophical novel.", "image": "https://via.placeholder.com/300"},
+            {"id": 69, "name": "Wuthering Heights", "category": "Books", "price": 15, "description": "Emily Brontë's passionate tale.", "image": "https://via.placeholder.com/300"},
+            {"id": 70, "name": "The Count of Monte Cristo", "category": "Books", "price": 22, "description": "Alexandre Dumas's revenge adventure.", "image": "https://via.placeholder.com/300"},
+            {"id": 71, "name": "Little Women", "category": "Books", "price": 16, "description": "Louisa May Alcott's family story.", "image": "https://via.placeholder.com/300"},
+            {"id": 72, "name": "Animal Farm", "category": "Books", "price": 13, "description": "George Orwell's political allegory.", "image": "https://via.placeholder.com/300"},
+            {"id": 7, "name": "Coffee Maker", "category": "Home Goods", "price": 50, "description": "Brew the perfect cup of coffee every morning.", "image": "https://via.placeholder.com/300"},
+            {"id": 8, "name": "Toaster", "category": "Home Goods", "price": 30, "description": "A toaster that will toast your bread to perfection.", "image": "https://via.placeholder.com/300"},
+            {"id": 20, "name": "Blender", "category": "Home Goods", "price": 75, "description": "A powerful blender for smoothies and more.", "image": "https://via.placeholder.com/300"},
+            {"id": 73, "name": "Microwave", "category": "Home Goods", "price": 120, "description": "Quick and efficient microwave oven.", "image": "https://via.placeholder.com/300"},
+            {"id": 74, "name": "Air Fryer", "category": "Home Goods", "price": 100, "description": "Healthy frying with little to no oil.", "image": "https://via.placeholder.com/300"},
+            {"id": 75, "name": "Slow Cooker", "category": "Home Goods", "price": 60, "description": "Set it and forget it meal preparation.", "image": "https://via.placeholder.com/300"},
+            {"id": 76, "name": "Stand Mixer", "category": "Home Goods", "price": 250, "description": "Professional-grade mixer for baking.", "image": "https://via.placeholder.com/300"},
+            {"id": 77, "name": "Electric Kettle", "category": "Home Goods", "price": 40, "description": "Rapid boil kettle for tea and coffee.", "image": "https://via.placeholder.com/300"},
+            {"id": 78, "name": "Vacuum Cleaner", "category": "Home Goods", "price": 180, "description": "Powerful vacuum for spotless floors.", "image": "https://via.placeholder.com/300"},
+            {"id": 79, "name": "Iron", "category": "Home Goods", "price": 35, "description": "Steam iron for wrinkle-free clothes.", "image": "https://via.placeholder.com/300"},
+            {"id": 80, "name": "Dish Set", "category": "Home Goods", "price": 80, "description": "16-piece ceramic dish set.", "image": "https://via.placeholder.com/300"},
+            {"id": 81, "name": "Cookware Set", "category": "Home Goods", "price": 150, "description": "Non-stick pots and pans set.", "image": "https://via.placeholder.com/300"},
+            {"id": 82, "name": "Knife Set", "category": "Home Goods", "price": 90, "description": "Professional kitchen knife collection.", "image": "https://via.placeholder.com/300"},
+            {"id": 83, "name": "Bed Sheets", "category": "Home Goods", "price": 55, "description": "Soft cotton bed sheet set.", "image": "https://via.placeholder.com/300"},
+            {"id": 84, "name": "Pillows", "category": "Home Goods", "price": 45, "description": "Memory foam pillows for comfort.", "image": "https://via.placeholder.com/300"},
+            {"id": 85, "name": "Comforter", "category": "Home Goods", "price": 85, "description": "Warm and cozy comforter.", "image": "https://via.placeholder.com/300"},
+            {"id": 86, "name": "Bath Towels", "category": "Home Goods", "price": 35, "description": "Absorbent towel set.", "image": "https://via.placeholder.com/300"},
+            {"id": 87, "name": "Shower Curtain", "category": "Home Goods", "price": 25, "description": "Waterproof decorative shower curtain.", "image": "https://via.placeholder.com/300"},
+            {"id": 88, "name": "Trash Can", "category": "Home Goods", "price": 30, "description": "Stainless steel waste bin.", "image": "https://via.placeholder.com/300"},
+            {"id": 89, "name": "Laundry Basket", "category": "Home Goods", "price": 20, "description": "Collapsible laundry hamper.", "image": "https://via.placeholder.com/300"},
+            {"id": 90, "name": "Storage Bins", "category": "Home Goods", "price": 28, "description": "Set of 4 stackable storage containers.", "image": "https://via.placeholder.com/300"},
+            {"id": 91, "name": "Lamp", "category": "Home Goods", "price": 45, "description": "Modern table lamp with LED bulb.", "image": "https://via.placeholder.com/300"},
+            {"id": 92, "name": "Picture Frames", "category": "Home Goods", "price": 32, "description": "Set of 5 wooden picture frames.", "image": "https://via.placeholder.com/300"},
+            {"id": 9, "name": "Desk Chair", "category": "Furniture", "price": 150, "description": "An ergonomic desk chair for your home office.", "image": "https://via.placeholder.com/300"},
+            {"id": 10, "name": "Bookshelf", "category": "Furniture", "price": 100, "description": "A stylish bookshelf to display your books.", "image": "https://via.placeholder.com/300"},
+            {"id": 93, "name": "Desk", "category": "Furniture", "price": 250, "description": "Spacious work desk with drawers.", "image": "https://via.placeholder.com/300"},
+            {"id": 94, "name": "Sofa", "category": "Furniture", "price": 800, "description": "Comfortable 3-seater sofa.", "image": "https://via.placeholder.com/300"},
+            {"id": 95, "name": "Coffee Table", "category": "Furniture", "price": 180, "description": "Modern glass coffee table.", "image": "https://via.placeholder.com/300"},
+            {"id": 96, "name": "Dining Table", "category": "Furniture", "price": 600, "description": "Wooden dining table seats 6.", "image": "https://via.placeholder.com/300"},
+            {"id": 97, "name": "Dining Chairs", "category": "Furniture", "price": 400, "description": "Set of 4 upholstered dining chairs.", "image": "https://via.placeholder.com/300"},
+            {"id": 98, "name": "Bed Frame", "category": "Furniture", "price": 350, "description": "Queen size wooden bed frame.", "image": "https://via.placeholder.com/300"},
+            {"id": 99, "name": "Mattress", "category": "Furniture", "price": 500, "description": "Memory foam mattress queen size.", "image": "https://via.placeholder.com/300"},
+            {"id": 100, "name": "Nightstand", "category": "Furniture", "price": 90, "description": "Bedside table with drawer.", "image": "https://via.placeholder.com/300"},
+            {"id": 101, "name": "Dresser", "category": "Furniture", "price": 280, "description": "6-drawer dresser for bedroom storage.", "image": "https://via.placeholder.com/300"},
+            {"id": 102, "name": "Wardrobe", "category": "Furniture", "price": 450, "description": "Large wardrobe with hanging space.", "image": "https://via.placeholder.com/300"},
+            {"id": 103, "name": "TV Stand", "category": "Furniture", "price": 140, "description": "Entertainment center with shelves.", "image": "https://via.placeholder.com/300"},
+            {"id": 104, "name": "Recliner", "category": "Furniture", "price": 450, "description": "Leather reclining chair.", "image": "https://via.placeholder.com/300"},
+            {"id": 105, "name": "Ottoman", "category": "Furniture", "price": 120, "description": "Storage ottoman for living room.", "image": "https://via.placeholder.com/300"},
+            {"id": 106, "name": "Bar Stools", "category": "Furniture", "price": 200, "description": "Set of 2 adjustable bar stools.", "image": "https://via.placeholder.com/300"},
+            {"id": 107, "name": "Coat Rack", "category": "Furniture", "price": 60, "description": "Standing coat rack with hooks.", "image": "https://via.placeholder.com/300"},
+            {"id": 108, "name": "Shoe Rack", "category": "Furniture", "price": 50, "description": "Multi-tier shoe organizer.", "image": "https://via.placeholder.com/300"},
+            {"id": 109, "name": "Side Table", "category": "Furniture", "price": 75, "description": "Accent table for living room.", "image": "https://via.placeholder.com/300"},
+            {"id": 110, "name": "Bench", "category": "Furniture", "price": 110, "description": "Entryway bench with storage.", "image": "https://via.placeholder.com/300"},
+            {"id": 111, "name": "Filing Cabinet", "category": "Furniture", "price": 160, "description": "3-drawer metal filing cabinet.", "image": "https://via.placeholder.com/300"},
+            {"id": 112, "name": "Shelving Unit", "category": "Furniture", "price": 130, "description": "5-tier industrial shelving unit.", "image": "https://via.placeholder.com/300"}
+        ]
+    };
+
+    let products = [];
+    let categories = [];
+    let currentPage = 1;
+    let currentFilter = 'All';
+    const productsPerPage = 12;
+
+    // Get URL parameters
+    const getUrlParams = () => {
+        const params = new URLSearchParams(window.location.search);
+        return {
+            category: params.get('category') || 'All',
+            product: params.get('product'),
+            page: parseInt(params.get('page')) || 1
+        };
+    };
+
+    // Update URL without page reload
+    const updateUrl = (params) => {
+        const searchParams = new URLSearchParams();
+        if (params.category && params.category !== 'All') {
+            searchParams.set('category', params.category);
+        }
+        if (params.product) {
+            searchParams.set('product', params.product);
+        }
+        if (params.page && params.page > 1) {
+            searchParams.set('page', params.page);
+        }
+
+        const newUrl = searchParams.toString()
+            ? `${window.location.pathname}?${searchParams.toString()}`
+            : window.location.pathname;
+
+        window.history.pushState({}, '', newUrl);
+    };
+
+    const init = () => {
+        products = productsData.products;
+        categories = ['All', ...new Set(products.map(p => p.category))];
+        renderCategories();
+
+        // Read from URL and render accordingly
+        const params = getUrlParams();
+
+        if (params.product) {
+            const product = products.find(p => p.id === parseInt(params.product));
+            if (product) {
+                viewProductDetails(product);
+            } else {
+                renderProducts(products);
+            }
+        } else {
+            currentFilter = params.category;
+            currentPage = params.page;
+            const filteredProducts = currentFilter === 'All'
+                ? products
+                : products.filter(p => p.category === currentFilter);
+            renderProducts(filteredProducts);
+        }
+    };
+
+    const renderCategories = () => {
+        const categoriesContainer = document.getElementById('categories');
+        categoriesContainer.innerHTML = '';
+
+        categories.forEach(category => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <button class="px-4 py-2 rounded-lg font-medium transition-colors ${
+                currentFilter === category
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }">
+                    ${category}
+                </button>
+            `;
+            li.querySelector('button').addEventListener('click', () => filterByCategory(category));
+            categoriesContainer.appendChild(li);
+        });
+    };
+
+    const renderProducts = (productsToRender) => {
+        const app = document.getElementById('app');
+        const loading = document.getElementById('loading');
+
+        if (loading) loading.style.display = 'flex';
+
+        setTimeout(() => {
+            if (loading) loading.style.display = 'none';
+
+            app.innerHTML = '';
+
+            const totalProducts = productsToRender.length;
+            const totalPages = Math.ceil(totalProducts / productsPerPage);
+            const startIndex = (currentPage - 1) * productsPerPage;
+            const endIndex = startIndex + productsPerPage;
+            const paginatedProducts = productsToRender.slice(startIndex, endIndex);
+
+            const container = document.createElement('div');
+            container.className = 'mb-8';
+
+            const header = document.createElement('div');
+            header.className = 'mb-6';
+            header.innerHTML = `
+                <h2 class="text-2xl font-bold text-gray-800">
+                    ${currentFilter === 'All' ? 'All Products' : currentFilter}
+                </h2>
+                <p class="text-gray-600 mt-1">Showing ${startIndex + 1}-${Math.min(endIndex, totalProducts)} of ${totalProducts} products</p>
+            `;
+            container.appendChild(header);
+
+            const productsGrid = document.createElement('div');
+            productsGrid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6';
+
+            paginatedProducts.forEach(product => {
+                const cardLink = document.createElement('a');
+                cardLink.href = `?product=${product.id}`;
+                cardLink.className = 'block bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300';
+                cardLink.innerHTML = `
+                    <img src="${product.image}" alt="${product.name}" class="w-full h-48 object-cover">
+                    <div class="p-4">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2 line-clamp-1">${product.name}</h3>
+                        <p class="text-sm text-gray-600 mb-3 line-clamp-2">${product.description}</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-2xl font-bold text-blue-600">${product.price}</span>
+                            <span class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                                View Details
+                            </span>
+                        </div>
+                    </div>
+                `;
+                cardLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    viewProductDetails(product);
+                });
+                productsGrid.appendChild(cardLink);
+            });
+
+            container.appendChild(productsGrid);
+            app.appendChild(container);
+
+            if (totalPages > 1) {
+                renderPagination(totalPages);
+            }
+        }, 300);
+    };
+
+    const renderPagination = (totalPages) => {
+        const app = document.getElementById('app');
+        const paginationContainer = document.createElement('div');
+        paginationContainer.className = 'flex justify-center items-center space-x-2 mt-8';
+
+        const prevButton = document.createElement('button');
+        prevButton.textContent = 'Previous';
+        prevButton.className = `px-4 py-2 rounded-lg font-medium transition-colors ${
+            currentPage === 1
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`;
+        prevButton.disabled = currentPage === 1;
+        prevButton.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                updateUrl({ category: currentFilter, page: currentPage });
+                const filteredProducts = currentFilter === 'All' ? products : products.filter(p => p.category === currentFilter);
+                renderProducts(filteredProducts);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+        paginationContainer.appendChild(prevButton);
+
+        const maxPagesToShow = 5;
+        let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+        let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+
+        if (endPage - startPage < maxPagesToShow - 1) {
+            startPage = Math.max(1, endPage - maxPagesToShow + 1);
+        }
+
+        if (startPage > 1) {
+            const firstButton = document.createElement('button');
+            firstButton.textContent = '1';
+            firstButton.className = 'px-4 py-2 rounded-lg font-medium bg-white text-gray-700 hover:bg-gray-100 border border-gray-300';
+            firstButton.addEventListener('click', () => {
+                currentPage = 1;
+                updateUrl({ category: currentFilter, page: 1 });
+                const filteredProducts = currentFilter === 'All' ? products : products.filter(p => p.category === currentFilter);
+                renderProducts(filteredProducts);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            paginationContainer.appendChild(firstButton);
+
+            if (startPage > 2) {
+                const dots = document.createElement('span');
+                dots.textContent = '...';
+                dots.className = 'px-2 text-gray-500';
+                paginationContainer.appendChild(dots);
+            }
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            const button = document.createElement('button');
+            button.textContent = i;
+            button.className = `px-4 py-2 rounded-lg font-medium transition-colors ${
+                i === currentPage
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+            }`;
+            button.addEventListener('click', () => {
+                currentPage = i;
+                updateUrl({ category: currentFilter, page: i });
+                const filteredProducts = currentFilter === 'All' ? products : products.filter(p => p.category === currentFilter);
+                renderProducts(filteredProducts);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            paginationContainer.appendChild(button);
+        }
+
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                const dots = document.createElement('span');
+                dots.textContent = '...';
+                dots.className = 'px-2 text-gray-500';
+                paginationContainer.appendChild(dots);
+            }
+
+            const lastButton = document.createElement('button');
+            lastButton.textContent = totalPages;
+            lastButton.className = 'px-4 py-2 rounded-lg font-medium bg-white text-gray-700 hover:bg-gray-100 border border-gray-300';
+            lastButton.addEventListener('click', () => {
+                currentPage = totalPages;
+                updateUrl({ category: currentFilter, page: totalPages });
+                const filteredProducts = currentFilter === 'All' ? products : products.filter(p => p.category === currentFilter);
+                renderProducts(filteredProducts);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            paginationContainer.appendChild(lastButton);
+        }
+
+        const nextButton = document.createElement('button');
+        nextButton.textContent = 'Next';
+        nextButton.className = `px-4 py-2 rounded-lg font-medium transition-colors ${
+            currentPage === totalPages
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`;
+        nextButton.disabled = currentPage === totalPages;
+        nextButton.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateUrl({ category: currentFilter, page: currentPage });
+                const filteredProducts = currentFilter === 'All' ? products : products.filter(p => p.category === currentFilter);
+                renderProducts(filteredProducts);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+        paginationContainer.appendChild(nextButton);
+
+        app.appendChild(paginationContainer);
+    };
+
+    const filterByCategory = (category) => {
+        currentPage = 1;
+        currentFilter = category;
+
+        // Update URL
+        updateUrl({ category, page: 1 });
+
+        renderCategories();
+        const filteredProducts = category === 'All'
+            ? products
+            : products.filter(p => p.category === category);
+        renderProducts(filteredProducts);
+    };
+
+    const viewProductDetails = (product) => {
+        // Update URL
+        updateUrl({ product: product.id });
+
+        const app = document.getElementById('app');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        app.innerHTML = `
+            <div class="mb-6">
+                <button id="backButton" class="flex items-center text-blue-600 hover:text-blue-800 font-medium transition-colors">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                    Back to Products
+                </button>
+            </div>
+            <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
+                <div class="md:flex">
+                    <div class="md:w-1/2">
+                        <img src="${product.image}" alt="${product.name}" class="w-full h-96 object-cover">
+                    </div>
+                    <div class="md:w-1/2 p-8">
+                        <div class="mb-4">
+                            <span class="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full">
+                                ${product.category}
+                            </span>
+                        </div>
+                        <h2 class="text-3xl font-bold text-gray-800 mb-4">${product.name}</h2>
+                        <p class="text-gray-600 mb-6 leading-relaxed">${product.description}</p>
+                        <div class="mb-6">
+                            <span class="text-4xl font-bold text-blue-600">${product.price}</span>
+                        </div>
+                        <div class="space-y-3">
+                            <button class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold text-lg">
+                                Add to Cart
+                            </button>
+                        </div>
+                        <div class="mt-8 pt-8 border-t border-gray-200">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-3">Product Details</h3>
+                            <ul class="space-y-2 text-gray-600">
+                                <li class="flex items-center">
+                                    <svg class="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
+                                    Free shipping on orders over $50
+                                </li>
+                                <li class="flex items-center">
+                                    <svg class="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
+                                    30-day return policy
+                                </li>
+                                <li class="flex items-center">
+                                    <svg class="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
+                                    Warranty included
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add event listener for back button
+        document.getElementById('backButton').addEventListener('click', () => {
+            updateUrl({ category: currentFilter, page: currentPage });
+            const filteredProducts = currentFilter === 'All'
+                ? products
+                : products.filter(p => p.category === currentFilter);
+            renderProducts(filteredProducts);
+        });
+    };
+
+    // Handle site title click to go home
+    document.getElementById('siteTitle').addEventListener('click', () => {
+        currentPage = 1;
+        currentFilter = 'All';
+        updateUrl({ category: 'All', page: 1 });
+        renderCategories();
+        renderProducts(products);
+    });
+
+    // Handle browser back/forward buttons
+    window.addEventListener('popstate', () => {
+        init();
+    });
+
+    init();
+</script>
+</body>
+</html>
