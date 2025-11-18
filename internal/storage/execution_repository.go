@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -30,19 +31,29 @@ func (r *ExecutionRepository) Create(ctx context.Context, execution *models.Work
 		execution.Status = models.ExecutionStatusRunning
 	}
 
+	// Prepare metadata JSONB with stats and context
+	metadata := map[string]interface{}{
+		"stats":   execution.Stats,
+		"context": execution.Context,
+	}
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
 	query := `
-		INSERT INTO workflow_executions (id, workflow_id, status, started_at, stats, context)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO workflow_executions (id, workflow_id, status, started_at, metadata)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING started_at
 	`
 
-	err := r.db.Pool.QueryRow(ctx, query,
+	err = r.db.Pool.QueryRow(ctx, query,
 		execution.ID,
 		execution.WorkflowID,
 		execution.Status,
 		execution.StartedAt,
-		execution.Stats,
-		execution.Context,
+		metadataJSON,
 	).Scan(&execution.StartedAt)
 
 	if err != nil {
@@ -85,13 +96,23 @@ func (r *ExecutionRepository) UpdateStatus(ctx context.Context, id string, statu
 }
 
 func (r *ExecutionRepository) UpdateStats(ctx context.Context, id string, stats models.ExecutionStats) error {
+	// Store stats in metadata as JSONB
+	statsWrapper := map[string]interface{}{
+		"stats": stats,
+	}
+
+	statsJSON, err := json.Marshal(statsWrapper)
+	if err != nil {
+		return fmt.Errorf("failed to marshal stats: %w", err)
+	}
+
 	query := `
 		UPDATE workflow_executions
-		SET stats = $2
+		SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
 		WHERE id = $1
 	`
 
-	result, err := r.db.Pool.Exec(ctx, query, id, stats)
+	result, err := r.db.Pool.Exec(ctx, query, id, statsJSON)
 	if err != nil {
 		return fmt.Errorf("failed to update execution stats: %w", err)
 	}

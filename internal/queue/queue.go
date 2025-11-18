@@ -42,11 +42,16 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 	}
 
 	query := `
-		INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, metadata, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+		INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, metadata, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 		ON CONFLICT (execution_id, url_hash) DO NOTHING
 		RETURNING created_at
 	`
+
+	// Set default url_type if not provided
+	if item.URLType == "" {
+		item.URLType = "page"
+	}
 
 	err := q.db.Pool.QueryRow(ctx, query,
 		item.ID,
@@ -56,6 +61,9 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 		item.Depth,
 		item.Priority,
 		models.QueueItemStatusPending,
+		item.ParentURLID,
+		item.DiscoveredByNode,
+		item.URLType,
 		metadata,
 	).Scan(&item.CreatedAt)
 
@@ -92,9 +100,14 @@ func (q *URLQueue) EnqueueBatch(ctx context.Context, items []*models.URLQueueIte
 			metadata = item.Metadata
 		}
 
+		// Set default url_type if not provided
+		if item.URLType == "" {
+			item.URLType = "page"
+		}
+
 		batch.Queue(`
-			INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, metadata, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+			INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, metadata, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 			ON CONFLICT (execution_id, url_hash) DO NOTHING
 		`,
 			item.ID,
@@ -104,6 +117,9 @@ func (q *URLQueue) EnqueueBatch(ctx context.Context, items []*models.URLQueueIte
 			item.Depth,
 			item.Priority,
 			models.QueueItemStatusPending,
+			item.ParentURLID,
+			item.DiscoveredByNode,
+			item.URLType,
 			metadata,
 		)
 	}
@@ -136,7 +152,7 @@ func (q *URLQueue) Dequeue(ctx context.Context, executionID string) (*models.URL
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, execution_id, url, url_hash, depth, priority, status, retry_count, error, metadata, created_at, processed_at, locked_at, locked_by
+		RETURNING id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, retry_count, error, metadata, created_at, processed_at, locked_at, locked_by
 	`
 
 	var item models.URLQueueItem
@@ -154,6 +170,9 @@ func (q *URLQueue) Dequeue(ctx context.Context, executionID string) (*models.URL
 		&item.Depth,
 		&item.Priority,
 		&item.Status,
+		&item.ParentURLID,
+		&item.DiscoveredByNode,
+		&item.URLType,
 		&item.RetryCount,
 		&errorVal,
 		&metadataVal,

@@ -50,16 +50,23 @@ type ExecutionContext struct {
 
 // NodeExecution represents the execution of a single node
 type NodeExecution struct {
-	ID          string          `json:"id" db:"id"`
-	ExecutionID string          `json:"execution_id" db:"execution_id"`
-	NodeID      string          `json:"node_id" db:"node_id"`
-	Status      ExecutionStatus `json:"status" db:"status"`
-	StartedAt   time.Time       `json:"started_at" db:"started_at"`
-	CompletedAt *time.Time      `json:"completed_at,omitempty" db:"completed_at"`
-	Input       json.RawMessage `json:"input,omitempty" db:"input"`
-	Output      json.RawMessage `json:"output,omitempty" db:"output"`
-	Error       string          `json:"error,omitempty" db:"error"`
-	RetryCount  int             `json:"retry_count" db:"retry_count"`
+	ID                    string          `json:"id" db:"id"`
+	ExecutionID           string          `json:"execution_id" db:"execution_id"`
+	NodeID                string          `json:"node_id" db:"node_id"`
+	Status                ExecutionStatus `json:"status" db:"status"`
+	URLID                 *string         `json:"url_id,omitempty" db:"url_id"`
+	ParentNodeExecutionID *string         `json:"parent_node_execution_id,omitempty" db:"parent_node_execution_id"`
+	NodeType              *string         `json:"node_type,omitempty" db:"node_type"`
+	URLsDiscovered        int             `json:"urls_discovered" db:"urls_discovered"`
+	ItemsExtracted        int             `json:"items_extracted" db:"items_extracted"`
+	ErrorMessage          *string         `json:"error_message,omitempty" db:"error_message"`
+	DurationMs            *int            `json:"duration_ms,omitempty" db:"duration_ms"`
+	StartedAt             time.Time       `json:"started_at" db:"started_at"`
+	CompletedAt           *time.Time      `json:"completed_at,omitempty" db:"completed_at"`
+	Input                 json.RawMessage `json:"input,omitempty" db:"input"`
+	Output                json.RawMessage `json:"output,omitempty" db:"output"`
+	Error                 string          `json:"error,omitempty" db:"error"`
+	RetryCount            int             `json:"retry_count" db:"retry_count"`
 }
 
 // Scan implements sql.Scanner for ExecutionStats

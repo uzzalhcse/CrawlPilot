@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/uzzalhcse/crawlify/internal/browser"
@@ -17,22 +20,22 @@ import (
 )
 
 type Executor struct {
-	browserPool       *browser.BrowserPool
-	urlQueue          *queue.URLQueue
-	parser            *Parser
-	extractedDataRepo *storage.ExtractedDataRepository
-	nodeExecRepo      *storage.NodeExecutionRepository
-	executionRepo     *storage.ExecutionRepository
+	browserPool        *browser.BrowserPool
+	urlQueue           *queue.URLQueue
+	parser             *Parser
+	extractedItemsRepo *storage.ExtractedItemsRepository
+	nodeExecRepo       *storage.NodeExecutionRepository
+	executionRepo      *storage.ExecutionRepository
 }
 
-func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedDataRepo *storage.ExtractedDataRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository) *Executor {
+func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedItemsRepo *storage.ExtractedItemsRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository) *Executor {
 	return &Executor{
-		browserPool:       browserPool,
-		urlQueue:          urlQueue,
-		parser:            NewParser(),
-		extractedDataRepo: extractedDataRepo,
-		nodeExecRepo:      nodeExecRepo,
-		executionRepo:     executionRepo,
+		browserPool:        browserPool,
+		urlQueue:           urlQueue,
+		parser:             NewParser(),
+		extractedItemsRepo: extractedItemsRepo,
+		nodeExecRepo:       nodeExecRepo,
+		executionRepo:      executionRepo,
 	}
 }
 
@@ -98,10 +101,10 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 			}
 
 			// Get extracted data count from database
-			if e.extractedDataRepo != nil {
-				count, err := e.extractedDataRepo.Count(ctx, executionID)
+			if e.extractedItemsRepo != nil {
+				count, err := e.extractedItemsRepo.GetCount(ctx, executionID)
 				if err == nil {
-					stats.ItemsExtracted = int(count)
+					stats.ItemsExtracted = count
 				}
 			}
 
@@ -134,10 +137,10 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 				}
 
 				// Get final extracted data count
-				if e.extractedDataRepo != nil {
-					count, err := e.extractedDataRepo.Count(ctx, executionID)
+				if e.extractedItemsRepo != nil {
+					count, err := e.extractedItemsRepo.GetCount(ctx, executionID)
 					if err == nil {
-						stats.ItemsExtracted = int(count)
+						stats.ItemsExtracted = count
 					}
 				}
 
@@ -217,15 +220,16 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		shouldExtract := e.shouldExtractData(item.URL, workflow.Config.DataExtractionPatterns)
 
 		if shouldExtract {
+			var lastNodeExecID string
 			if err := e.executeNodeGroup(ctx, workflow.Config.DataExtraction, browserCtx, &execCtx, executionID, item); err != nil {
 				logger.Error("Data extraction failed", zap.Error(err))
 			}
 
 			// Save extracted data to database
-			if e.extractedDataRepo != nil {
+			if e.extractedItemsRepo != nil {
 				extractedData := e.collectExtractedData(&execCtx)
 				if len(extractedData) > 0 {
-					if err := e.saveExtractedData(ctx, executionID, item.URL, extractedData); err != nil {
+					if err := e.saveExtractedItem(ctx, executionID, item.ID, item.URL, extractedData, lastNodeExecID); err != nil {
 						logger.Error("Failed to save extracted data", zap.Error(err), zap.String("url", item.URL))
 					} else {
 						logger.Info("Saved extracted data", zap.String("url", item.URL), zap.Int("fields", len(extractedData)))
@@ -281,10 +285,16 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 	var nodeExecID string
 	if e.nodeExecRepo != nil {
 		inputData, _ := json.Marshal(node.Params)
+
+		// Determine node type from node.Type
+		nodeType := string(node.Type)
+
 		nodeExec := &models.NodeExecution{
 			ExecutionID: executionID,
 			NodeID:      node.ID,
 			Status:      models.ExecutionStatusRunning,
+			URLID:       &item.ID, // Link to the URL being processed
+			NodeType:    &nodeType,
 			StartedAt:   time.Now(),
 			Input:       inputData,
 			RetryCount:  0,
@@ -335,6 +345,11 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		json.Unmarshal(configBytes, &config)
 		result, err = extractionEngine.Extract(config)
 
+		// Store schema name if present for later use
+		if schema, ok := node.Params["schema"].(string); ok && schema != "" {
+			execCtx.Set("_schema", schema)
+		}
+
 	case models.NodeTypeExtractLinks:
 		selector := getStringParam(node.Params, "selector")
 		if selector == "" {
@@ -343,9 +358,15 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		links, linkErr := extractionEngine.ExtractLinks(selector)
 		if linkErr == nil {
 			result = links
-			// Enqueue discovered URLs
-			if err := e.enqueueLinks(ctx, executionID, item, links, node.Params); err != nil {
+			// Enqueue discovered URLs with hierarchy tracking
+			if err := e.enqueueLinks(ctx, executionID, item, links, node.Params, node.ID, nodeExecID); err != nil {
 				logger.Error("Failed to enqueue links", zap.Error(err))
+			} else if e.nodeExecRepo != nil && nodeExecID != "" {
+				// Update node execution with URLs discovered count
+				if nodeExec, getErr := e.nodeExecRepo.GetByID(ctx, nodeExecID); getErr == nil {
+					nodeExec.URLsDiscovered = len(links)
+					e.nodeExecRepo.Update(ctx, nodeExec)
+				}
 			}
 		}
 		err = linkErr
@@ -393,14 +414,20 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 	return err
 }
 
-// enqueueLinks enqueues discovered links
-func (e *Executor) enqueueLinks(ctx context.Context, executionID string, parentItem *models.URLQueueItem, links []string, params map[string]interface{}) error {
+// enqueueLinks enqueues discovered links with hierarchy tracking
+func (e *Executor) enqueueLinks(ctx context.Context, executionID string, parentItem *models.URLQueueItem, links []string, params map[string]interface{}, nodeID, nodeExecID string) error {
 	baseURL, err := url.Parse(parentItem.URL)
 	if err != nil {
 		return err
 	}
 
 	var items []*models.URLQueueItem
+
+	// Determine URL type from params or default
+	urlType := getStringParam(params, "url_type")
+	if urlType == "" {
+		urlType = "page" // default
+	}
 
 	for _, link := range links {
 		// Resolve relative URLs
@@ -417,10 +444,13 @@ func (e *Executor) enqueueLinks(ctx context.Context, executionID string, parentI
 		}
 
 		item := &models.URLQueueItem{
-			ExecutionID: executionID,
-			URL:         absoluteURL,
-			Depth:       parentItem.Depth + 1,
-			Priority:    parentItem.Priority - 10,
+			ExecutionID:      executionID,
+			URL:              absoluteURL,
+			Depth:            parentItem.Depth + 1,
+			Priority:         parentItem.Priority - 10,
+			ParentURLID:      &parentItem.ID, // Track parent URL
+			DiscoveredByNode: &nodeID,        // Track which node discovered this
+			URLType:          urlType,        // Set URL type
 		}
 
 		items = append(items, item)
@@ -517,7 +547,7 @@ func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[st
 	// Get all values from execution context, excluding internal fields
 	contextData := execCtx.GetAll()
 	for key, value := range contextData {
-		// Skip internal fields like url and depth
+		// Skip internal fields like url, depth, but keep _schema
 		if key != "url" && key != "depth" {
 			data[key] = value
 		}
@@ -526,17 +556,167 @@ func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[st
 	return data
 }
 
-// saveExtractedData saves extracted data to database
-func (e *Executor) saveExtractedData(ctx context.Context, executionID, url string, data map[string]interface{}) error {
+// saveExtractedItem saves extracted data to database as ExtractedItem
+func (e *Executor) saveExtractedItem(ctx context.Context, executionID, urlID, url string, data map[string]interface{}, nodeExecID string) error {
 	if len(data) == 0 {
 		return nil
 	}
 
-	extracted := &models.ExtractedData{
-		ExecutionID: executionID,
-		URL:         url,
-		Data:        models.JSONMap(data),
+	// Extract common fields from data
+	var title *string
+	var price *float64
+	var currency *string
+	var availability *string
+	var rating *float64
+	var reviewCount *int
+	var schemaName *string
+
+	// Set default item type
+	itemType := "item"
+
+	// Try to extract schema name from data
+	if schema, ok := data["_schema"].(string); ok {
+		schemaName = &schema
+		itemType = schema
+		delete(data, "_schema")
+	} else if schema, ok := data["schema"].(string); ok {
+		schemaName = &schema
+		itemType = schema
+		delete(data, "schema")
 	}
 
-	return e.extractedDataRepo.Create(ctx, extracted)
+	// Extract title
+	if t, ok := data["title"].(string); ok {
+		title = &t
+	}
+
+	// Extract price
+	if p, ok := data["price"].(string); ok {
+		// Try to parse as float
+		if pf, err := parsePrice(p); err == nil {
+			price = &pf
+		}
+	} else if p, ok := data["price"].(float64); ok {
+		price = &p
+	} else if p, ok := data["price"].(int); ok {
+		pf := float64(p)
+		price = &pf
+	}
+
+	// Extract currency
+	if c, ok := data["currency"].(string); ok {
+		currency = &c
+	} else {
+		defaultCurrency := "USD"
+		currency = &defaultCurrency
+	}
+
+	// Extract availability
+	if a, ok := data["availability"].(string); ok {
+		availability = &a
+	}
+
+	// Extract rating
+	if r, ok := data["rating"].(string); ok {
+		if rf, err := parseRating(r); err == nil {
+			rating = &rf
+		}
+	} else if r, ok := data["rating"].(float64); ok {
+		rating = &r
+	}
+
+	// Extract review count
+	if rc, ok := data["review_count"].(string); ok {
+		if rci, err := parseInt(rc); err == nil {
+			reviewCount = &rci
+		}
+	} else if rc, ok := data["review_count"].(int); ok {
+		reviewCount = &rc
+	} else if rc, ok := data["review_count"].(float64); ok {
+		rci := int(rc)
+		reviewCount = &rci
+	}
+
+	// Store remaining data in attributes
+	attributes := make(models.JSONMap)
+	for k, v := range data {
+		// Skip already extracted fields
+		if k != "title" && k != "price" && k != "currency" && k != "availability" && k != "rating" && k != "review_count" {
+			attributes[k] = v
+		}
+	}
+
+	var nodeExecIDPtr *string
+	if nodeExecID != "" {
+		nodeExecIDPtr = &nodeExecID
+	}
+
+	item := &models.ExtractedItem{
+		ExecutionID:     executionID,
+		URLID:           urlID,
+		NodeExecutionID: nodeExecIDPtr,
+		ItemType:        itemType,
+		SchemaName:      schemaName,
+		Title:           title,
+		Price:           price,
+		Currency:        currency,
+		Availability:    availability,
+		Rating:          rating,
+		ReviewCount:     reviewCount,
+		Attributes:      attributes,
+	}
+
+	return e.extractedItemsRepo.Create(ctx, item)
+}
+
+// Helper functions for parsing extracted data
+func parsePrice(s string) (float64, error) {
+	// Remove currency symbols and whitespace
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "$", "")
+	s = strings.ReplaceAll(s, "€", "")
+	s = strings.ReplaceAll(s, "£", "")
+	s = strings.ReplaceAll(s, "¥", "")
+	s = strings.ReplaceAll(s, ",", "")
+	s = strings.TrimSpace(s)
+
+	if s == "" {
+		return 0, fmt.Errorf("empty price")
+	}
+
+	return strconv.ParseFloat(s, 64)
+}
+
+func parseRating(s string) (float64, error) {
+	// Extract numeric rating from strings like "4.5 out of 5 stars"
+	s = strings.TrimSpace(s)
+
+	// Try direct parsing first
+	if r, err := strconv.ParseFloat(s, 64); err == nil {
+		return r, nil
+	}
+
+	// Try to extract first number
+	re := regexp.MustCompile(`(\d+\.?\d*)`)
+	matches := re.FindStringSubmatch(s)
+	if len(matches) > 1 {
+		return strconv.ParseFloat(matches[1], 64)
+	}
+
+	return 0, fmt.Errorf("could not parse rating")
+}
+
+func parseInt(s string) (int, error) {
+	// Remove commas and whitespace
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, ",", "")
+
+	// Extract first number
+	re := regexp.MustCompile(`(\d+)`)
+	matches := re.FindStringSubmatch(s)
+	if len(matches) > 1 {
+		return strconv.Atoi(matches[1])
+	}
+
+	return strconv.Atoi(s)
 }

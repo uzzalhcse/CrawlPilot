@@ -48,8 +48,8 @@ func main() {
 	// Initialize repositories
 	workflowRepo := storage.NewWorkflowRepository(db)
 	executionRepo := storage.NewExecutionRepository(db)
-	extractedDataRepo := storage.NewExtractedDataRepository(db)
 	nodeExecRepo := storage.NewNodeExecutionRepository(db)
+	extractedItemsRepo := storage.NewExtractedItemsRepository(db)
 
 	// Initialize URL queue
 	urlQueue := queue.NewURLQueue(db)
@@ -98,10 +98,11 @@ func main() {
 
 	// Initialize handlers
 	workflowHandler := handlers.NewWorkflowHandler(workflowRepo)
-	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedDataRepo, nodeExecRepo, browserPool, urlQueue)
+	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedItemsRepo, nodeExecRepo, browserPool, urlQueue)
+	analyticsHandler := handlers.NewAnalyticsHandler(nodeExecRepo, extractedItemsRepo, urlQueue)
 
 	// Routes
-	setupRoutes(app, workflowHandler, executionHandler)
+	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -147,7 +148,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -166,6 +167,9 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	executions.Delete("/:execution_id", executionHandler.StopExecution)
 	executions.Get("/:execution_id/stats", executionHandler.GetQueueStats)
 	executions.Get("/:execution_id/data", executionHandler.GetExtractedData)
+
+	// Analytics/Visualization routes
+	analyticsHandler.RegisterRoutes(api)
 }
 
 func errorHandler(c *fiber.Ctx, err error) error {

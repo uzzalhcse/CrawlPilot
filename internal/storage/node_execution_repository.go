@@ -21,8 +21,9 @@ func NewNodeExecutionRepository(db *PostgresDB) *NodeExecutionRepository {
 // Create creates a new node execution record
 func (r *NodeExecutionRepository) Create(ctx context.Context, nodeExec *models.NodeExecution) error {
 	query := `
-		INSERT INTO node_executions (id, execution_id, node_id, status, started_at, input, retry_count)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO node_executions (id, execution_id, node_id, status, url_id, parent_node_execution_id, 
+									 node_type, started_at, input, retry_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	if nodeExec.ID == "" {
@@ -38,6 +39,9 @@ func (r *NodeExecutionRepository) Create(ctx context.Context, nodeExec *models.N
 		nodeExec.ExecutionID,
 		nodeExec.NodeID,
 		nodeExec.Status,
+		nodeExec.URLID,
+		nodeExec.ParentNodeExecutionID,
+		nodeExec.NodeType,
 		nodeExec.StartedAt,
 		nodeExec.Input,
 		nodeExec.RetryCount,
@@ -50,9 +54,18 @@ func (r *NodeExecutionRepository) Create(ctx context.Context, nodeExec *models.N
 func (r *NodeExecutionRepository) Update(ctx context.Context, nodeExec *models.NodeExecution) error {
 	query := `
 		UPDATE node_executions 
-		SET status = $1, completed_at = $2, output = $3, error = $4, retry_count = $5
-		WHERE id = $6
+		SET status = $1, completed_at = $2, output = $3, error = $4, retry_count = $5,
+		    urls_discovered = $6, items_extracted = $7, error_message = $8, duration_ms = $9
+		WHERE id = $10
 	`
+
+	// Calculate duration if completed
+	var durationMs *int
+	if nodeExec.CompletedAt != nil && !nodeExec.StartedAt.IsZero() {
+		duration := nodeExec.CompletedAt.Sub(nodeExec.StartedAt).Milliseconds()
+		durationInt := int(duration)
+		durationMs = &durationInt
+	}
 
 	_, err := r.db.Pool.Exec(ctx, query,
 		nodeExec.Status,
@@ -60,6 +73,10 @@ func (r *NodeExecutionRepository) Update(ctx context.Context, nodeExec *models.N
 		nodeExec.Output,
 		nodeExec.Error,
 		nodeExec.RetryCount,
+		nodeExec.URLsDiscovered,
+		nodeExec.ItemsExtracted,
+		nodeExec.ErrorMessage,
+		durationMs,
 		nodeExec.ID,
 	)
 
@@ -129,8 +146,9 @@ func (r *NodeExecutionRepository) MarkFailed(ctx context.Context, id string, err
 // GetByExecutionID retrieves all node executions for a given execution
 func (r *NodeExecutionRepository) GetByExecutionID(ctx context.Context, executionID string) ([]*models.NodeExecution, error) {
 	query := `
-		SELECT id, execution_id, node_id, status, started_at, completed_at, 
-		       input, output, error, retry_count
+		SELECT id, execution_id, node_id, status, url_id, parent_node_execution_id, node_type,
+		       urls_discovered, items_extracted, error_message, duration_ms,
+		       started_at, completed_at, input, output, error, retry_count
 		FROM node_executions
 		WHERE execution_id = $1
 		ORDER BY started_at ASC
@@ -154,6 +172,13 @@ func (r *NodeExecutionRepository) GetByExecutionID(ctx context.Context, executio
 			&ne.ExecutionID,
 			&ne.NodeID,
 			&ne.Status,
+			&ne.URLID,
+			&ne.ParentNodeExecutionID,
+			&ne.NodeType,
+			&ne.URLsDiscovered,
+			&ne.ItemsExtracted,
+			&ne.ErrorMessage,
+			&ne.DurationMs,
 			&ne.StartedAt,
 			&completedAt,
 			&input,
@@ -190,8 +215,9 @@ func (r *NodeExecutionRepository) GetByExecutionID(ctx context.Context, executio
 // GetByID retrieves a node execution by ID
 func (r *NodeExecutionRepository) GetByID(ctx context.Context, id string) (*models.NodeExecution, error) {
 	query := `
-		SELECT id, execution_id, node_id, status, started_at, completed_at, 
-		       input, output, error, retry_count
+		SELECT id, execution_id, node_id, status, url_id, parent_node_execution_id, node_type,
+		       urls_discovered, items_extracted, error_message, duration_ms,
+		       started_at, completed_at, input, output, error, retry_count
 		FROM node_executions
 		WHERE id = $1
 	`
@@ -206,6 +232,13 @@ func (r *NodeExecutionRepository) GetByID(ctx context.Context, id string) (*mode
 		&ne.ExecutionID,
 		&ne.NodeID,
 		&ne.Status,
+		&ne.URLID,
+		&ne.ParentNodeExecutionID,
+		&ne.NodeType,
+		&ne.URLsDiscovered,
+		&ne.ItemsExtracted,
+		&ne.ErrorMessage,
+		&ne.DurationMs,
 		&ne.StartedAt,
 		&completedAt,
 		&input,

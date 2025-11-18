@@ -16,32 +16,32 @@ import (
 )
 
 type ExecutionHandler struct {
-	workflowRepo      *storage.WorkflowRepository
-	executionRepo     *storage.ExecutionRepository
-	extractedDataRepo *storage.ExtractedDataRepository
-	nodeExecRepo      *storage.NodeExecutionRepository
-	browserPool       *browser.BrowserPool
-	urlQueue          *queue.URLQueue
-	executor          *workflow.Executor
-	executions        sync.Map // Track running executions
+	workflowRepo       *storage.WorkflowRepository
+	executionRepo      *storage.ExecutionRepository
+	extractedItemsRepo *storage.ExtractedItemsRepository
+	nodeExecRepo       *storage.NodeExecutionRepository
+	browserPool        *browser.BrowserPool
+	urlQueue           *queue.URLQueue
+	executor           *workflow.Executor
+	executions         sync.Map // Track running executions
 }
 
 func NewExecutionHandler(
 	workflowRepo *storage.WorkflowRepository,
 	executionRepo *storage.ExecutionRepository,
-	extractedDataRepo *storage.ExtractedDataRepository,
+	extractedItemsRepo *storage.ExtractedItemsRepository,
 	nodeExecRepo *storage.NodeExecutionRepository,
 	browserPool *browser.BrowserPool,
 	urlQueue *queue.URLQueue,
 ) *ExecutionHandler {
 	return &ExecutionHandler{
-		workflowRepo:      workflowRepo,
-		executionRepo:     executionRepo,
-		extractedDataRepo: extractedDataRepo,
-		nodeExecRepo:      nodeExecRepo,
-		browserPool:       browserPool,
-		urlQueue:          urlQueue,
-		executor:          workflow.NewExecutor(browserPool, urlQueue, extractedDataRepo, nodeExecRepo, executionRepo),
+		workflowRepo:       workflowRepo,
+		executionRepo:      executionRepo,
+		extractedItemsRepo: extractedItemsRepo,
+		nodeExecRepo:       nodeExecRepo,
+		browserPool:        browserPool,
+		urlQueue:           urlQueue,
+		executor:           workflow.NewExecutor(browserPool, urlQueue, extractedItemsRepo, nodeExecRepo, executionRepo),
 	}
 }
 
@@ -192,39 +192,25 @@ func (h *ExecutionHandler) GetQueueStats(c *fiber.Ctx) error {
 func (h *ExecutionHandler) GetExtractedData(c *fiber.Ctx) error {
 	executionID := c.Params("execution_id")
 
-	// Parse query parameters for pagination
-	limit := c.QueryInt("limit", 100)
-	offset := c.QueryInt("offset", 0)
-
-	// Validate pagination parameters
-	if limit < 1 || limit > 1000 {
-		limit = 100
-	}
-	if offset < 0 {
-		offset = 0
-	}
-
-	// Get extracted data
-	data, err := h.extractedDataRepo.GetByExecutionID(context.Background(), executionID, limit, offset)
+	// Get extracted items (no pagination in repository method, returns all)
+	items, err := h.extractedItemsRepo.GetByExecutionID(context.Background(), executionID)
 	if err != nil {
-		logger.Error("Failed to get extracted data", zap.Error(err))
+		logger.Error("Failed to get extracted items", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to retrieve extracted data",
 		})
 	}
 
 	// Get total count
-	total, err := h.extractedDataRepo.Count(context.Background(), executionID)
+	total, err := h.extractedItemsRepo.GetCount(context.Background(), executionID)
 	if err != nil {
-		logger.Error("Failed to count extracted data", zap.Error(err))
+		logger.Error("Failed to count extracted items", zap.Error(err))
 		total = 0
 	}
 
 	return c.JSON(fiber.Map{
 		"execution_id": executionID,
-		"data":         data,
+		"items":        items,
 		"total":        total,
-		"limit":        limit,
-		"offset":       offset,
 	})
 }

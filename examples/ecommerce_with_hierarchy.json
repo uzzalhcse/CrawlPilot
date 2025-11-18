@@ -1,0 +1,137 @@
+{
+  "name": "E-commerce Product Crawler with URL Hierarchy",
+  "description": "Crawls an e-commerce site with proper URL categorization for hierarchy tracking",
+  "start_urls": [
+    "https://books.toscrape.com"
+  ],
+  "max_depth": 3,
+  "nodes": [
+    {
+      "id": "navigate_home",
+      "type": "navigate",
+      "params": {
+        "wait_for": "body",
+        "timeout": 10000
+      }
+    },
+    {
+      "id": "discover_categories",
+      "type": "extract_links",
+      "params": {
+        "selector": ".side_categories ul li a",
+        "url_type": "category",
+        "filter": {
+          "pattern": ".*category.*",
+          "max_links": 20
+        }
+      },
+      "depends_on": ["navigate_home"]
+    },
+    {
+      "id": "navigate_category",
+      "type": "navigate",
+      "params": {
+        "wait_for": ".product_pod",
+        "timeout": 10000
+      },
+      "depends_on": ["discover_categories"]
+    },
+    {
+      "id": "discover_products",
+      "type": "extract_links",
+      "params": {
+        "selector": ".product_pod h3 a",
+        "url_type": "product",
+        "filter": {
+          "pattern": ".*catalogue.*",
+          "max_links": 50
+        }
+      },
+      "depends_on": ["navigate_category"]
+    },
+    {
+      "id": "discover_pagination",
+      "type": "extract_links",
+      "params": {
+        "selector": ".pager .next a",
+        "url_type": "pagination",
+        "filter": {
+          "pattern": ".*page.*"
+        }
+      },
+      "depends_on": ["navigate_category"]
+    },
+    {
+      "id": "navigate_product",
+      "type": "navigate",
+      "params": {
+        "wait_for": ".product_main",
+        "timeout": 10000
+      },
+      "depends_on": ["discover_products"]
+    },
+    {
+      "id": "extract_product_data",
+      "type": "extract_data",
+      "params": {
+        "schema": "book_product",
+        "fields": {
+          "title": {
+            "selector": ".product_main h1",
+            "type": "text"
+          },
+          "price": {
+            "selector": ".product_main .price_color",
+            "type": "text",
+            "transform": "extract_number"
+          },
+          "currency": {
+            "selector": ".product_main .price_color",
+            "type": "text",
+            "transform": "extract_currency"
+          },
+          "availability": {
+            "selector": ".product_main .availability",
+            "type": "text",
+            "transform": "trim"
+          },
+          "rating": {
+            "selector": ".product_main .star-rating",
+            "type": "attribute",
+            "attribute": "class",
+            "transform": "extract_rating"
+          },
+          "description": {
+            "selector": "#product_description + p",
+            "type": "text"
+          },
+          "upc": {
+            "selector": "table.table tr:nth-child(1) td",
+            "type": "text"
+          },
+          "product_type": {
+            "selector": "table.table tr:nth-child(2) td",
+            "type": "text"
+          },
+          "tax": {
+            "selector": "table.table tr:nth-child(5) td",
+            "type": "text",
+            "transform": "extract_number"
+          },
+          "review_count": {
+            "selector": "table.table tr:nth-child(7) td",
+            "type": "text",
+            "transform": "extract_number"
+          }
+        }
+      },
+      "depends_on": ["navigate_product"]
+    }
+  ],
+  "settings": {
+    "concurrent_requests": 3,
+    "request_delay": 1000,
+    "retry_attempts": 3,
+    "user_agent": "Mozilla/5.0 (compatible; CrawlifyBot/1.0)"
+  }
+}
