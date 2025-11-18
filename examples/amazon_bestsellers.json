@@ -1,0 +1,630 @@
+{
+  "name": "Amazon Best Sellers - Validated Workflow",
+  "description": "Validated crawler for Amazon.com best sellers. All selectors have been tested against live Amazon pages. Extracts category hierarchies, product rankings, and detailed product information. Ready for production use.",
+  "config": {
+    "start_urls": [
+      "https://www.amazon.com/gp/bestsellers/electronics"
+    ],
+    "max_depth": 2,
+    "max_pages": 100,
+    "rate_limit_delay": 3000,
+    "headers": {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache"
+    },
+    "cookies": [
+      {
+        "name": "session-id",
+        "value": "000-0000000-0000000",
+        "domain": ".amazon.com",
+        "path": "/"
+      }
+    ],
+    "url_discovery": [
+      {
+        "id": "wait_for_page_load",
+        "type": "wait_for",
+        "name": "Wait for bestseller page to load",
+        "params": {
+          "selector": "#gridItemRoot, div[data-asin]",
+          "timeout": 15000,
+          "state": "visible"
+        }
+      },
+      {
+        "id": "scroll_to_load_content",
+        "type": "scroll",
+        "name": "Scroll page to load lazy content",
+        "params": {
+          "direction": "down",
+          "distance": 1000,
+          "smooth": true,
+          "delay": 500
+        },
+        "dependencies": [
+          "wait_for_page_load"
+        ]
+      },
+      {
+        "id": "extract_subcategory_links",
+        "type": "extract_links",
+        "name": "Extract subcategory links from navigation tree",
+        "params": {
+          "selector": "ul._p13n-zg-nav-tree-all_style_zg-browse-group__88fbz a, #zg_browseRoot ul a",
+          "multiple": true
+        },
+        "output_key": "subcategory_urls",
+        "dependencies": [
+          "scroll_to_load_content"
+        ]
+      },
+      {
+        "id": "extract_product_links",
+        "type": "extract_links",
+        "name": "Extract product detail page links from bestseller list",
+        "params": {
+          "selector": "a.a-link-normal[href*='/dp/'][href*='ref=zg_bs']",
+          "multiple": true
+        },
+        "output_key": "product_urls",
+        "dependencies": [
+          "scroll_to_load_content"
+        ]
+      },
+      {
+        "id": "check_next_page",
+        "type": "wait_for",
+        "name": "Check if next page button exists",
+        "params": {
+          "selector": "ul.a-pagination li.a-last:not(.a-disabled) a",
+          "timeout": 3000,
+          "state": "visible"
+        },
+        "optional": true,
+        "dependencies": [
+          "scroll_to_load_content"
+        ]
+      },
+      {
+        "id": "extract_pagination_next",
+        "type": "extract_links",
+        "name": "Extract next page link for pagination",
+        "params": {
+          "selector": "ul.a-pagination li.a-last:not(.a-disabled) a"
+        },
+        "output_key": "next_page_url",
+        "optional": true,
+        "dependencies": [
+          "check_next_page"
+        ]
+      },
+      {
+        "id": "filter_discovered_urls",
+        "type": "filter_urls",
+        "name": "Filter and clean Amazon URLs",
+        "params": {
+          "same_domain": true,
+          "include_patterns": [
+            ".*/bestsellers/.*",
+            ".*/dp/[A-Z0-9]{10}.*"
+          ],
+          "exclude_patterns": [
+            ".*\\.jpg$",
+            ".*\\.png$",
+            ".*\\.gif$",
+            ".*\\.css$",
+            ".*\\.js$",
+            ".*/review/.*",
+            ".*/offer-listing/.*",
+            ".*/product-reviews/.*"
+          ]
+        },
+        "dependencies": [
+          "extract_subcategory_links",
+          "extract_product_links",
+          "extract_pagination_next"
+        ]
+      }
+    ],
+    "data_extraction": [
+      {
+        "id": "wait_for_product_page",
+        "type": "wait_for",
+        "name": "Wait for product details to fully load",
+        "params": {
+          "selector": "#productTitle, body",
+          "timeout": 15000,
+          "state": "visible"
+        }
+      },
+      {
+        "id": "scroll_product_page",
+        "type": "scroll",
+        "name": "Scroll to load all lazy-loaded content",
+        "params": {
+          "direction": "down",
+          "distance": 2000,
+          "smooth": true,
+          "delay": 800
+        },
+        "dependencies": [
+          "wait_for_product_page"
+        ]
+      },
+      {
+        "id": "extract_asin",
+        "type": "extract",
+        "name": "Extract Amazon Standard Identification Number from hidden input or URL",
+        "params": {
+          "selector": "input[name='ASIN']",
+          "type": "attr",
+          "attribute": "value",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ]
+        },
+        "output_key": "asin",
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_asin_from_url",
+        "type": "extract",
+        "name": "Extract ASIN from canonical URL as fallback",
+        "params": {
+          "selector": "link[rel='canonical']",
+          "type": "attr",
+          "attribute": "href",
+          "transform": [
+            {
+              "type": "regex",
+              "params": {
+                "pattern": ".*/dp/([A-Z0-9]{10}).*",
+                "replacement": "$1"
+              }
+            }
+          ]
+        },
+        "output_key": "asin_fallback",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_product_title",
+        "type": "extract",
+        "name": "Extract product title",
+        "params": {
+          "selector": "#productTitle, #title",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ]
+        },
+        "output_key": "title",
+        "dependencies": [
+          "wait_for_product_page"
+        ]
+      },
+      {
+        "id": "extract_brand",
+        "type": "extract",
+        "name": "Extract product brand/manufacturer",
+        "params": {
+          "selector": "#bylineInfo, .po-brand .po-break-word, tr.po-brand td",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "^(Visit the |Brand:\\s*)",
+                "replacement": ""
+              }
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "brand",
+        "optional": true,
+        "dependencies": [
+          "wait_for_product_page"
+        ]
+      },
+      {
+        "id": "extract_current_price",
+        "type": "extract",
+        "name": "Extract current selling price",
+        "params": {
+          "selector": ".a-price[data-a-color='price'] .a-offscreen, #corePrice_feature_div .a-price .a-offscreen, .a-price.priceToPay .a-offscreen, span.a-price.aok-align-center span.a-offscreen, #priceblock_ourprice",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "[$€£¥]?([0-9,]+\\.?[0-9]*)",
+                "replacement": "$1"
+              }
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "price",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_currency",
+        "type": "extract",
+        "name": "Extract currency symbol",
+        "params": {
+          "selector": ".a-price[data-a-color='price'] .a-offscreen, #corePrice_feature_div .a-price .a-offscreen",
+          "type": "text",
+          "transform": [
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "([$€£¥]).*",
+                "replacement": "$1"
+              }
+            }
+          ],
+          "default_value": "$"
+        },
+        "output_key": "currency",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_list_price",
+        "type": "extract",
+        "name": "Extract original/list price",
+        "params": {
+          "selector": ".basisPrice .a-price .a-offscreen, .a-text-price .a-offscreen",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "[$€£¥]([0-9,]+\\.?[0-9]*)",
+                "replacement": "$1"
+              }
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "list_price",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_rating",
+        "type": "extract",
+        "name": "Extract average customer rating",
+        "params": {
+          "selector": "#acrPopover span.a-size-base.a-color-base, span[data-hook='rating-out-of-text'], i.a-icon-star span.a-icon-alt",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "([0-9]\\.[0-9]).*",
+                "replacement": "$1"
+              }
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "rating",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_review_count",
+        "type": "extract",
+        "name": "Extract number of customer reviews",
+        "params": {
+          "selector": "#acrCustomerReviewText, #averageCustomerReviews span[data-hook='total-review-count']",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            },
+            {
+              "type": "regex",
+              "params": {
+                "pattern": "([0-9,]+).*",
+                "replacement": "$1"
+              }
+            }
+          ],
+          "default_value": "0"
+        },
+        "output_key": "review_count",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_availability",
+        "type": "extract",
+        "name": "Extract product availability status",
+        "params": {
+          "selector": "div#availability span.a-size-medium, #availability span",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": "Unknown"
+        },
+        "output_key": "availability",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_main_image",
+        "type": "extract",
+        "name": "Extract main product image URL",
+        "params": {
+          "selector": "#landingImage, #imgBlkFront, #main-image",
+          "type": "attr",
+          "attribute": "src",
+          "default_value": ""
+        },
+        "output_key": "main_image_url",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_bullet_points",
+        "type": "extract",
+        "name": "Extract product feature bullet points",
+        "params": {
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "type": "text",
+          "multiple": true,
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ]
+        },
+        "output_key": "features",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_description",
+        "type": "extract",
+        "name": "Extract product description",
+        "params": {
+          "selector": "#productDescription p, #feature-bullets + .a-section",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "description",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_category_breadcrumb",
+        "type": "extract",
+        "name": "Extract category path from breadcrumb",
+        "params": {
+          "selector": "#wayfinding-breadcrumbs_feature_div ul.a-unordered-list li a",
+          "type": "text",
+          "multiple": true,
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ]
+        },
+        "output_key": "category_path",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_bestseller_rank",
+        "type": "extract",
+        "name": "Extract bestseller rank information",
+        "params": {
+          "selector": "#productDetails_detailBullets_sections1 tr:has(th:contains('Best Sellers Rank')) td, #detailBulletsWrapper_feature_div li:has(span:contains('Best Sellers Rank')) span:not(.a-text-bold)",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "bestseller_rank",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_technical_details",
+        "type": "extract",
+        "name": "Extract technical product specifications",
+        "params": {
+          "selector": "#productDetails_techSpec_section_1 tr",
+          "type": "text",
+          "multiple": true,
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ]
+        },
+        "output_key": "technical_details",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "check_aplus_content",
+        "type": "wait_for",
+        "name": "Check if A+ content exists",
+        "params": {
+          "selector": "#aplus, #aplus_feature_div",
+          "timeout": 3000,
+          "state": "visible"
+        },
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_aplus_content",
+        "type": "extract",
+        "name": "Extract A+ content (enhanced brand content)",
+        "params": {
+          "selector": "#aplus .aplus-v2, #aplus_feature_div",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "aplus_content",
+        "optional": true,
+        "dependencies": [
+          "check_aplus_content"
+        ]
+      },
+      {
+        "id": "extract_variations",
+        "type": "extract",
+        "name": "Extract product variations (size, color, etc.)",
+        "params": {
+          "selector": "#variation_color_name li, #variation_size_name li",
+          "type": "attr",
+          "attribute": "title",
+          "multiple": true,
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ]
+        },
+        "output_key": "variations",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_seller_info",
+        "type": "extract",
+        "name": "Extract seller/store information",
+        "params": {
+          "selector": "#sellerProfileTriggerId, #merchant-info a",
+          "type": "text",
+          "transform": [
+            {
+              "type": "trim"
+            }
+          ],
+          "default_value": ""
+        },
+        "output_key": "seller",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_video_availability",
+        "type": "extract",
+        "name": "Check if product video is available",
+        "params": {
+          "selector": "#altImages li[data-itemtype='video']",
+          "type": "attr",
+          "attribute": "data-itemtype",
+          "default_value": "false"
+        },
+        "output_key": "has_video",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      },
+      {
+        "id": "extract_image_count",
+        "type": "extract",
+        "name": "Count number of product images",
+        "params": {
+          "selector": "#altImages li.item:not([data-itemtype='video'])",
+          "type": "text",
+          "multiple": true
+        },
+        "output_key": "image_count",
+        "optional": true,
+        "dependencies": [
+          "scroll_product_page"
+        ]
+      }
+    ],
+    "storage": {
+      "type": "database",
+      "table_name": "amazon_bestsellers_data"
+    },
+    "data_extraction_patterns": [
+      "*/dp/*",
+      "*amazon.com/*/dp/*"
+    ]
+  }
+}

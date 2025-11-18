@@ -212,22 +212,28 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		}
 	}
 
-	// Execute data extraction nodes
+	// Execute data extraction nodes only if URL matches extraction patterns
 	if len(workflow.Config.DataExtraction) > 0 {
-		if err := e.executeNodeGroup(ctx, workflow.Config.DataExtraction, browserCtx, &execCtx, executionID, item); err != nil {
-			logger.Error("Data extraction failed", zap.Error(err))
-		}
+		shouldExtract := e.shouldExtractData(item.URL, workflow.Config.DataExtractionPatterns)
 
-		// Save extracted data to database
-		if e.extractedDataRepo != nil {
-			extractedData := e.collectExtractedData(&execCtx)
-			if len(extractedData) > 0 {
-				if err := e.saveExtractedData(ctx, executionID, item.URL, extractedData); err != nil {
-					logger.Error("Failed to save extracted data", zap.Error(err), zap.String("url", item.URL))
-				} else {
-					logger.Info("Saved extracted data", zap.String("url", item.URL), zap.Int("fields", len(extractedData)))
+		if shouldExtract {
+			if err := e.executeNodeGroup(ctx, workflow.Config.DataExtraction, browserCtx, &execCtx, executionID, item); err != nil {
+				logger.Error("Data extraction failed", zap.Error(err))
+			}
+
+			// Save extracted data to database
+			if e.extractedDataRepo != nil {
+				extractedData := e.collectExtractedData(&execCtx)
+				if len(extractedData) > 0 {
+					if err := e.saveExtractedData(ctx, executionID, item.URL, extractedData); err != nil {
+						logger.Error("Failed to save extracted data", zap.Error(err), zap.String("url", item.URL))
+					} else {
+						logger.Info("Saved extracted data", zap.String("url", item.URL), zap.Int("fields", len(extractedData)))
+					}
 				}
 			}
+		} else {
+			logger.Debug("Skipping data extraction - URL doesn't match extraction patterns", zap.String("url", item.URL))
 		}
 	}
 
@@ -445,6 +451,63 @@ func shouldSkipURL(url string, params map[string]interface{}) bool {
 	// Implement URL filtering logic based on params
 	// For example: pattern matching, domain filtering, etc.
 	return false
+}
+
+// shouldExtractData determines if data extraction should run for this URL
+func (e *Executor) shouldExtractData(url string, patterns []string) bool {
+	// If no patterns specified, extract from all URLs (backward compatible)
+	if len(patterns) == 0 {
+		return true
+	}
+
+	// Check if URL matches any of the extraction patterns
+	for _, pattern := range patterns {
+		if matchesPattern(url, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// matchesPattern checks if URL matches a glob-style pattern
+func matchesPattern(url string, pattern string) bool {
+	// Simple pattern matching - supports wildcards
+	// Pattern examples:
+	// - "*/dp/*" matches any URL with /dp/ in it
+	// - "https://www.amazon.com/dp/*" matches Amazon product pages
+	// - "*product*" matches any URL containing "product"
+
+	// Convert glob pattern to simple matching
+	if pattern == "*" {
+		return true
+	}
+
+	// Check if pattern contains the URL or vice versa
+	if len(pattern) > 0 && pattern[0] == '*' && pattern[len(pattern)-1] == '*' {
+		// *pattern* - contains
+		substr := pattern[1 : len(pattern)-1]
+		return len(substr) == 0 || containsString(url, substr)
+	} else if len(pattern) > 0 && pattern[0] == '*' {
+		// *pattern - ends with
+		suffix := pattern[1:]
+		return len(url) >= len(suffix) && url[len(url)-len(suffix):] == suffix
+	} else if len(pattern) > 0 && pattern[len(pattern)-1] == '*' {
+		// pattern* - starts with
+		prefix := pattern[:len(pattern)-1]
+		return len(url) >= len(prefix) && url[:len(prefix)] == prefix
+	}
+
+	// Exact match
+	return url == pattern
+}
+
+// containsString checks if s contains substr
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) &&
+		(s == substr ||
+			(len(s) > len(substr) && (s[:len(substr)] == substr ||
+				containsString(s[1:], substr))))
 }
 
 // collectExtractedData collects all extracted data from execution context

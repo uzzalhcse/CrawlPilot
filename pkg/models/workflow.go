@@ -18,17 +18,18 @@ type Workflow struct {
 
 // WorkflowConfig contains the workflow execution configuration
 type WorkflowConfig struct {
-	StartURLs      []string          `json:"start_urls" yaml:"start_urls"`
-	URLDiscovery   []Node            `json:"url_discovery" yaml:"url_discovery"`
-	DataExtraction []Node            `json:"data_extraction" yaml:"data_extraction"`
-	MaxDepth       int               `json:"max_depth" yaml:"max_depth"`
-	MaxPages       int               `json:"max_pages" yaml:"max_pages"`
-	RateLimitDelay int               `json:"rate_limit_delay" yaml:"rate_limit_delay"`
-	Headers        map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Cookies        []Cookie          `json:"cookies,omitempty" yaml:"cookies,omitempty"`
-	Authentication *AuthConfig       `json:"authentication,omitempty" yaml:"authentication,omitempty"`
-	ProxyConfig    *ProxyConfig      `json:"proxy_config,omitempty" yaml:"proxy_config,omitempty"`
-	Storage        StorageConfig     `json:"storage" yaml:"storage"`
+	StartURLs              []string          `json:"start_urls" yaml:"start_urls"`
+	URLDiscovery           []Node            `json:"url_discovery" yaml:"url_discovery"`
+	DataExtraction         []Node            `json:"data_extraction" yaml:"data_extraction"`
+	DataExtractionPatterns []string          `json:"data_extraction_patterns,omitempty" yaml:"data_extraction_patterns,omitempty"`
+	MaxDepth               int               `json:"max_depth" yaml:"max_depth"`
+	MaxPages               int               `json:"max_pages" yaml:"max_pages"`
+	RateLimitDelay         int               `json:"rate_limit_delay" yaml:"rate_limit_delay"`
+	Headers                map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Cookies                []Cookie          `json:"cookies,omitempty" yaml:"cookies,omitempty"`
+	Authentication         *AuthConfig       `json:"authentication,omitempty" yaml:"authentication,omitempty"`
+	ProxyConfig            *ProxyConfig      `json:"proxy_config,omitempty" yaml:"proxy_config,omitempty"`
+	Storage                StorageConfig     `json:"storage" yaml:"storage"`
 }
 
 // Node represents a single workflow node (atomic task)
