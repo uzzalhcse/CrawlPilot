@@ -25,13 +25,17 @@
         }
       },
       {
-        "id": "discover_product_listings",
-        "type": "extract_links",
-        "name": "Discover Product Listing Pages",
+        "id": "paginate_products",
+        "type": "paginate",
+        "name": "Paginate Through Product Listings",
         "params": {
-          "selector": "ul.block-thumbnail-t--items a",
-          "url_type": "product",
-          "limit": 100
+          "next_selector": "div.direction_.next_ a.btn_",
+          "link_selector": "div.pagination_ ul.number_ li a",
+          "max_pages": 20,
+          "type": "auto",
+          "wait_after": 2000,
+          "item_selector": "ul.block-thumbnail-t--items a",
+          "url_type": "product"
         },
         "dependencies": ["discover_main_categories"]
       }

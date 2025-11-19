@@ -476,6 +476,10 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		selector := getStringParam(node.Params, "selector")
 		err = interactionEngine.Hover(selector)
 
+	case models.NodeTypePaginate:
+		// Pagination node - handles both click-based and link-based pagination
+		result, err = e.executePagination(ctx, node, browserCtx, extractionEngine, executionID, item)
+
 	default:
 		logger.Warn("Unknown node type", zap.String("type", string(node.Type)))
 	}
@@ -979,4 +983,277 @@ func parseInt(s string) (int, error) {
 	}
 
 	return strconv.Atoi(s)
+}
+
+// executePagination handles pagination logic - both click-based and link-based
+func (e *Executor) executePagination(ctx context.Context, node *models.Node, browserCtx *browser.BrowserContext, extractionEngine *extraction.ExtractionEngine, executionID string, item *models.URLQueueItem) (interface{}, error) {
+	// Pagination parameters
+	nextSelector := getStringParam(node.Params, "next_selector")       // Selector for "Next" button/link
+	paginationSelector := getStringParam(node.Params, "link_selector") // Selector for pagination links (1,2,3...)
+	maxPages := getIntParam(node.Params, "max_pages")                  // Maximum pages to paginate (0 = unlimited)
+	paginationType := getStringParam(node.Params, "type")              // "click" or "link" (default: auto-detect)
+	waitAfterClick := getIntParam(node.Params, "wait_after")           // Wait time after click/navigation (ms)
+	itemSelector := getStringParam(node.Params, "item_selector")       // Items to extract from each page
+
+	// Validate parameters
+	if nextSelector == "" && paginationSelector == "" {
+		return nil, fmt.Errorf("pagination requires either next_selector or link_selector")
+	}
+
+	// Default values
+	if maxPages == 0 {
+		maxPages = 100 // Default max pages to prevent infinite loops
+	}
+	if waitAfterClick == 0 {
+		waitAfterClick = 2000 // Default 2 seconds wait
+	}
+
+	logger.Info("Starting pagination",
+		zap.String("url", item.URL),
+		zap.String("next_selector", nextSelector),
+		zap.String("link_selector", paginationSelector),
+		zap.Int("max_pages", maxPages),
+		zap.String("type", paginationType))
+
+	var allLinks []string
+	currentPage := 1
+
+	// Pagination loop
+	for currentPage <= maxPages {
+		logger.Debug("Processing pagination page",
+			zap.Int("page", currentPage),
+			zap.String("url", item.URL))
+
+		// Extract items/links from current page if item_selector is provided
+		if itemSelector != "" {
+			links, err := extractionEngine.ExtractLinks(itemSelector, 0)
+			if err == nil && len(links) > 0 {
+				// Resolve relative URLs
+				baseURL, _ := url.Parse(item.URL)
+				for _, link := range links {
+					linkURL, err := url.Parse(link)
+					if err == nil {
+						absoluteURL := baseURL.ResolveReference(linkURL).String()
+						allLinks = append(allLinks, absoluteURL)
+					}
+				}
+				logger.Debug("Extracted items from page",
+					zap.Int("page", currentPage),
+					zap.Int("items", len(links)))
+			}
+		}
+
+		// Check if we've reached max pages
+		if currentPage >= maxPages {
+			logger.Info("Reached max pages limit", zap.Int("max_pages", maxPages))
+			break
+		}
+
+		// Try to navigate to next page
+		navigated := false
+
+		// Strategy 1: Try next button/link (click-based or href-based)
+		if nextSelector != "" {
+			nextNavigated, err := e.tryNavigateNext(browserCtx, nextSelector, paginationType, waitAfterClick)
+			if err != nil {
+				logger.Debug("Next navigation failed", zap.Error(err))
+			} else if nextNavigated {
+				navigated = true
+				item.URL = browserCtx.Page.URL() // Update current URL
+			}
+		}
+
+		// Strategy 2: Try pagination links if next button didn't work
+		if !navigated && paginationSelector != "" {
+			linkNavigated, err := e.tryNavigatePaginationLink(browserCtx, paginationSelector, currentPage+1, paginationType, waitAfterClick)
+			if err != nil {
+				logger.Debug("Pagination link navigation failed", zap.Error(err))
+			} else if linkNavigated {
+				navigated = true
+				item.URL = browserCtx.Page.URL() // Update current URL
+			}
+		}
+
+		// If no navigation succeeded, we've reached the end
+		if !navigated {
+			logger.Info("No more pages available", zap.Int("pages_processed", currentPage))
+			break
+		}
+
+		currentPage++
+	}
+
+	logger.Info("Pagination completed",
+		zap.Int("pages_processed", currentPage),
+		zap.Int("total_items", len(allLinks)))
+
+	// Enqueue all discovered links if we have them
+	if len(allLinks) > 0 {
+		if err := e.enqueueLinks(ctx, executionID, item, allLinks, node.Params, node.ID, ""); err != nil {
+			logger.Error("Failed to enqueue paginated links", zap.Error(err))
+			return nil, err
+		}
+	}
+
+	return map[string]interface{}{
+		"pages_processed": currentPage,
+		"items_found":     len(allLinks),
+		"links":           allLinks,
+	}, nil
+}
+
+// tryNavigateNext attempts to navigate using the "next" button/link
+func (e *Executor) tryNavigateNext(browserCtx *browser.BrowserContext, nextSelector string, paginationType string, waitAfter int) (bool, error) {
+	page := browserCtx.Page
+
+	// Check if next button exists and is visible
+	locator := page.Locator(nextSelector)
+	count, err := locator.Count()
+	if err != nil || count == 0 {
+		return false, fmt.Errorf("next element not found")
+	}
+
+	// Check if element is disabled or hidden
+	isVisible, err := locator.First().IsVisible()
+	if err != nil || !isVisible {
+		return false, fmt.Errorf("next element not visible")
+	}
+
+	// Check if it's disabled (common for pagination)
+	isDisabled, err := locator.First().IsDisabled()
+	if err == nil && isDisabled {
+		return false, fmt.Errorf("next element is disabled")
+	}
+
+	// Scroll the element into view before interacting
+	err = locator.First().ScrollIntoViewIfNeeded()
+	if err != nil {
+		logger.Warn("Failed to scroll next button into view", zap.Error(err))
+		// Continue anyway - might still work
+	}
+
+	// Small delay after scroll to ensure element is ready
+	time.Sleep(500 * time.Millisecond)
+
+	// Auto-detect type or use specified type
+	if paginationType == "" || paginationType == "auto" {
+		// Try to get href attribute
+		href, err := locator.First().GetAttribute("href")
+		if err == nil && href != "" && href != "#" && href != "javascript:void(0)" {
+			paginationType = "link"
+		} else {
+			paginationType = "click"
+		}
+	}
+
+	currentURL := page.URL()
+
+	// Navigate based on type
+	if paginationType == "link" {
+		// Extract href and navigate
+		href, err := locator.First().GetAttribute("href")
+		if err != nil || href == "" || href == "#" {
+			return false, fmt.Errorf("invalid href")
+		}
+
+		// Resolve relative URL
+		baseURL, _ := url.Parse(currentURL)
+		linkURL, err := url.Parse(href)
+		if err != nil {
+			return false, fmt.Errorf("invalid URL: %w", err)
+		}
+		absoluteURL := baseURL.ResolveReference(linkURL).String()
+
+		// Navigate to the URL
+		_, err = browserCtx.Navigate(absoluteURL)
+		if err != nil {
+			return false, fmt.Errorf("navigation failed: %w", err)
+		}
+	} else {
+		// Click-based navigation
+		err := locator.First().Click()
+		if err != nil {
+			return false, fmt.Errorf("click failed: %w", err)
+		}
+	}
+
+	// Wait after navigation
+	time.Sleep(time.Duration(waitAfter) * time.Millisecond)
+
+	// Verify URL changed or content loaded
+	newURL := page.URL()
+	if newURL == currentURL && paginationType == "link" {
+		return false, fmt.Errorf("URL did not change after navigation")
+	}
+
+	return true, nil
+}
+
+// tryNavigatePaginationLink attempts to navigate using pagination number links
+func (e *Executor) tryNavigatePaginationLink(browserCtx *browser.BrowserContext, linkSelector string, pageNumber int, paginationType string, waitAfter int) (bool, error) {
+	page := browserCtx.Page
+
+	// Find all pagination links
+	locator := page.Locator(linkSelector)
+	count, err := locator.Count()
+	if err != nil || count == 0 {
+		return false, fmt.Errorf("pagination links not found")
+	}
+
+	// Try to find link with matching page number
+	var targetLocator interface{} = nil
+	for i := 0; i < count; i++ {
+		element := locator.Nth(i)
+		text, err := element.InnerText()
+		if err == nil {
+			text = strings.TrimSpace(text)
+			if text == strconv.Itoa(pageNumber) {
+				targetLocator = element
+				break
+			}
+		}
+	}
+
+	if targetLocator == nil {
+		return false, fmt.Errorf("page number %d not found", pageNumber)
+	}
+
+	// Scroll the pagination link into view before interacting
+	err = targetLocator.(interface{ ScrollIntoViewIfNeeded() error }).ScrollIntoViewIfNeeded()
+	if err != nil {
+		logger.Warn("Failed to scroll pagination link into view", zap.Error(err))
+		// Continue anyway - might still work
+	}
+
+	// Small delay after scroll to ensure element is ready
+	time.Sleep(500 * time.Millisecond)
+
+	// Navigate using the found link
+	currentURL := page.URL()
+
+	if paginationType == "link" || paginationType == "" {
+		// Try href first
+		href, err := targetLocator.(interface{ GetAttribute(string) (string, error) }).GetAttribute("href")
+		if err == nil && href != "" && href != "#" {
+			baseURL, _ := url.Parse(currentURL)
+			linkURL, err := url.Parse(href)
+			if err == nil {
+				absoluteURL := baseURL.ResolveReference(linkURL).String()
+				_, err = browserCtx.Navigate(absoluteURL)
+				if err == nil {
+					time.Sleep(time.Duration(waitAfter) * time.Millisecond)
+					return true, nil
+				}
+			}
+		}
+	}
+
+	// Fall back to click
+	err = targetLocator.(interface{ Click() error }).Click()
+	if err != nil {
+		return false, fmt.Errorf("click failed: %w", err)
+	}
+
+	time.Sleep(time.Duration(waitAfter) * time.Millisecond)
+	return true, nil
 }

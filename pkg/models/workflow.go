@@ -51,6 +51,7 @@ const (
 	NodeTypeExtractLinks NodeType = "extract_links"
 	NodeTypeFilterURLs   NodeType = "filter_urls"
 	NodeTypeNavigate     NodeType = "navigate"
+	NodeTypePaginate     NodeType = "paginate"
 
 	// Interaction nodes
 	NodeTypeClick      NodeType = "click"

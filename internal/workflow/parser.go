@@ -110,6 +110,7 @@ func (p *Parser) isValidNodeType(nodeType models.NodeType) bool {
 		models.NodeTypeExtractLinks,
 		models.NodeTypeFilterURLs,
 		models.NodeTypeNavigate,
+		models.NodeTypePaginate,
 		models.NodeTypeClick,
 		models.NodeTypeScroll,
 		models.NodeTypeType,
