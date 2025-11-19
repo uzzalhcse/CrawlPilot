@@ -123,3 +123,158 @@ func (r *ExecutionRepository) UpdateStats(ctx context.Context, id string, stats 
 
 	return nil
 }
+
+func (r *ExecutionRepository) GetByID(ctx context.Context, id string) (*models.WorkflowExecution, error) {
+	query := `
+		SELECT id, workflow_id, status, started_at, completed_at, error, metadata
+		FROM workflow_executions
+		WHERE id = $1
+	`
+
+	var execution models.WorkflowExecution
+	var metadataJSON []byte
+	var completedAt *time.Time
+	var errorMsg *string
+
+	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
+		&execution.ID,
+		&execution.WorkflowID,
+		&execution.Status,
+		&execution.StartedAt,
+		&completedAt,
+		&errorMsg,
+		&metadataJSON,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get execution: %w", err)
+	}
+
+	if completedAt != nil {
+		execution.CompletedAt = completedAt
+	}
+
+	if errorMsg != nil {
+		execution.Error = *errorMsg
+	}
+
+	// Parse metadata
+	if len(metadataJSON) > 0 {
+		var metadata map[string]interface{}
+		if err := json.Unmarshal(metadataJSON, &metadata); err == nil {
+			if statsData, ok := metadata["stats"]; ok {
+				statsBytes, _ := json.Marshal(statsData)
+				json.Unmarshal(statsBytes, &execution.Stats)
+			}
+		}
+	}
+
+	return &execution, nil
+}
+
+func (r *ExecutionRepository) List(ctx context.Context, workflowID, status string, limit, offset int) ([]*models.WorkflowExecution, error) {
+	query := `
+		SELECT id, workflow_id, status, started_at, completed_at, error, metadata
+		FROM workflow_executions
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argIndex := 1
+
+	if workflowID != "" {
+		query += fmt.Sprintf(" AND workflow_id = $%d", argIndex)
+		args = append(args, workflowID)
+		argIndex++
+	}
+
+	if status != "" {
+		query += fmt.Sprintf(" AND status = $%d", argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	query += " ORDER BY started_at DESC"
+	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list executions: %w", err)
+	}
+	defer rows.Close()
+
+	var executions []*models.WorkflowExecution
+
+	for rows.Next() {
+		var execution models.WorkflowExecution
+		var metadataJSON []byte
+		var completedAt *time.Time
+		var errorMsg *string
+
+		err := rows.Scan(
+			&execution.ID,
+			&execution.WorkflowID,
+			&execution.Status,
+			&execution.StartedAt,
+			&completedAt,
+			&errorMsg,
+			&metadataJSON,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan execution: %w", err)
+		}
+
+		if completedAt != nil {
+			execution.CompletedAt = completedAt
+		}
+
+		if errorMsg != nil {
+			execution.Error = *errorMsg
+		}
+
+		// Parse metadata
+		if len(metadataJSON) > 0 {
+			var metadata map[string]interface{}
+			if err := json.Unmarshal(metadataJSON, &metadata); err == nil {
+				if statsData, ok := metadata["stats"]; ok {
+					statsBytes, _ := json.Marshal(statsData)
+					json.Unmarshal(statsBytes, &execution.Stats)
+				}
+			}
+		}
+
+		executions = append(executions, &execution)
+	}
+
+	return executions, nil
+}
+
+func (r *ExecutionRepository) Count(ctx context.Context, workflowID, status string) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM workflow_executions
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argIndex := 1
+
+	if workflowID != "" {
+		query += fmt.Sprintf(" AND workflow_id = $%d", argIndex)
+		args = append(args, workflowID)
+		argIndex++
+	}
+
+	if status != "" {
+		query += fmt.Sprintf(" AND status = $%d", argIndex)
+		args = append(args, status)
+	}
+
+	var count int
+	err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count executions: %w", err)
+	}
+
+	return count, nil
+}

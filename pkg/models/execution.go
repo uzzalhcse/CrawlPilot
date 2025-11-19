@@ -7,14 +7,15 @@ import (
 
 // WorkflowExecution represents a single execution instance of a workflow
 type WorkflowExecution struct {
-	ID          string           `json:"id" db:"id"`
-	WorkflowID  string           `json:"workflow_id" db:"workflow_id"`
-	Status      ExecutionStatus  `json:"status" db:"status"`
-	StartedAt   time.Time        `json:"started_at" db:"started_at"`
-	CompletedAt *time.Time       `json:"completed_at,omitempty" db:"completed_at"`
-	Error       string           `json:"error,omitempty" db:"error"`
-	Stats       ExecutionStats   `json:"stats" db:"stats"`
-	Context     ExecutionContext `json:"context" db:"context"`
+	ID           string           `json:"id" db:"id"`
+	WorkflowID   string           `json:"workflow_id" db:"workflow_id"`
+	WorkflowName string           `json:"workflow_name,omitempty" db:"-"`
+	Status       ExecutionStatus  `json:"status" db:"status"`
+	StartedAt    time.Time        `json:"started_at" db:"started_at"`
+	CompletedAt  *time.Time       `json:"completed_at,omitempty" db:"completed_at"`
+	Error        string           `json:"error,omitempty" db:"error"`
+	Stats        ExecutionStats   `json:"stats" db:"stats"`
+	Context      ExecutionContext `json:"context" db:"context"`
 }
 
 // ExecutionStatus represents the status of a workflow execution
