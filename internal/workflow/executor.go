@@ -449,7 +449,10 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		if selector == "" {
 			selector = "a"
 		}
-		links, linkErr := extractionEngine.ExtractLinks(selector)
+		// Get limit parameter if specified (0 means no limit)
+		limit := getIntParam(node.Params, "limit")
+
+		links, linkErr := extractionEngine.ExtractLinks(selector, limit)
 		if linkErr == nil {
 			result = links
 			// Enqueue discovered URLs with hierarchy tracking

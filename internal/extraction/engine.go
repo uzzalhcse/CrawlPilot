@@ -20,6 +20,7 @@ type ExtractConfig struct {
 	Type         string                 `json:"type" yaml:"type"` // text, attr, html, href, src
 	Attribute    string                 `json:"attribute,omitempty" yaml:"attribute,omitempty"`
 	Multiple     bool                   `json:"multiple,omitempty" yaml:"multiple,omitempty"`
+	Limit        int                    `json:"limit,omitempty" yaml:"limit,omitempty"`         // Limit for multiple extraction (0 = no limit)
 	Transform    interface{}            `json:"transform,omitempty" yaml:"transform,omitempty"` // Can be string or []TransformConfig
 	Fields       map[string]interface{} `json:"fields,omitempty" yaml:"fields,omitempty"`
 	DefaultValue interface{}            `json:"default_value,omitempty" yaml:"default_value,omitempty"`
@@ -121,6 +122,11 @@ func (ee *ExtractionEngine) extractMultiple(config ExtractConfig) (interface{}, 
 			return config.DefaultValue, nil
 		}
 		return []interface{}{}, nil
+	}
+
+	// Apply limit if specified (0 means no limit)
+	if config.Limit > 0 && config.Limit < count {
+		count = config.Limit
 	}
 
 	var results []interface{}
@@ -375,8 +381,8 @@ func (ee *ExtractionEngine) applyTransformations(value string, transforms []Tran
 	return result, nil
 }
 
-// ExtractLinks extracts all links from the page
-func (ee *ExtractionEngine) ExtractLinks(selector string) ([]string, error) {
+// ExtractLinks extracts all links from the page with optional limit
+func (ee *ExtractionEngine) ExtractLinks(selector string, limit int) ([]string, error) {
 	content, err := ee.page.Content()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get page content: %w", err)
@@ -389,6 +395,11 @@ func (ee *ExtractionEngine) ExtractLinks(selector string) ([]string, error) {
 
 	var links []string
 	doc.Find(selector).Each(func(i int, s *goquery.Selection) {
+		// If limit is set and we've reached it, stop extracting
+		if limit > 0 && len(links) >= limit {
+			return
+		}
+
 		href, exists := s.Attr("href")
 		if exists && href != "" {
 			links = append(links, href)

@@ -5,7 +5,7 @@
     "start_urls": [
       "https://www.columbiasports.co.jp/shop/default.aspx"
     ],
-    "max_depth": 1,
+    "max_depth": 3,
     "max_pages": 100,
     "rate_limit_delay": 2000,
     "storage": {
@@ -21,7 +21,8 @@
         "name": "Discover Main Product Categories a",
         "params": {
           "selector": "ul.block-header-gnav li a",
-          "url_type": "category"
+          "url_type": "category",
+          "limit": 2
         }
       },
       {
@@ -30,7 +31,8 @@
         "name": "Discover Product Listing Pages",
         "params": {
           "selector": "ul.block-thumbnail-t--items a",
-          "url_type": "product"
+          "url_type": "product",
+          "limit": 100
         },
         "dependencies": ["discover_main_categories"]
       }
@@ -43,6 +45,7 @@
         "params": {
           "schema": "columbia_product",
           "timeout": 10000,
+          "limit": 10,
           "fields": {
             "title": {
               "selector": "title",

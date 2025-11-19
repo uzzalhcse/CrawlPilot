@@ -27,7 +27,8 @@
         "name": "Discover Main Product Categories a",
         "params": {
           "selector": "ul.Header_Navigation_List_Item_Sub_Group_Inner a",
-          "url_type": "category"
+          "url_type": "category",
+          "limit": 5
         }
       },
       {
@@ -36,7 +37,8 @@
         "name": "Discover Product Listing Pages",
         "params": {
           "selector": "div.CategoryTop_Series_Item_Content_List a",
-          "url_type": "product"
+          "url_type": "product",
+          "limit": 10
         },
         "dependencies": ["discover_main_categories"]
       }
