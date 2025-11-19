@@ -1,0 +1,481 @@
+{
+	"info": {
+		"_postman_id": "crawlify-api-collection",
+		"name": "Crawlify API Collection",
+		"description": "Complete API collection for Crawlify web crawler with pagination support",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "workflow_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "execution_id",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health Check",
+			"item": [
+				{
+					"name": "Check API Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Check if the API and database are healthy"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Workflows",
+			"item": [
+				{
+					"name": "Create Workflow",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"workflow_id\", jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Columbia Products Crawler\",\n  \"description\": \"Crawl Columbia Sports website with pagination support\",\n  \"config\": {\n    \"start_urls\": [\n      \"https://www.columbiasports.co.jp/shop/r/r101010/\"\n    ],\n    \"max_depth\": 3,\n    \"rate_limit_delay\": 2000,\n    \"headers\": {\n      \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\"\n    },\n    \"storage\": {\n      \"type\": \"database\"\n    },\n    \"url_discovery\": [\n      {\n        \"id\": \"discover_categories\",\n        \"type\": \"extract_links\",\n        \"name\": \"Discover Product Categories\",\n        \"params\": {\n          \"selector\": \"ul.block-header-gnav li a\",\n          \"url_type\": \"category\",\n          \"limit\": 2\n        }\n      },\n      {\n        \"id\": \"paginate_products\",\n        \"type\": \"paginate\",\n        \"name\": \"Paginate Through Products\",\n        \"params\": {\n          \"next_selector\": \"div.direction_.next_ a.btn_\",\n          \"link_selector\": \"div.pagination_ ul.number_ li a\",\n          \"max_pages\": 5,\n          \"type\": \"auto\",\n          \"wait_after\": 2000,\n          \"item_selector\": \"ul.block-thumbnail-t--items a\",\n          \"url_type\": \"product\"\n        },\n        \"dependencies\": [\"discover_categories\"]\n      }\n    ],\n    \"data_extraction\": [\n      {\n        \"id\": \"extract_product_data\",\n        \"type\": \"extract\",\n        \"name\": \"Extract Product Details\",\n        \"params\": {\n          \"schema\": \"product\",\n          \"fields\": {\n            \"title\": {\n              \"selector\": \"h1.product-title\",\n              \"type\": \"text\"\n            },\n            \"price\": {\n              \"selector\": \".price\",\n              \"type\": \"text\"\n            },\n            \"description\": {\n              \"selector\": \".product-description\",\n              \"type\": \"text\"\n            }\n          }\n        }\n      }\n    ]\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows"]
+						},
+						"description": "Create a new workflow configuration"
+					},
+					"response": []
+				},
+				{
+					"name": "List All Workflows",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows?limit=50&offset=0",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows"],
+							"query": [
+								{
+									"key": "status",
+									"value": "active",
+									"disabled": true,
+									"description": "Filter by status: draft, active, inactive"
+								},
+								{
+									"key": "limit",
+									"value": "50",
+									"description": "Number of workflows to return"
+								},
+								{
+									"key": "offset",
+									"value": "0",
+									"description": "Pagination offset"
+								}
+							]
+						},
+						"description": "List all workflows with optional filtering"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Workflow by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows", "{{workflow_id}}"]
+						},
+						"description": "Get a specific workflow by ID"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Workflow",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Workflow Name\",\n  \"description\": \"Updated description\",\n  \"status\": \"active\",\n  \"config\": {\n    \"start_urls\": [\"https://example.com\"],\n    \"max_depth\": 2,\n    \"rate_limit_delay\": 1000,\n    \"storage\": {\n      \"type\": \"database\"\n    },\n    \"url_discovery\": [],\n    \"data_extraction\": []\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows", "{{workflow_id}}"]
+						},
+						"description": "Update an existing workflow"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Workflow Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"active\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}/status",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows", "{{workflow_id}}", "status"]
+						},
+						"description": "Update workflow status (draft, active, inactive)"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Workflow",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows", "{{workflow_id}}"]
+						},
+						"description": "Delete a workflow by ID"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Executions",
+			"item": [
+				{
+					"name": "Start Workflow Execution",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"execution_id\", jsonData.execution_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows/{{workflow_id}}/execute",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows", "{{workflow_id}}", "execute"]
+						},
+						"description": "Start executing a workflow"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Execution Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}"]
+						},
+						"description": "Get the status of a running or completed execution"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Queue Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}/stats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}", "stats"]
+						},
+						"description": "Get queue statistics including pending, processing, completed, and failed URLs"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Extracted Data",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}/data",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}", "data"]
+						},
+						"description": "Get all extracted data from the execution"
+					},
+					"response": []
+				},
+				{
+					"name": "Stop Execution",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}"]
+						},
+						"description": "Stop a running execution"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Analytics",
+			"item": [
+				{
+					"name": "Get Execution Timeline",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}/timeline",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}", "timeline"]
+						},
+						"description": "Get chronological timeline of all node executions"
+					},
+					"response": []
+				},
+				{
+					"name": "Get URL Hierarchy",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}/hierarchy",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}", "hierarchy"]
+						},
+						"description": "Get URL discovery hierarchy tree showing parent-child relationships"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Performance Metrics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}/performance",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}", "performance"]
+						},
+						"description": "Get performance metrics for each node type including average duration and success rates"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Items with Hierarchy",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}/items-with-hierarchy",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}", "items-with-hierarchy"]
+						},
+						"description": "Get extracted items with their URL hierarchy showing where each item was discovered"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Bottlenecks",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/executions/{{execution_id}}/bottlenecks?threshold=5000",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "executions", "{{execution_id}}", "bottlenecks"],
+							"query": [
+								{
+									"key": "threshold",
+									"value": "5000",
+									"description": "Duration threshold in milliseconds (default: 5000)"
+								}
+							]
+						},
+						"description": "Identify slow or failed node executions that may be bottlenecks"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Examples",
+			"item": [
+				{
+					"name": "Create Simple E-commerce Crawler",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"workflow_id\", jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Simple E-commerce Crawler\",\n  \"description\": \"Basic crawler with URL discovery limits\",\n  \"config\": {\n    \"start_urls\": [\"https://example.com\"],\n    \"max_depth\": 2,\n    \"rate_limit_delay\": 1500,\n    \"storage\": {\n      \"type\": \"database\"\n    },\n    \"url_discovery\": [\n      {\n        \"id\": \"discover_categories\",\n        \"type\": \"extract_links\",\n        \"name\": \"Discover Categories\",\n        \"params\": {\n          \"selector\": \"nav.categories a\",\n          \"url_type\": \"category\",\n          \"limit\": 5\n        }\n      },\n      {\n        \"id\": \"discover_products\",\n        \"type\": \"extract_links\",\n        \"name\": \"Discover Products\",\n        \"params\": {\n          \"selector\": \"div.product a\",\n          \"url_type\": \"product\",\n          \"limit\": 10\n        },\n        \"dependencies\": [\"discover_categories\"]\n      }\n    ],\n    \"data_extraction\": [\n      {\n        \"id\": \"extract_product\",\n        \"type\": \"extract\",\n        \"name\": \"Extract Product Data\",\n        \"params\": {\n          \"schema\": \"product\",\n          \"fields\": {\n            \"name\": {\n              \"selector\": \"h1.product-name\",\n              \"type\": \"text\"\n            },\n            \"price\": {\n              \"selector\": \".price\",\n              \"type\": \"text\"\n            }\n          }\n        }\n      }\n    ]\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows"]
+						},
+						"description": "Example: Simple crawler with URL discovery limits"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Crawler with Pagination",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"workflow_id\", jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Pagination Example Crawler\",\n  \"description\": \"Crawler with automatic pagination support\",\n  \"config\": {\n    \"start_urls\": [\"https://example.com/products\"],\n    \"max_depth\": 2,\n    \"rate_limit_delay\": 2000,\n    \"storage\": {\n      \"type\": \"database\"\n    },\n    \"url_discovery\": [\n      {\n        \"id\": \"paginate_listings\",\n        \"type\": \"paginate\",\n        \"name\": \"Paginate Product Listings\",\n        \"params\": {\n          \"next_selector\": \"a.next-page\",\n          \"link_selector\": \"div.pagination a.page-number\",\n          \"max_pages\": 10,\n          \"type\": \"auto\",\n          \"wait_after\": 2000,\n          \"item_selector\": \"div.product-item a\",\n          \"url_type\": \"product\"\n        }\n      }\n    ],\n    \"data_extraction\": [\n      {\n        \"id\": \"extract_product\",\n        \"type\": \"extract\",\n        \"name\": \"Extract Product Data\",\n        \"params\": {\n          \"schema\": \"product\",\n          \"fields\": {\n            \"title\": {\n              \"selector\": \"h1.title\",\n              \"type\": \"text\"\n            },\n            \"price\": {\n              \"selector\": \".price\",\n              \"type\": \"text\"\n            },\n            \"image\": {\n              \"selector\": \"img.product-image\",\n              \"type\": \"src\"\n            }\n          }\n        }\n      }\n    ]\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows"]
+						},
+						"description": "Example: Crawler with automatic pagination"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Multi-Item Extraction Crawler",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"workflow_id\", jsonData.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Multi-Item Extraction with Limits\",\n  \"description\": \"Extract multiple items from a single page with limits\",\n  \"config\": {\n    \"start_urls\": [\"https://example.com/listings\"],\n    \"max_depth\": 1,\n    \"rate_limit_delay\": 1000,\n    \"storage\": {\n      \"type\": \"database\"\n    },\n    \"url_discovery\": [],\n    \"data_extraction\": [\n      {\n        \"id\": \"extract_products\",\n        \"type\": \"extract\",\n        \"name\": \"Extract Multiple Products\",\n        \"params\": {\n          \"schema\": \"product\",\n          \"selector\": \"div.product-item\",\n          \"multiple\": true,\n          \"limit\": 20,\n          \"fields\": {\n            \"title\": {\n              \"selector\": \"h2.title\",\n              \"type\": \"text\"\n            },\n            \"price\": {\n              \"selector\": \".price\",\n              \"type\": \"text\"\n            },\n            \"link\": {\n              \"selector\": \"a\",\n              \"type\": \"href\"\n            }\n          }\n        }\n      }\n    ]\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/workflows",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "workflows"]
+						},
+						"description": "Example: Extract multiple items with limit parameter"
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
