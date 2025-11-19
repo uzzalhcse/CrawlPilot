@@ -54,8 +54,7 @@ const getStatusVariant = (status: string) => {
 }
 
 const handleCreateWorkflow = () => {
-  selectedWorkflow.value = null
-  showCreateDialog.value = true
+  router.push('/workflows/create')
 }
 
 const handleEditWorkflow = (workflow: any) => {

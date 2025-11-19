@@ -1,28 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useWorkflowsStore } from '@/stores/workflows'
 import type { WorkflowNode, WorkflowEdge } from '@/types'
 import WorkflowBuilder from '@/components/workflow-builder/WorkflowBuilder.vue'
-import { Loader2 } from 'lucide-vue-next'
 
-const route = useRoute()
 const router = useRouter()
 const workflowsStore = useWorkflowsStore()
-
-const workflowId = route.params.id as string
-const loading = ref(true)
-const error = ref<string | null>(null)
-
-onMounted(async () => {
-  try {
-    await workflowsStore.fetchWorkflowById(workflowId)
-  } catch (e: any) {
-    error.value = e.message || 'Failed to load workflow'
-  } finally {
-    loading.value = false
-  }
-})
 
 async function handleSave(data: {
   name: string
@@ -36,7 +19,12 @@ async function handleSave(data: {
       return
     }
 
-    // Convert nodes and edges back to workflow config
+    if (data.nodes.length === 0) {
+      alert('Please add at least one node to the workflow')
+      return
+    }
+
+    // Convert nodes and edges to workflow config
     const urlDiscoveryNodes = data.nodes
       .filter(n => ['fetch', 'extract_links', 'filter_urls', 'navigate', 'paginate'].includes(n.data.nodeType))
       .map(n => convertToBackendNode(n, data.edges))
@@ -57,36 +45,28 @@ async function handleSave(data: {
     }
 
     const config = {
-      start_urls: workflowsStore.currentWorkflow?.config.start_urls || [],
-      max_depth: workflowsStore.currentWorkflow?.config.max_depth || 3,
-      rate_limit_delay: workflowsStore.currentWorkflow?.config.rate_limit_delay || 1000,
+      start_urls: [],
+      max_depth: 3,
+      rate_limit_delay: 1000,
       url_discovery: urlDiscoveryNodes,
       data_extraction: dataExtractionNodes,
-      storage: workflowsStore.currentWorkflow?.config.storage || {
-        type: 'database'
+      storage: {
+        type: 'database' as const
       }
     }
 
-    await workflowsStore.updateWorkflow(workflowId, {
+    const workflow = await workflowsStore.createWorkflow({
       name: data.name,
       description: data.description,
       config
     })
 
-    alert('Workflow saved successfully!')
+    alert('Workflow created successfully!')
+    router.push(`/workflows/${workflow.id}`)
   } catch (e: any) {
     const errorMessage = e.response?.data?.error || e.message || 'Unknown error'
-    alert(`Failed to save workflow: ${errorMessage}`)
-    console.error('Save error:', e)
-  }
-}
-
-async function handleExecute() {
-  try {
-    const result = await workflowsStore.executeWorkflow(workflowId)
-    router.push(`/executions/${result.execution_id}`)
-  } catch (e: any) {
-    alert('Failed to execute workflow: ' + (e.message || 'Unknown error'))
+    alert(`Failed to create workflow: ${errorMessage}`)
+    console.error('Create error:', e)
   }
 }
 
@@ -107,29 +87,16 @@ function convertToBackendNode(node: WorkflowNode, edges: WorkflowEdge[]) {
     retry: node.data.retry
   }
 }
+
+function handleExecute() {
+  alert('Please save the workflow first before executing')
+}
 </script>
 
 <template>
   <div class="h-screen">
-    <!-- Loading State -->
-    <div v-if="loading" class="flex items-center justify-center h-full">
-      <Loader2 class="w-8 h-8 animate-spin text-primary" />
-    </div>
-
-    <!-- Error State -->
-    <div v-else-if="error" class="flex items-center justify-center h-full">
-      <div class="text-center">
-        <p class="text-destructive mb-4">{{ error }}</p>
-        <button @click="router.push('/workflows')" class="text-primary underline">
-          Back to Workflows
-        </button>
-      </div>
-    </div>
-
-    <!-- Workflow Builder -->
     <WorkflowBuilder
-      v-else
-      :workflow="workflowsStore.currentWorkflow"
+      :workflow="null"
       @save="handleSave"
       @execute="handleExecute"
     />

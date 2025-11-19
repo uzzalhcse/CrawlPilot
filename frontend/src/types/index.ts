@@ -59,3 +59,90 @@ export interface ExtractedData {
   data: Record<string, any>
   created_at: string
 }
+
+// Vue Flow related types
+export interface WorkflowNode {
+  id: string
+  type: string
+  position: { x: number; y: number }
+  data: NodeData
+}
+
+export interface NodeData {
+  label: string
+  nodeType: NodeType
+  params: Record<string, any>
+  dependencies?: string[]
+  outputKey?: string
+  optional?: boolean
+  retry?: RetryConfig
+}
+
+export interface WorkflowEdge {
+  id: string
+  source: string
+  target: string
+  type?: string
+  animated?: boolean
+}
+
+export interface RetryConfig {
+  max_retries: number
+  delay: number
+}
+
+export type NodeType =
+  // URL Discovery
+  | 'fetch'
+  | 'extract_links'
+  | 'filter_urls'
+  | 'navigate'
+  | 'paginate'
+  // Interaction
+  | 'click'
+  | 'scroll'
+  | 'type'
+  | 'hover'
+  | 'wait'
+  | 'wait_for'
+  | 'screenshot'
+  // Extraction
+  | 'extract'
+  | 'extract_text'
+  | 'extract_attr'
+  | 'extract_json'
+  // Transformation
+  | 'transform'
+  | 'filter'
+  | 'map'
+  | 'validate'
+  // Control Flow
+  | 'conditional'
+  | 'loop'
+  | 'parallel'
+
+export interface NodeCategory {
+  name: string
+  icon: string
+  nodes: NodeTemplate[]
+}
+
+export interface NodeTemplate {
+  type: NodeType
+  label: string
+  description: string
+  category: string
+  defaultParams: Record<string, any>
+  paramSchema: ParamField[]
+}
+
+export interface ParamField {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array'
+  required?: boolean
+  defaultValue?: any
+  options?: { label: string; value: string }[]
+  placeholder?: string
+  description?: string
+}

@@ -8,10 +8,10 @@ export interface CreateWorkflowRequest {
 }
 
 export interface UpdateWorkflowRequest {
-  name: string
-  description: string
-  status: 'draft' | 'active' | 'inactive'
-  config: WorkflowConfig
+  name?: string
+  description?: string
+  status?: 'draft' | 'active' | 'inactive'
+  config?: WorkflowConfig
 }
 
 export interface ListWorkflowsParams {
