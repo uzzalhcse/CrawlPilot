@@ -1,0 +1,74 @@
+{
+  "name": "columbia Site Crawler",
+  "description": "columbia",
+  "config": {
+    "start_urls": [
+      "https://www.columbiasports.co.jp/shop/default.aspx"
+    ],
+    "max_depth": 1,
+    "max_pages": 100,
+    "rate_limit_delay": 2000,
+    "storage": {
+      "type": "database"
+    },
+    "headers": {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    },
+    "url_discovery": [
+      {
+        "id": "discover_main_categories",
+        "type": "extract_links",
+        "name": "Discover Main Product Categories a",
+        "params": {
+          "selector": "ul.block-header-gnav li a",
+          "url_type": "category"
+        }
+      },
+      {
+        "id": "discover_product_listings",
+        "type": "extract_links",
+        "name": "Discover Product Listing Pages",
+        "params": {
+          "selector": "ul.block-thumbnail-t--items a",
+          "url_type": "product"
+        },
+        "dependencies": ["discover_main_categories"]
+      }
+    ],
+    "data_extraction": [
+      {
+        "id": "extract_columbia_product_data",
+        "type": "extract",
+        "name": "Extract columbia Product Details",
+        "params": {
+          "schema": "columbia_product",
+          "timeout": 10000,
+          "fields": {
+            "title": {
+              "selector": "title",
+              "type": "text",
+              "transform": "trim"
+            },
+            "name": {
+              "selector": "h1.block-goods-name--text span",
+              "type": "text",
+              "transform": "trim"
+            },
+            "description": {
+              "selector": "div#spec_goods_comment",
+              "type": "text",
+              "transform": "clean_html"
+            },
+            "list_price": {
+              "selector": "div.block-goods-price--default-price",
+              "type": "text",
+              "transform": "trim",
+              "default": "Open Price"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "status": "active"
+}

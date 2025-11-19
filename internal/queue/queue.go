@@ -48,10 +48,11 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 		RETURNING created_at
 	`
 
-	// Set default url_type if not provided
-	if item.URLType == "" {
-		item.URLType = "page"
-	}
+	// Don't set default url_type - let it remain empty if not provided
+	// The executor will set it appropriately based on the node
+	// if item.URLType == "" {
+	// 	item.URLType = "page"
+	// }
 
 	err := q.db.Pool.QueryRow(ctx, query,
 		item.ID,
@@ -100,10 +101,11 @@ func (q *URLQueue) EnqueueBatch(ctx context.Context, items []*models.URLQueueIte
 			metadata = item.Metadata
 		}
 
-		// Set default url_type if not provided
-		if item.URLType == "" {
-			item.URLType = "page"
-		}
+		// Don't set default url_type - let it remain empty if not provided
+		// The executor will set it appropriately based on the node
+		// if item.URLType == "" {
+		// 	item.URLType = "page"
+		// }
 
 		batch.Queue(`
 			INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, metadata, created_at)
@@ -336,4 +338,107 @@ func (q *URLQueue) GetPendingCount(ctx context.Context, executionID string) (int
 	}
 
 	return count, nil
+}
+
+// HasPendingDiscoveryURLs checks if there are any pending URLs in discovery phase
+func (q *URLQueue) HasPendingDiscoveryURLs(ctx context.Context, executionID string, discoveryNodes []models.Node) (bool, error) {
+	// Build list of discovery URL types
+	var discoveryURLTypes []string
+	discoveryURLTypes = append(discoveryURLTypes, "", "start", "page") // Include start URLs and default type
+
+	for _, node := range discoveryNodes {
+		if urlType, ok := node.Params["url_type"].(string); ok && urlType != "" {
+			discoveryURLTypes = append(discoveryURLTypes, urlType)
+		}
+	}
+
+	// Get the last discovery node URL types (these should NOT be counted as pending discovery)
+	lastNodeTypes := make(map[string]bool)
+	hasDependents := make(map[string]bool)
+	for _, node := range discoveryNodes {
+		for _, depID := range node.Dependencies {
+			hasDependents[depID] = true
+		}
+	}
+
+	for _, node := range discoveryNodes {
+		if !hasDependents[node.ID] {
+			if urlType, ok := node.Params["url_type"].(string); ok && urlType != "" {
+				lastNodeTypes[urlType] = true
+			}
+		}
+	}
+
+	// Check if any URLs with discovery types (excluding last node types) are still pending or processing
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM url_queue 
+			WHERE execution_id = $1 
+			AND status IN ($2, $3)
+			AND url_type = ANY($4)
+		)
+	`
+
+	var hasPending bool
+	err := q.db.Pool.QueryRow(ctx, query,
+		executionID,
+		models.QueueItemStatusPending,
+		models.QueueItemStatusProcessing,
+		discoveryURLTypes,
+	).Scan(&hasPending)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check pending discovery URLs: %w", err)
+	}
+
+	// If we found pending URLs, we need to check if they're actually discovery URLs
+	// and not extraction URLs (last node types)
+	if hasPending && len(lastNodeTypes) > 0 {
+		// Do a more refined check - exclude last node types
+		var nonLastNodeTypes []string
+		for _, urlType := range discoveryURLTypes {
+			if !lastNodeTypes[urlType] {
+				nonLastNodeTypes = append(nonLastNodeTypes, urlType)
+			}
+		}
+
+		if len(nonLastNodeTypes) == 0 {
+			// All discovery types are from last nodes, so no actual discovery pending
+			return false, nil
+		}
+
+		// Re-check with refined list
+		err = q.db.Pool.QueryRow(ctx, query,
+			executionID,
+			models.QueueItemStatusPending,
+			models.QueueItemStatusProcessing,
+			nonLastNodeTypes,
+		).Scan(&hasPending)
+
+		if err != nil {
+			return false, fmt.Errorf("failed to check pending discovery URLs (refined): %w", err)
+		}
+	}
+
+	return hasPending, nil
+}
+
+// RequeueForLater resets a URL back to pending status with lower priority
+func (q *URLQueue) RequeueForLater(ctx context.Context, id string) error {
+	query := `
+		UPDATE url_queue
+		SET status = $1, locked_at = NULL, locked_by = NULL, priority = priority - 1
+		WHERE id = $2 AND locked_by = $3
+	`
+
+	result, err := q.db.Pool.Exec(ctx, query, models.QueueItemStatusPending, id, q.workerID)
+	if err != nil {
+		return fmt.Errorf("failed to requeue URL: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("URL not found or not locked by this worker: %s", id)
+	}
+
+	return nil
 }

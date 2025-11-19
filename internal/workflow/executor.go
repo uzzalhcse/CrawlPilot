@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -18,6 +19,9 @@ import (
 	"github.com/uzzalhcse/crawlify/pkg/models"
 	"go.uber.org/zap"
 )
+
+// ErrURLRequeued is returned when a URL is requeued for later processing
+var ErrURLRequeued = errors.New("url requeued for later processing")
 
 type Executor struct {
 	browserPool        *browser.BrowserPool
@@ -69,6 +73,7 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 			URL:         startURL,
 			Depth:       0,
 			Priority:    100,
+			URLType:     "start", // Mark as start URL for proper phase detection
 		}
 		if err := e.urlQueue.Enqueue(ctx, item); err != nil {
 			logger.Error("Failed to enqueue start URL", zap.Error(err), zap.String("url", startURL))
@@ -123,6 +128,18 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 			}
 
 			if item == nil {
+				// No more URLs available right now - check if there might be requeued items
+				// Wait a bit and check again before declaring completion
+				time.Sleep(2 * time.Second)
+
+				// Double-check if there are any pending items
+				pendingCount, err := e.urlQueue.GetPendingCount(ctx, executionID)
+				if err == nil && pendingCount > 0 {
+					// There are still pending items (likely requeued), continue processing
+					logger.Debug("Pending URLs found, continuing processing", zap.Int("pending_count", pendingCount))
+					continue
+				}
+
 				// No more URLs in queue - update final stats
 				stats.Duration = time.Since(startTime).Milliseconds()
 				stats.LastUpdate = time.Now()
@@ -158,6 +175,13 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 
 			// Process the URL
 			if err := e.processURL(ctx, workflow, executionID, item); err != nil {
+				// Check if URL was requeued
+				if errors.Is(err, ErrURLRequeued) {
+					// URL was requeued for later, not a failure
+					logger.Debug("URL requeued successfully", zap.String("url", item.URL))
+					continue
+				}
+
 				logger.Error("Failed to process URL",
 					zap.Error(err),
 					zap.String("url", item.URL),
@@ -178,7 +202,27 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 
 // processURL processes a single URL
 func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, executionID string, item *models.URLQueueItem) error {
-	logger.Info("Processing URL", zap.String("url", item.URL), zap.Int("depth", item.Depth))
+	logger.Info("Processing URL", zap.String("url", item.URL), zap.Int("depth", item.Depth), zap.String("url_type", item.URLType))
+
+	// Determine which nodes to execute based on URL type and discovery status
+	isDiscoveryPhase := e.isURLDiscoveryPhase(item, workflow)
+	isDataExtractionPhase := e.isDataExtractionPhase(item, workflow)
+
+	// Early check: If this is an extraction URL and discovery is not complete, requeue immediately
+	// This avoids unnecessary browser navigation and resource usage
+	if isDataExtractionPhase && len(workflow.Config.DataExtraction) > 0 {
+		if !e.shouldExecuteDataExtraction(ctx, item, workflow, executionID) {
+			logger.Debug("Discovery not complete, re-queueing extraction URL (early check)",
+				zap.String("url", item.URL),
+				zap.String("url_type", item.URLType))
+
+			if err := e.urlQueue.RequeueForLater(ctx, item.ID); err != nil {
+				logger.Error("Failed to requeue URL", zap.Error(err))
+				return err
+			}
+			return ErrURLRequeued
+		}
+	}
 
 	// Acquire browser context
 	browserCtx, err := e.browserPool.Acquire(ctx)
@@ -208,36 +252,43 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 	execCtx.Set("url", item.URL)
 	execCtx.Set("depth", item.Depth)
 
-	// Execute URL discovery nodes
-	if len(workflow.Config.URLDiscovery) > 0 && item.Depth < workflow.Config.MaxDepth {
-		if err := e.executeNodeGroup(ctx, workflow.Config.URLDiscovery, browserCtx, &execCtx, executionID, item); err != nil {
-			logger.Error("URL discovery failed", zap.Error(err))
+	// Execute URL discovery nodes if in discovery phase
+	if isDiscoveryPhase && len(workflow.Config.URLDiscovery) > 0 && item.Depth < workflow.Config.MaxDepth {
+		// Get the specific node to execute based on dependencies
+		nodesToExecute := e.getExecutableDiscoveryNodes(ctx, workflow.Config.URLDiscovery, item, executionID)
+
+		if len(nodesToExecute) > 0 {
+			logger.Info("Executing URL discovery nodes",
+				zap.String("url", item.URL),
+				zap.Int("node_count", len(nodesToExecute)))
+
+			if err := e.executeSpecificNodes(ctx, nodesToExecute, browserCtx, &execCtx, executionID, item); err != nil {
+				logger.Error("URL discovery failed", zap.Error(err))
+			}
 		}
 	}
 
-	// Execute data extraction nodes only if URL matches extraction patterns
-	if len(workflow.Config.DataExtraction) > 0 {
-		shouldExtract := e.shouldExtractData(item.URL, workflow.Config.DataExtractionPatterns)
+	// Execute data extraction nodes (discovery is already confirmed to be complete in early check)
+	if isDataExtractionPhase && len(workflow.Config.DataExtraction) > 0 {
+		logger.Info("Executing data extraction nodes",
+			zap.String("url", item.URL),
+			zap.String("url_type", item.URLType))
 
-		if shouldExtract {
-			var lastNodeExecID string
-			if err := e.executeNodeGroup(ctx, workflow.Config.DataExtraction, browserCtx, &execCtx, executionID, item); err != nil {
-				logger.Error("Data extraction failed", zap.Error(err))
-			}
+		var lastNodeExecID string
+		if err := e.executeNodeGroup(ctx, workflow.Config.DataExtraction, browserCtx, &execCtx, executionID, item); err != nil {
+			logger.Error("Data extraction failed", zap.Error(err))
+		}
 
-			// Save extracted data to database
-			if e.extractedItemsRepo != nil {
-				extractedData := e.collectExtractedData(&execCtx)
-				if len(extractedData) > 0 {
-					if err := e.saveExtractedItem(ctx, executionID, item.ID, item.URL, extractedData, lastNodeExecID); err != nil {
-						logger.Error("Failed to save extracted data", zap.Error(err), zap.String("url", item.URL))
-					} else {
-						logger.Info("Saved extracted data", zap.String("url", item.URL), zap.Int("fields", len(extractedData)))
-					}
+		// Save extracted data to database
+		if e.extractedItemsRepo != nil {
+			extractedData := e.collectExtractedData(&execCtx)
+			if len(extractedData) > 0 {
+				if err := e.saveExtractedItem(ctx, executionID, item.ID, item.URL, extractedData, lastNodeExecID); err != nil {
+					logger.Error("Failed to save extracted data", zap.Error(err), zap.String("url", item.URL))
+				} else {
+					logger.Info("Saved extracted data", zap.String("url", item.URL), zap.Int("fields", len(extractedData)))
 				}
 			}
-		} else {
-			logger.Debug("Skipping data extraction - URL doesn't match extraction patterns", zap.String("url", item.URL))
 		}
 	}
 
@@ -532,21 +583,178 @@ func shouldSkipURL(url string, params map[string]interface{}) bool {
 	return false
 }
 
-// shouldExtractData determines if data extraction should run for this URL
-func (e *Executor) shouldExtractData(url string, patterns []string) bool {
-	// If no patterns specified, extract from all URLs (backward compatible)
-	if len(patterns) == 0 {
+// isURLDiscoveryPhase checks if this URL should be in the discovery phase
+func (e *Executor) isURLDiscoveryPhase(item *models.URLQueueItem, workflow *models.Workflow) bool {
+	// Start URLs and URLs discovered during discovery should go through discovery
+	// URLs with empty URLType are considered start URLs
+	if item.URLType == "" || item.URLType == "start" {
 		return true
 	}
 
-	// Check if URL matches any of the extraction patterns
-	for _, pattern := range patterns {
-		if matchesPattern(url, pattern) {
+	// Check if this URL type is from a discovery node that is NOT a leaf node
+	// (i.e., it has dependent nodes)
+	return e.isDiscoveryURLType(item.URLType, workflow.Config.URLDiscovery) &&
+		!e.isLastDiscoveryURLType(item.URLType, workflow.Config.URLDiscovery)
+}
+
+// isLastDiscoveryURLType checks if the URL type is from a leaf discovery node
+func (e *Executor) isLastDiscoveryURLType(urlType string, discoveryNodes []models.Node) bool {
+	lastTypes := e.getLastDiscoveryNodeURLTypes(discoveryNodes)
+	for _, lastType := range lastTypes {
+		if urlType == lastType {
+			return true
+		}
+	}
+	return false
+}
+
+// isDataExtractionPhase checks if this URL should be in the data extraction phase
+func (e *Executor) isDataExtractionPhase(item *models.URLQueueItem, workflow *models.Workflow) bool {
+	// Only process data extraction if URLType indicates it's from final discovery node
+	// or if it's explicitly marked as needing extraction
+	return e.isExtractionURLType(item.URLType, workflow.Config.URLDiscovery, workflow.Config.DataExtraction)
+}
+
+// isDiscoveryURLType checks if the URL type is produced by discovery nodes
+func (e *Executor) isDiscoveryURLType(urlType string, discoveryNodes []models.Node) bool {
+	if urlType == "" || urlType == "start" {
+		return true
+	}
+
+	for _, node := range discoveryNodes {
+		if nodeURLType := getStringParam(node.Params, "url_type"); nodeURLType == urlType {
+			return true
+		}
+	}
+	return false
+}
+
+// isExtractionURLType checks if URL type is suitable for data extraction
+func (e *Executor) isExtractionURLType(urlType string, discoveryNodes []models.Node, extractionNodes []models.Node) bool {
+	// Get the URL type from the last discovery node (nodes with no dependents)
+	lastDiscoveryNodeURLTypes := e.getLastDiscoveryNodeURLTypes(discoveryNodes)
+
+	// Check if this URL type matches the last discovery nodes
+	for _, lastURLType := range lastDiscoveryNodeURLTypes {
+		if urlType == lastURLType {
 			return true
 		}
 	}
 
+	// Also check if extraction nodes specify a url_type_filter
+	for _, node := range extractionNodes {
+		if urlTypeFilter := getStringParam(node.Params, "url_type_filter"); urlTypeFilter != "" {
+			if urlType == urlTypeFilter {
+				return true
+			}
+		}
+	}
+
 	return false
+}
+
+// getLastDiscoveryNodeURLTypes returns URL types from nodes with no dependents
+func (e *Executor) getLastDiscoveryNodeURLTypes(discoveryNodes []models.Node) []string {
+	if len(discoveryNodes) == 0 {
+		return []string{}
+	}
+
+	// Build a map of nodes that have dependents
+	hasDependents := make(map[string]bool)
+	for _, node := range discoveryNodes {
+		for _, depID := range node.Dependencies {
+			hasDependents[depID] = true
+		}
+	}
+
+	// Find nodes without dependents (leaf nodes)
+	var urlTypes []string
+	for _, node := range discoveryNodes {
+		if !hasDependents[node.ID] {
+			if urlType := getStringParam(node.Params, "url_type"); urlType != "" {
+				urlTypes = append(urlTypes, urlType)
+			}
+		}
+	}
+
+	return urlTypes
+}
+
+// getExecutableDiscoveryNodes returns discovery nodes that should execute for this URL
+func (e *Executor) getExecutableDiscoveryNodes(ctx context.Context, discoveryNodes []models.Node, item *models.URLQueueItem, executionID string) []models.Node {
+	var executableNodes []models.Node
+
+	// For start URLs (depth 0 or empty URLType), execute root nodes only
+	if item.Depth == 0 || item.URLType == "" || item.URLType == "start" {
+		// Get root nodes (nodes with no dependencies)
+		for _, node := range discoveryNodes {
+			if len(node.Dependencies) == 0 {
+				executableNodes = append(executableNodes, node)
+			}
+		}
+		return executableNodes
+	}
+
+	// For discovered URLs, find nodes that should execute based on the discovered URL type
+	// We need to find nodes whose dependencies have produced this URL type
+	if item.DiscoveredByNode != nil && *item.DiscoveredByNode != "" {
+		// Find nodes that depend on the node that discovered this URL
+		for _, node := range discoveryNodes {
+			for _, depID := range node.Dependencies {
+				if depID == *item.DiscoveredByNode {
+					executableNodes = append(executableNodes, node)
+					break
+				}
+			}
+		}
+	}
+
+	return executableNodes
+}
+
+// executeSpecificNodes executes specific nodes without DAG sorting
+func (e *Executor) executeSpecificNodes(ctx context.Context, nodes []models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
+	// Execute nodes in the order provided
+	for _, node := range nodes {
+		if err := e.executeNode(ctx, &node, browserCtx, execCtx, executionID, item); err != nil {
+			if !node.Optional {
+				return fmt.Errorf("node '%s' failed: %w", node.ID, err)
+			}
+			logger.Warn("Optional node failed", zap.String("node_id", node.ID), zap.Error(err))
+		}
+	}
+	return nil
+}
+
+// shouldExecuteDataExtraction determines if data extraction should run for this URL
+func (e *Executor) shouldExecuteDataExtraction(ctx context.Context, item *models.URLQueueItem, workflow *models.Workflow, executionID string) bool {
+	// Check if all URL discovery is complete for this execution
+	if !e.isAllURLDiscoveryComplete(ctx, workflow, executionID) {
+		logger.Debug("URL discovery not complete yet",
+			zap.String("execution_id", executionID),
+			zap.String("url", item.URL))
+		return false
+	}
+
+	// Check if URL type is appropriate for extraction
+	return e.isExtractionURLType(item.URLType, workflow.Config.URLDiscovery, workflow.Config.DataExtraction)
+}
+
+// isAllURLDiscoveryComplete checks if all URL discovery nodes have completed
+func (e *Executor) isAllURLDiscoveryComplete(ctx context.Context, workflow *models.Workflow, executionID string) bool {
+	// Check if there are any pending discovery URLs in the queue
+	if e.urlQueue != nil {
+		hasPendingDiscovery, err := e.urlQueue.HasPendingDiscoveryURLs(ctx, executionID, workflow.Config.URLDiscovery)
+		if err != nil {
+			logger.Error("Failed to check pending discovery URLs", zap.Error(err))
+			// On error, assume discovery is not complete to be safe
+			return false
+		}
+		return !hasPendingDiscovery
+	}
+
+	// If we can't check, assume it's complete (fallback)
+	return true
 }
 
 // matchesPattern checks if URL matches a glob-style pattern
