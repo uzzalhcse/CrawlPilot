@@ -6,13 +6,7 @@
       "https://aqua-has.com"
     ],
     "max_depth": 3,
-    "max_pages": 100,
     "rate_limit_delay": 2000,
-    "data_extraction_patterns": [
-      "*/product/*",
-      "*/item/*",
-      "*/detail/*"
-    ],
     "storage": {
       "type": "database",
       "table_name": "aqua_products"

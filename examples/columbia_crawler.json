@@ -6,7 +6,6 @@
       "https://www.columbiasports.co.jp/shop/default.aspx"
     ],
     "max_depth": 3,
-    "max_pages": 100,
     "rate_limit_delay": 2000,
     "storage": {
       "type": "database"
