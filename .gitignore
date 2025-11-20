@@ -7,6 +7,7 @@
 crawlify
 
 # Test binary, built with `go test -c`
+*.txt
 *.test
 .idea
 
