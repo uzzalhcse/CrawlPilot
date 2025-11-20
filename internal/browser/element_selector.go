@@ -255,7 +255,7 @@ func (m *ElementSelectorManager) cleanupInactiveSessions() {
 
 // getSelectorOverlayJS returns the JavaScript code for the selector overlay
 func (m *ElementSelectorManager) getSelectorOverlayJS() string {
-	return selectorOverlayTemplate
+	return getSelectorOverlayJS()
 }
 
 // GenerateOptimalSelector generates the best CSS selector for an element
