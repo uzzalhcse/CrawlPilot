@@ -33,17 +33,42 @@ const localNode = ref<WorkflowNode | null>(null)
 const collapsedFields = ref<Set<string>>(new Set())
 const fieldSearchQuery = ref('')
 const fieldContainerRef = ref<HTMLElement | null>(null)
+let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
+const hasUnsavedChanges = ref(false)
 
 watch(
   () => props.node,
   (newNode) => {
     if (newNode) {
       localNode.value = JSON.parse(JSON.stringify(newNode))
+      hasUnsavedChanges.value = false
     } else {
       localNode.value = null
     }
   },
   { immediate: true, deep: true }
+)
+
+// Auto-save changes when localNode is modified (debounced)
+watch(
+  localNode,
+  (newValue) => {
+    if (newValue) {
+      hasUnsavedChanges.value = true
+      
+      // Clear existing timeout
+      if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout)
+      }
+      
+      // Debounce auto-save by 1 second
+      autoSaveTimeout = setTimeout(() => {
+        emit('update:node', newValue)
+        hasUnsavedChanges.value = false
+      }, 1000)
+    }
+  },
+  { deep: true }
 )
 
 const nodeTemplate = computed(() => {
@@ -80,7 +105,14 @@ function updateRetry(field: 'max_retries' | 'delay', value: number) {
 
 function saveChanges() {
   if (localNode.value) {
+    // Clear any pending auto-save
+    if (autoSaveTimeout) {
+      clearTimeout(autoSaveTimeout)
+      autoSaveTimeout = null
+    }
+    
     emit('update:node', localNode.value)
+    hasUnsavedChanges.value = false
   }
 }
 
@@ -615,8 +647,14 @@ function getVisibleFieldsCount(key: string): number {
 
     <!-- Footer -->
     <div class="p-4 border-t border-border bg-muted/30 flex gap-2">
-      <Button @click="saveChanges" class="flex-1" size="default">
-        Save Changes
+      <Button 
+        @click="saveChanges" 
+        class="flex-1" 
+        size="default"
+        :variant="hasUnsavedChanges ? 'default' : 'outline'"
+      >
+        <span v-if="hasUnsavedChanges">Save Changes *</span>
+        <span v-else>Saved</span>
       </Button>
       <Button @click="deleteNode" variant="destructive" size="default">
         Delete
