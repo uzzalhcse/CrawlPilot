@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Save, Play, Sparkles } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 
 // Import Vue Flow styles
 import '@vue-flow/core/dist/style.css'
@@ -148,8 +149,16 @@ function handleNodeClick(event: any) {
 function handleNodeUpdate(updatedNode: WorkflowNode) {
   const index = nodes.value.findIndex(n => n.id === updatedNode.id)
   if (index !== -1) {
-    nodes.value[index] = updatedNode
+    // Create a new array to trigger reactivity
+    nodes.value = [
+      ...nodes.value.slice(0, index),
+      updatedNode,
+      ...nodes.value.slice(index + 1)
+    ]
     selectedNode.value = updatedNode
+    toast.success('Node configuration updated', {
+      description: `${updatedNode.data.label} has been updated successfully`
+    })
   }
 }
 
@@ -169,7 +178,9 @@ onConnect((params) => {
 
   // Check for cycles
   if (wouldCreateCycle(params.source, params.target)) {
-    alert('Cannot create a cycle in the workflow')
+    toast.error('Cannot create cycle', {
+      description: 'Workflows cannot have circular dependencies'
+    })
     return
   }
 
@@ -202,12 +213,27 @@ function wouldCreateCycle(sourceId: string, targetId: string): boolean {
   return dfs(targetId)
 }
 
+// Dismiss the saving toast (called from parent after save completes)
+function dismissSavingToast() {
+  toast.dismiss('save-workflow')
+}
+
+// Expose for parent components
+defineExpose({
+  dismissSavingToast
+})
+
 // Save workflow
 function handleSave() {
   if (!workflowName.value.trim()) {
-    alert('Please enter a workflow name')
+    toast.error('Workflow name required', {
+      description: 'Please enter a name for your workflow'
+    })
     return
   }
+
+  // Show a brief "saving" toast
+  toast.loading('Saving workflow...', { id: 'save-workflow' })
 
   emit('save', {
     name: workflowName.value,
