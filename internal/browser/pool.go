@@ -23,9 +23,11 @@ type BrowserPool struct {
 }
 
 type BrowserContext struct {
-	Context playwright.BrowserContext
-	Page    playwright.Page
-	pool    *BrowserPool
+	Context       playwright.BrowserContext
+	Page          playwright.Page
+	pool          *BrowserPool
+	headedBrowser playwright.Browser // For headed sessions
+	isHeaded      bool
 }
 
 func NewBrowserPool(cfg *config.BrowserConfig) (*BrowserPool, error) {
@@ -115,13 +117,19 @@ func (p *BrowserPool) createContext() (playwright.BrowserContext, error) {
 }
 
 // Acquire gets a browser context from the pool
-func (p *BrowserPool) Acquire(ctx context.Context) (*BrowserContext, error) {
+func (p *BrowserPool) Acquire(ctx context.Context, headed ...bool) (*BrowserContext, error) {
 	p.mu.RLock()
 	if p.closed {
 		p.mu.RUnlock()
 		return nil, fmt.Errorf("browser pool is closed")
 	}
 	p.mu.RUnlock()
+
+	// If headed mode is requested, create a new browser instance
+	isHeaded := len(headed) > 0 && headed[0]
+	if isHeaded {
+		return p.createHeadedContext(ctx)
+	}
 
 	select {
 	case <-ctx.Done():
@@ -151,9 +159,69 @@ func (p *BrowserPool) Acquire(ctx context.Context) (*BrowserContext, error) {
 	}
 }
 
+// createHeadedContext creates a new headed browser context (not from pool)
+func (p *BrowserPool) createHeadedContext(ctx context.Context) (*BrowserContext, error) {
+	// Launch a new headed browser instance
+	launchOptions := playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(false),
+		Timeout:  playwright.Float(float64(p.config.Timeout)),
+	}
+
+	headedBrowser, err := p.playwright.Chromium.Launch(launchOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to launch headed browser: %w", err)
+	}
+
+	options := playwright.BrowserNewContextOptions{
+		UserAgent:         playwright.String("Crawlify/1.0 ElementSelector"),
+		AcceptDownloads:   playwright.Bool(false),
+		IgnoreHttpsErrors: playwright.Bool(true),
+		JavaScriptEnabled: playwright.Bool(true),
+		Viewport: &playwright.Size{
+			Width:  1920,
+			Height: 1080,
+		},
+	}
+
+	browserCtx, err := headedBrowser.NewContext(options)
+	if err != nil {
+		headedBrowser.Close()
+		return nil, fmt.Errorf("failed to create headed context: %w", err)
+	}
+
+	page, err := browserCtx.NewPage()
+	if err != nil {
+		browserCtx.Close()
+		headedBrowser.Close()
+		return nil, fmt.Errorf("failed to create page: %w", err)
+	}
+
+	return &BrowserContext{
+		Context:       browserCtx,
+		Page:          page,
+		pool:          p,
+		headedBrowser: headedBrowser,
+		isHeaded:      true,
+	}, nil
+}
+
 // Release returns a browser context to the pool
 func (p *BrowserPool) Release(bc *BrowserContext) {
 	if bc == nil || bc.Context == nil {
+		return
+	}
+
+	// If this is a headed session, close everything
+	if bc.isHeaded {
+		if bc.Page != nil {
+			bc.Page.Close()
+		}
+		if bc.Context != nil {
+			bc.Context.Close()
+		}
+		if bc.headedBrowser != nil {
+			bc.headedBrowser.Close()
+		}
 		return
 	}
 

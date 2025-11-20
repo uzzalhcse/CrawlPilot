@@ -100,9 +100,10 @@ func main() {
 	workflowHandler := handlers.NewWorkflowHandler(workflowRepo)
 	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedItemsRepo, nodeExecRepo, browserPool, urlQueue)
 	analyticsHandler := handlers.NewAnalyticsHandler(nodeExecRepo, extractedItemsRepo, urlQueue)
+	selectorHandler := handlers.NewSelectorHandler(browserPool)
 
 	// Routes
-	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler)
+	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -148,7 +149,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -171,6 +172,13 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 
 	// Analytics/Visualization routes
 	analyticsHandler.RegisterRoutes(api)
+
+	// Selector routes
+	selector := api.Group("/selector")
+	selector.Post("/sessions", selectorHandler.CreateSelectorSession)
+	selector.Get("/sessions/:session_id", selectorHandler.GetSessionStatus)
+	selector.Get("/sessions/:session_id/fields", selectorHandler.GetSelectedFields)
+	selector.Delete("/sessions/:session_id", selectorHandler.CloseSelectorSession)
 }
 
 func errorHandler(c *fiber.Ctx, err error) error {

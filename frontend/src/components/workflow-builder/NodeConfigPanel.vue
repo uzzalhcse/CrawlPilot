@@ -14,7 +14,8 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { X, Settings, Plus, Trash2, Copy, GripVertical, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { X, Settings, Plus, Trash2, Copy, GripVertical, ChevronDown, ChevronUp, MousePointerClick } from 'lucide-vue-next'
+import { selectorApi, type SelectedField } from '@/api/selector'
 
 interface Props {
   node: WorkflowNode | null
@@ -35,6 +36,11 @@ const fieldSearchQuery = ref('')
 const fieldContainerRef = ref<HTMLElement | null>(null)
 let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
 const hasUnsavedChanges = ref(false)
+const isVisualSelectorOpen = ref(false)
+const visualSelectorSessionId = ref<string | null>(null)
+const visualSelectorLoading = ref(false)
+const visualSelectorError = ref<string | null>(null)
+let stopPolling: (() => void) | null = null
 
 watch(
   () => props.node,
@@ -247,6 +253,90 @@ function getVisibleFieldsCount(key: string): number {
   const fields = localNode.value.data.params[key] || {}
   return Object.keys(fields).filter(isFieldVisible).length
 }
+
+async function openVisualSelector(key: string) {
+  if (!localNode.value) return
+  
+  // Get the URL from the workflow - check if there's a navigate node before this one
+  const url = localNode.value.data.params.url || prompt('Enter the URL to open for element selection:')
+  
+  if (!url) {
+    return
+  }
+  
+  visualSelectorLoading.value = true
+  visualSelectorError.value = null
+  
+  try {
+    // Create a new selector session
+    const session = await selectorApi.createSession(url)
+    visualSelectorSessionId.value = session.session_id
+    isVisualSelectorOpen.value = true
+    
+    // Start polling for selected fields
+    stopPolling = await selectorApi.pollForFields(
+      session.session_id,
+      2000,
+      (fields: SelectedField[]) => {
+        // Update the node with selected fields
+        if (fields.length > 0 && localNode.value) {
+          importFieldsFromVisualSelector(key, fields)
+        }
+      },
+      (error) => {
+        console.error('Error polling for fields:', error)
+        visualSelectorError.value = 'Session closed or connection lost'
+        closeVisualSelector()
+      }
+    )
+    
+    visualSelectorLoading.value = false
+  } catch (error: any) {
+    console.error('Failed to open visual selector:', error)
+    visualSelectorError.value = error.response?.data?.error || 'Failed to open visual selector'
+    visualSelectorLoading.value = false
+  }
+}
+
+function importFieldsFromVisualSelector(key: string, selectedFields: SelectedField[]) {
+  if (!localNode.value) return
+  
+  if (!localNode.value.data.params[key]) {
+    localNode.value.data.params[key] = {}
+  }
+  
+  const fields = localNode.value.data.params[key]
+  
+  // Add or update fields from the visual selector
+  selectedFields.forEach((field: SelectedField) => {
+    fields[field.name] = {
+      selector: field.selector,
+      type: field.type === 'attribute' ? 'attr' : field.type,
+      attribute: field.attribute || '',
+      transform: 'none',
+      default: ''
+    }
+  })
+}
+
+async function closeVisualSelector() {
+  if (stopPolling) {
+    stopPolling()
+    stopPolling = null
+  }
+  
+  if (visualSelectorSessionId.value) {
+    try {
+      await selectorApi.closeSession(visualSelectorSessionId.value)
+    } catch (error) {
+      console.error('Error closing selector session:', error)
+    }
+    visualSelectorSessionId.value = null
+  }
+  
+  isVisualSelectorOpen.value = false
+  visualSelectorError.value = null
+}
 </script>
 
 <template>
@@ -365,6 +455,33 @@ function getVisibleFieldsCount(key: string): number {
 
           <!-- Field Array Input -->
           <div v-else-if="field.type === 'field_array'" class="space-y-3">
+            <!-- Visual Selector Status Banner -->
+            <div v-if="isVisualSelectorOpen" class="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span class="text-sm font-medium text-blue-900">Visual Selector Active</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  @click="closeVisualSelector()"
+                  class="border-blue-300 hover:bg-blue-100"
+                >
+                  Close Session
+                </Button>
+              </div>
+              <p class="text-xs text-blue-700 mt-2">
+                Select elements in the browser window. Selected fields will automatically appear below.
+              </p>
+            </div>
+            
+            <!-- Error Message -->
+            <div v-if="visualSelectorError" class="p-3 bg-red-50 border-2 border-red-200 rounded-lg">
+              <p class="text-sm text-red-900">{{ visualSelectorError }}</p>
+            </div>
+            
             <!-- Sticky Header with Actions -->
             <div class="sticky top-0 z-10 bg-background pb-2 space-y-2 border-b border-border">
               <div class="flex items-center gap-2">
@@ -372,11 +489,20 @@ function getVisibleFieldsCount(key: string): number {
                   type="button"
                   size="sm"
                   variant="default"
-                  @click="addFieldArrayItem(field.key)"
+                  @click="openVisualSelector(field.key)"
+                  :disabled="visualSelectorLoading || isVisualSelectorOpen"
                   class="flex-1"
                 >
-                  <Plus class="h-4 w-4 mr-2" />
-                  Add Field
+                  <MousePointerClick class="h-4 w-4 mr-2" />
+                  {{ visualSelectorLoading ? 'Opening Browser...' : 'Visual Selector' }}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  @click="addFieldArrayItem(field.key)"
+                >
+                  <Plus class="h-4 w-4" />
                 </Button>
                 <Button
                   type="button"
