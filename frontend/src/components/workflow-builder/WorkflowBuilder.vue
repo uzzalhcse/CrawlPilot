@@ -156,9 +156,6 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
       ...nodes.value.slice(index + 1)
     ]
     selectedNode.value = updatedNode
-    toast.success('Node configuration updated', {
-      description: `${updatedNode.data.label} has been updated successfully`
-    })
   }
 }
 
