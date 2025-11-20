@@ -762,7 +762,12 @@ const selectorOverlayTemplate = `
 					detailedViewField: null,
 					detailedViewTab: 'test', // 'test' or 'config'
 					lockedElement: null,
-					lockedElementSelector: null
+					lockedElementSelector: null,
+					editMode: false,
+					editFieldName: '',
+					editFieldType: '',
+					editFieldAttribute: '',
+					editFieldMultiple: false
 				};
 			},
 			methods: {
@@ -1083,6 +1088,70 @@ const selectorOverlayTemplate = `
 					return '';
 				},
 				
+				getElementTypeColor(element) {
+					const tagName = element.tagName.toLowerCase();
+					const type = element.type ? element.type.toLowerCase() : '';
+					
+					// Color scheme by element type
+					const colorMap = {
+						// Form elements - Blue
+						'input-text': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', name: 'Text Input' },
+						'input-email': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', name: 'Email Input' },
+						'input-password': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', name: 'Password Input' },
+						'input-number': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', name: 'Number Input' },
+						'input': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', name: 'Input' },
+						'textarea': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', name: 'Textarea' },
+						'select': { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.15)', name: 'Select' },
+						
+						// Action elements - Green
+						'button': { border: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', name: 'Button' },
+						'input-submit': { border: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', name: 'Submit Button' },
+						'input-button': { border: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', name: 'Button' },
+						
+						// Links - Orange
+						'a': { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)', name: 'Link' },
+						
+						// Media - Pink
+						'img': { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.15)', name: 'Image' },
+						'video': { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.15)', name: 'Video' },
+						'audio': { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.15)', name: 'Audio' },
+						
+						// Containers - Gray
+						'div': { border: '#6b7280', bg: 'rgba(107, 116, 128, 0.15)', name: 'Div' },
+						'span': { border: '#6b7280', bg: 'rgba(107, 116, 128, 0.15)', name: 'Span' },
+						'section': { border: '#6b7280', bg: 'rgba(107, 116, 128, 0.15)', name: 'Section' },
+						'article': { border: '#6b7280', bg: 'rgba(107, 116, 128, 0.15)', name: 'Article' },
+						
+						// Headings - Red
+						'h1': { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', name: 'Heading 1' },
+						'h2': { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', name: 'Heading 2' },
+						'h3': { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', name: 'Heading 3' },
+						'h4': { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', name: 'Heading 4' },
+						'h5': { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', name: 'Heading 5' },
+						'h6': { border: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', name: 'Heading 6' },
+						
+						// Text - Teal
+						'p': { border: '#14b8a6', bg: 'rgba(20, 184, 166, 0.15)', name: 'Paragraph' },
+						'label': { border: '#14b8a6', bg: 'rgba(20, 184, 166, 0.15)', name: 'Label' },
+						
+						// Lists - Purple
+						'ul': { border: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)', name: 'Unordered List' },
+						'ol': { border: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)', name: 'Ordered List' },
+						'li': { border: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)', name: 'List Item' }
+					};
+					
+					// Check for specific input types
+					if (tagName === 'input') {
+						const key = 'input-' + type;
+						if (colorMap[key]) {
+							return colorMap[key];
+						}
+					}
+					
+					// Return color for tag name or default
+					return colorMap[tagName] || { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', name: tagName };
+				},
+				
 				handleMouseMove(event) {
 					if (!this.selectionActive) return;
 					
@@ -1123,6 +1192,13 @@ const selectorOverlayTemplate = `
 					
 					// Remove locked highlights
 					document.querySelectorAll('.crawlify-locked-highlight, .crawlify-element-tooltip').forEach(el => el.remove());
+					
+					// Remove scroll listener
+					if (window.__crawlifyScrollListener) {
+						window.removeEventListener('scroll', window.__crawlifyScrollListener, true);
+						window.__crawlifyScrollListener = null;
+					}
+					
 					this.showStatus('Element unlocked. Resume selection.', 'success');
 				},
 				
@@ -1153,6 +1229,7 @@ const selectorOverlayTemplate = `
 					document.querySelectorAll('.crawlify-highlight, .crawlify-highlight-parent, .crawlify-element-tag').forEach(el => el.remove());
 					
 					const rect = element.getBoundingClientRect();
+					const colors = this.getElementTypeColor(element);
 					
 					// Highlight parent element for context
 					if (element.parentElement && element.parentElement !== document.body) {
@@ -1166,32 +1243,49 @@ const selectorOverlayTemplate = `
 						document.body.appendChild(parentHighlight);
 					}
 					
-					// Main highlight
+					// Main highlight with color-coding
 					const highlight = document.createElement('div');
 					highlight.className = 'crawlify-highlight';
 					highlight.style.top = rect.top + 'px';
 					highlight.style.left = rect.left + 'px';
 					highlight.style.width = rect.width + 'px';
 					highlight.style.height = rect.height + 'px';
+					highlight.style.border = '3px solid ' + colors.border;
+					highlight.style.background = colors.bg;
+					highlight.style.boxShadow = '0 0 0 1px ' + colors.border.replace(')', ', 0.3)').replace('#', 'rgba(').replace(/^rgba\(([^,]+),/, 'rgba($1,').replace(/^rgba\((\w{2})(\w{2})(\w{2})/, (m, r, g, b) => 
+						'rgba(' + parseInt(r, 16) + ', ' + parseInt(g, 16) + ', ' + parseInt(b, 16)) + ', 0 4px 12px ' + colors.border.replace(')', ', 0.2)').replace('#', 'rgba(').replace(/^rgba\(([^,]+),/, 'rgba($1,').replace(/^rgba\((\w{2})(\w{2})(\w{2})/, (m, r, g, b) => 
+						'rgba(' + parseInt(r, 16) + ', ' + parseInt(g, 16) + ', ' + parseInt(b, 16));
 					document.body.appendChild(highlight);
 					
-					// Element tag label - show the actual generated selector
+					// Element tag label with element type
 					const tag = document.createElement('div');
 					tag.className = 'crawlify-element-tag';
-					// Show the cached selector if available, otherwise show basic tag info
+					tag.style.background = colors.border;
+					
+					// Show element type and selector
+					const typeLabel = document.createElement('div');
+					typeLabel.style.fontWeight = '600';
+					typeLabel.style.marginBottom = '2px';
+					typeLabel.textContent = colors.name;
+					tag.appendChild(typeLabel);
+					
+					const selectorLabel = document.createElement('div');
+					selectorLabel.style.fontSize = '10px';
+					selectorLabel.style.opacity = '0.9';
 					if (this.hoveredElementSelector) {
-						tag.textContent = this.hoveredElementSelector;
+						selectorLabel.textContent = this.hoveredElementSelector;
 					} else {
 						const tagName = element.tagName.toLowerCase();
 						const elementId = element.id ? '#' + element.id : '';
 						const elementClass = element.className && typeof element.className === 'string' 
 							? '.' + element.className.split(' ').filter(c => c.trim()).slice(0, 2).join('.') 
 							: '';
-						tag.textContent = tagName + elementId + elementClass;
+						selectorLabel.textContent = tagName + elementId + elementClass;
 					}
+					tag.appendChild(selectorLabel);
 					
 					// Position tag above element, or below if not enough space
-					const tagTop = rect.top > 30 ? rect.top - 24 : rect.bottom + 4;
+					const tagTop = rect.top > 60 ? rect.top - 48 : rect.bottom + 4;
 					tag.style.top = tagTop + 'px';
 					tag.style.left = rect.left + 'px';
 					
@@ -1205,8 +1299,9 @@ const selectorOverlayTemplate = `
 					document.querySelectorAll('.crawlify-locked-highlight, .crawlify-element-tooltip').forEach(el => el.remove());
 					
 					const rect = this.lockedElement.getBoundingClientRect();
+					const colors = this.getElementTypeColor(this.lockedElement);
 					
-					// Locked highlight (thicker border, different color)
+					// Locked highlight (thicker border with element type color)
 					const highlight = document.createElement('div');
 					highlight.className = 'crawlify-locked-highlight';
 					highlight.style.position = 'fixed';
@@ -1214,11 +1309,13 @@ const selectorOverlayTemplate = `
 					highlight.style.left = rect.left + 'px';
 					highlight.style.width = rect.width + 'px';
 					highlight.style.height = rect.height + 'px';
-					highlight.style.border = '4px solid #f59e0b';
-					highlight.style.background = 'rgba(245, 158, 11, 0.1)';
+					highlight.style.border = '5px solid ' + colors.border;
+					highlight.style.background = colors.bg;
 					highlight.style.pointerEvents = 'none';
 					highlight.style.zIndex = '999999';
-					highlight.style.boxShadow = '0 0 0 2px rgba(245, 158, 11, 0.3), 0 4px 12px rgba(245, 158, 11, 0.4)';
+					highlight.style.boxShadow = '0 0 0 3px ' + colors.border.replace(')', ', 0.4)').replace('#', 'rgba(').replace(/^rgba\(([^,]+),/, 'rgba($1,').replace(/^rgba\((\w{2})(\w{2})(\w{2})/, (m, r, g, b) => 
+						'rgba(' + parseInt(r, 16) + ', ' + parseInt(g, 16) + ', ' + parseInt(b, 16)) + ', 0 6px 16px ' + colors.border.replace(')', ', 0.3)').replace('#', 'rgba(').replace(/^rgba\(([^,]+),/, 'rgba($1,').replace(/^rgba\((\w{2})(\w{2})(\w{2})/, (m, r, g, b) => 
+						'rgba(' + parseInt(r, 16) + ', ' + parseInt(g, 16) + ', ' + parseInt(b, 16));
 					highlight.style.borderRadius = '4px';
 					document.body.appendChild(highlight);
 					
@@ -1226,52 +1323,59 @@ const selectorOverlayTemplate = `
 					const tooltip = document.createElement('div');
 					tooltip.className = 'crawlify-element-tooltip';
 					tooltip.style.position = 'fixed';
-					tooltip.style.background = '#1f2937';
-					tooltip.style.color = '#f9fafb';
-					tooltip.style.padding = '8px 12px';
-					tooltip.style.borderRadius = '6px';
+					tooltip.style.background = colors.border;
+					tooltip.style.color = '#ffffff';
+					tooltip.style.padding = '10px 14px';
+					tooltip.style.borderRadius = '8px';
 					tooltip.style.fontSize = '12px';
 					tooltip.style.zIndex = '1000000';
 					tooltip.style.pointerEvents = 'none';
-					tooltip.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
-					tooltip.style.maxWidth = '300px';
+					tooltip.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.4)';
+					tooltip.style.maxWidth = '320px';
 					tooltip.style.wordWrap = 'break-word';
 					
-					// Get element type
-					const tagName = this.lockedElement.tagName.toLowerCase();
-					let elementType = tagName;
-					if (tagName === 'a') elementType = 'Link';
-					else if (tagName === 'button') elementType = 'Button';
-					else if (tagName === 'input') elementType = 'Input (' + (this.lockedElement.type || 'text') + ')';
-					else if (tagName === 'select') elementType = 'Select';
-					else if (tagName === 'textarea') elementType = 'Textarea';
-					else if (tagName === 'img') elementType = 'Image';
-					else if (tagName === 'div') elementType = 'Div';
-					else if (tagName === 'span') elementType = 'Span';
-					
 					tooltip.innerHTML = ` + "`" + `
-						<div style="font-weight: 600; margin-bottom: 4px; color: #fbbf24;">
+						<div style="font-weight: 600; margin-bottom: 6px; font-size: 13px;">
 							🔒 Locked Element
 						</div>
-						<div style="margin-bottom: 4px;">
-							<span style="color: #9ca3af;">Type:</span> 
-							<span style="color: #60a5fa;">${elementType}</span>
+						<div style="margin-bottom: 6px; font-size: 12px;">
+							<span style="opacity: 0.9;">Type:</span> 
+							<strong>${colors.name}</strong>
 						</div>
-						<div style="font-family: monospace; font-size: 11px; color: #d1d5db;">
+						<div style="font-family: monospace; font-size: 10px; opacity: 0.95; background: rgba(0,0,0,0.2); padding: 4px 6px; border-radius: 3px; margin: 6px 0;">
 							${this.lockedElementSelector}
 						</div>
-						<div style="margin-top: 6px; font-size: 10px; color: #9ca3af; font-style: italic;">
-							Click anywhere to unlock
+						<div style="margin-top: 8px; font-size: 10px; opacity: 0.8; font-style: italic;">
+							💡 Click anywhere to unlock
 						</div>
 					` + "`" + `;
 					
 					// Position tooltip near the element
-					const tooltipTop = rect.top > 120 ? rect.top - 100 : rect.bottom + 10;
-					const tooltipLeft = Math.min(rect.left, window.innerWidth - 320);
+					const tooltipTop = rect.top > 140 ? rect.top - 120 : rect.bottom + 10;
+					const tooltipLeft = Math.min(Math.max(rect.left, 10), window.innerWidth - 340);
 					tooltip.style.top = tooltipTop + 'px';
 					tooltip.style.left = tooltipLeft + 'px';
 					
 					document.body.appendChild(tooltip);
+					
+					// Update on scroll
+					const updatePosition = () => {
+						if (!this.lockedElement) return;
+						const newRect = this.lockedElement.getBoundingClientRect();
+						highlight.style.top = newRect.top + 'px';
+						highlight.style.left = newRect.left + 'px';
+						const newTooltipTop = newRect.top > 140 ? newRect.top - 120 : newRect.bottom + 10;
+						const newTooltipLeft = Math.min(Math.max(newRect.left, 10), window.innerWidth - 340);
+						tooltip.style.top = newTooltipTop + 'px';
+						tooltip.style.left = newTooltipLeft + 'px';
+					};
+					
+					// Store scroll listener for cleanup
+					if (window.__crawlifyScrollListener) {
+						window.removeEventListener('scroll', window.__crawlifyScrollListener, true);
+					}
+					window.__crawlifyScrollListener = updatePosition;
+					window.addEventListener('scroll', updatePosition, true);
 				},
 				
 				showStatus(message, type) {
@@ -1318,6 +1422,7 @@ const selectorOverlayTemplate = `
 				openDetailedView(field) {
 					this.detailedViewField = field;
 					this.detailedViewTab = 'test';
+					this.editMode = false;
 					
 					// Run test automatically when opening detailed view
 					this.testSelectorInline(field);
@@ -1326,11 +1431,74 @@ const selectorOverlayTemplate = `
 				closeDetailedView() {
 					this.detailedViewField = null;
 					this.testResults = null;
+					this.editMode = false;
 					document.querySelectorAll('.crawlify-test-highlight').forEach(el => el.remove());
+					
+					// Remove test scroll listener
+					if (window.__crawlifyTestScrollListener) {
+						window.removeEventListener('scroll', window.__crawlifyTestScrollListener, true);
+						window.__crawlifyTestScrollListener = null;
+					}
+					window.__crawlifyTestElements = null;
 				},
 				
 				switchTab(tab) {
 					this.detailedViewTab = tab;
+					this.editMode = false;
+				},
+				
+				enableEditMode() {
+					this.editMode = true;
+					this.editFieldName = this.detailedViewField.name;
+					this.editFieldType = this.detailedViewField.type;
+					this.editFieldAttribute = this.detailedViewField.attribute || '';
+					this.editFieldMultiple = this.detailedViewField.multiple;
+				},
+				
+				cancelEdit() {
+					this.editMode = false;
+				},
+				
+				saveEdit() {
+					if (!this.editFieldName.trim()) {
+						this.showStatus('Field name cannot be empty', 'error');
+						return;
+					}
+					
+					// Check for duplicate names (excluding current field)
+					const duplicate = this.selectedFields.find(f => 
+						f.name === this.editFieldName.trim() && f !== this.detailedViewField
+					);
+					
+					if (duplicate) {
+						this.showStatus('Field name already exists', 'error');
+						return;
+					}
+					
+					// Update the field
+					this.detailedViewField.name = this.editFieldName.trim();
+					this.detailedViewField.type = this.editFieldType;
+					this.detailedViewField.attribute = this.editFieldAttribute;
+					this.detailedViewField.multiple = this.editFieldMultiple;
+					
+					// Recalculate element count if mode changed
+					try {
+						const elements = document.querySelectorAll(this.detailedViewField.selector);
+						this.detailedViewField.elementCount = elements.length;
+						this.detailedViewField.validation = this.createFieldValidation(
+							this.detailedViewField.selector, 
+							elements.length
+						);
+					} catch (e) {
+						console.error('Error updating field:', e);
+					}
+					
+					this.editMode = false;
+					this.showStatus('Field updated successfully!', 'success');
+					this.saveToWindow();
+					
+					// Re-run test with updated settings
+					this.testSelectorInline(this.detailedViewField);
 				},
 				
 				testSelectorInline(field) {
@@ -1383,9 +1551,13 @@ const selectorOverlayTemplate = `
 					// Remove old test highlights
 					document.querySelectorAll('.crawlify-test-highlight').forEach(el => el.remove());
 					
+					// Store elements for scroll updates
+					window.__crawlifyTestElements = Array.from(elements);
+					
 					// Add highlights for each matched element
 					Array.from(elements).forEach((element, index) => {
 						const rect = element.getBoundingClientRect();
+						const colors = this.getElementTypeColor(element);
 						const highlight = document.createElement('div');
 						highlight.className = 'crawlify-test-highlight';
 						highlight.style.position = 'fixed';
@@ -1393,28 +1565,57 @@ const selectorOverlayTemplate = `
 						highlight.style.left = rect.left + 'px';
 						highlight.style.width = rect.width + 'px';
 						highlight.style.height = rect.height + 'px';
-						highlight.style.border = '2px solid #10b981';
-						highlight.style.background = 'rgba(16, 185, 129, 0.1)';
+						highlight.style.border = '3px solid ' + colors.border;
+						highlight.style.background = colors.bg;
 						highlight.style.pointerEvents = 'none';
 						highlight.style.zIndex = '999996';
-						highlight.style.boxShadow = '0 0 0 1px rgba(16, 185, 129, 0.3)';
+						highlight.style.boxShadow = '0 0 0 1px ' + colors.border.replace(')', ', 0.4)').replace('#', 'rgba(').replace(/^rgba\(([^,]+),/, 'rgba($1,').replace(/^rgba\((\w{2})(\w{2})(\w{2})/, (m, r, g, b) => 
+							'rgba(' + parseInt(r, 16) + ', ' + parseInt(g, 16) + ', ' + parseInt(b, 16));
+						highlight.style.borderRadius = '3px';
+						highlight.dataset.elementIndex = index;
 						
-						// Add index label
+						// Add index label with element color
 						const label = document.createElement('div');
 						label.style.position = 'absolute';
 						label.style.top = '2px';
 						label.style.left = '2px';
-						label.style.background = '#10b981';
+						label.style.background = colors.border;
 						label.style.color = 'white';
-						label.style.padding = '2px 6px';
-						label.style.borderRadius = '3px';
+						label.style.padding = '3px 7px';
+						label.style.borderRadius = '4px';
 						label.style.fontSize = '11px';
 						label.style.fontWeight = 'bold';
+						label.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
 						label.textContent = (index + 1).toString();
 						highlight.appendChild(label);
 						
 						document.body.appendChild(highlight);
 					});
+					
+					// Update positions on scroll
+					const updateTestHighlights = () => {
+						if (!window.__crawlifyTestElements) return;
+						
+						const highlights = document.querySelectorAll('.crawlify-test-highlight');
+						highlights.forEach((highlight) => {
+							const index = parseInt(highlight.dataset.elementIndex);
+							const element = window.__crawlifyTestElements[index];
+							if (element) {
+								const rect = element.getBoundingClientRect();
+								highlight.style.top = rect.top + 'px';
+								highlight.style.left = rect.left + 'px';
+								highlight.style.width = rect.width + 'px';
+								highlight.style.height = rect.height + 'px';
+							}
+						});
+					};
+					
+					// Store scroll listener for cleanup
+					if (window.__crawlifyTestScrollListener) {
+						window.removeEventListener('scroll', window.__crawlifyTestScrollListener, true);
+					}
+					window.__crawlifyTestScrollListener = updateTestHighlights;
+					window.addEventListener('scroll', updateTestHighlights, true);
 				},
 				
 				closeTestResults() {
@@ -1429,11 +1630,20 @@ const selectorOverlayTemplate = `
 						window.__crawlifyCleanupNavigation();
 					}
 					
+					// Clean up scroll listeners
+					if (window.__crawlifyScrollListener) {
+						window.removeEventListener('scroll', window.__crawlifyScrollListener, true);
+					}
+					if (window.__crawlifyTestScrollListener) {
+						window.removeEventListener('scroll', window.__crawlifyTestScrollListener, true);
+					}
+					
 					// Signal backend that we're done
 					window.__crawlifyClosed = true;
 					document.getElementById('crawlify-selector-overlay').remove();
-					document.querySelectorAll('.crawlify-highlight, .crawlify-highlight-parent, .crawlify-element-tag, .crawlify-test-highlight').forEach(el => el.remove());
+					document.querySelectorAll('.crawlify-highlight, .crawlify-highlight-parent, .crawlify-element-tag, .crawlify-test-highlight, .crawlify-locked-highlight, .crawlify-element-tooltip').forEach(el => el.remove());
 					document.removeEventListener('mousemove', this.handleMouseMove);
+					document.removeEventListener('click', this.handlePageClick, true);
 					document.removeEventListener('keydown', this.handleKeyDown);
 				}
 			},
@@ -1656,44 +1866,102 @@ const selectorOverlayTemplate = `
 							
 							<!-- Configuration Tab -->
 							<div v-if="detailedViewTab === 'config'" class="crawlify-tab-content">
-								<div class="crawlify-config-section">
-									<div class="crawlify-config-label">Field Name</div>
-									<div class="crawlify-config-value">{{ detailedViewField.name }}</div>
-								</div>
-								
-								<div class="crawlify-config-section">
-									<div class="crawlify-config-label">CSS Selector</div>
-									<div class="crawlify-config-value" style="font-family: monospace; font-size: 11px; word-break: break-all;">
-										{{ detailedViewField.selector }}
+								<!-- Edit Mode -->
+								<div v-if="editMode" style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+									<div style="font-weight: 600; color: #92400e; margin-bottom: 12px;">✏️ Edit Field</div>
+									
+									<div style="margin-bottom: 12px;">
+										<label class="crawlify-config-label" style="display: block; margin-bottom: 4px;">Field Name</label>
+										<input 
+											v-model="editFieldName" 
+											class="crawlify-input"
+											style="width: 100%;"
+											placeholder="e.g., title, price, description">
+									</div>
+									
+									<div style="margin-bottom: 12px;">
+										<label class="crawlify-config-label" style="display: block; margin-bottom: 4px;">Extraction Type</label>
+										<select v-model="editFieldType" class="crawlify-select" style="width: 100%;">
+											<option value="text">Text Content</option>
+											<option value="attribute">Attribute</option>
+											<option value="html">HTML</option>
+										</select>
+									</div>
+									
+									<div v-if="editFieldType === 'attribute'" style="margin-bottom: 12px;">
+										<label class="crawlify-config-label" style="display: block; margin-bottom: 4px;">Attribute Name</label>
+										<input 
+											v-model="editFieldAttribute" 
+											class="crawlify-input"
+											style="width: 100%;"
+											placeholder="e.g., href, src, data-id">
+									</div>
+									
+									<div style="margin-bottom: 12px;">
+										<label class="crawlify-config-label" style="display: block; margin-bottom: 4px;">Selection Mode</label>
+										<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+											<input type="checkbox" v-model="editFieldMultiple" style="cursor: pointer;">
+											<span style="font-size: 13px; color: #374151;">Extract from multiple elements</span>
+										</label>
+									</div>
+									
+									<div style="display: flex; gap: 8px;">
+										<button @click="saveEdit" class="crawlify-btn" style="flex: 1;">
+											💾 Save Changes
+										</button>
+										<button @click="cancelEdit" style="flex: 1; background: #6b7280; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">
+											Cancel
+										</button>
 									</div>
 								</div>
 								
-								<div class="crawlify-config-section">
-									<div class="crawlify-config-label">Extraction Type</div>
-									<div class="crawlify-config-value">{{ detailedViewField.type }}</div>
-								</div>
-								
-								<div v-if="detailedViewField.type === 'attribute'" class="crawlify-config-section">
-									<div class="crawlify-config-label">Attribute Name</div>
-									<div class="crawlify-config-value">{{ detailedViewField.attribute }}</div>
-								</div>
-								
-								<div class="crawlify-config-section">
-									<div class="crawlify-config-label">Selection Mode</div>
-									<div class="crawlify-config-value">
-										{{ detailedViewField.multiple ? 'Multiple Elements' : 'Single Element' }}
+								<!-- View Mode -->
+								<div v-else>
+									<div style="margin-bottom: 12px;">
+										<button @click="enableEditMode" style="width: 100%; background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">
+											✏️ Edit Field
+										</button>
 									</div>
-								</div>
-								
-								<div class="crawlify-config-section">
-									<div class="crawlify-config-label">Element Count</div>
-									<div class="crawlify-config-value">{{ detailedViewField.elementCount || '?' }}</div>
-								</div>
-								
-								<div v-if="detailedViewField.preview" class="crawlify-config-section">
-									<div class="crawlify-config-label">Preview</div>
-									<div class="crawlify-config-value" style="font-style: italic; color: #6b7280;">
-										"{{ detailedViewField.preview }}"
+									
+									<div class="crawlify-config-section">
+										<div class="crawlify-config-label">Field Name</div>
+										<div class="crawlify-config-value">{{ detailedViewField.name }}</div>
+									</div>
+									
+									<div class="crawlify-config-section">
+										<div class="crawlify-config-label">CSS Selector</div>
+										<div class="crawlify-config-value" style="font-family: monospace; font-size: 11px; word-break: break-all;">
+											{{ detailedViewField.selector }}
+										</div>
+									</div>
+									
+									<div class="crawlify-config-section">
+										<div class="crawlify-config-label">Extraction Type</div>
+										<div class="crawlify-config-value">{{ detailedViewField.type }}</div>
+									</div>
+									
+									<div v-if="detailedViewField.type === 'attribute'" class="crawlify-config-section">
+										<div class="crawlify-config-label">Attribute Name</div>
+										<div class="crawlify-config-value">{{ detailedViewField.attribute }}</div>
+									</div>
+									
+									<div class="crawlify-config-section">
+										<div class="crawlify-config-label">Selection Mode</div>
+										<div class="crawlify-config-value">
+											{{ detailedViewField.multiple ? 'Multiple Elements' : 'Single Element' }}
+										</div>
+									</div>
+									
+									<div class="crawlify-config-section">
+										<div class="crawlify-config-label">Element Count</div>
+										<div class="crawlify-config-value">{{ detailedViewField.elementCount || '?' }}</div>
+									</div>
+									
+									<div v-if="detailedViewField.preview" class="crawlify-config-section">
+										<div class="crawlify-config-label">Preview</div>
+										<div class="crawlify-config-value" style="font-style: italic; color: #6b7280;">
+											"{{ detailedViewField.preview }}"
+										</div>
 									</div>
 								</div>
 							</div>
