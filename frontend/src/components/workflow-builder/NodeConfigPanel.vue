@@ -31,6 +31,8 @@ const emit = defineEmits<Emits>()
 
 const localNode = ref<WorkflowNode | null>(null)
 const collapsedFields = ref<Set<string>>(new Set())
+const fieldSearchQuery = ref('')
+const fieldContainerRef = ref<HTMLElement | null>(null)
 
 watch(
   () => props.node,
@@ -109,6 +111,15 @@ function addFieldArrayItem(key: string) {
     attribute: '',
     default: ''
   }
+  
+  // Scroll to the new field after it's added
+  setTimeout(() => {
+    const fieldCards = document.querySelectorAll('[data-field-card]')
+    const lastCard = fieldCards[fieldCards.length - 1]
+    if (lastCard) {
+      lastCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, 100)
 }
 
 function removeFieldArrayItem(key: string, fieldName: string) {
@@ -180,6 +191,29 @@ function toggleFieldCollapse(fieldName: string) {
   } else {
     collapsedFields.value.add(fieldName)
   }
+}
+
+function collapseAllFields(key: string) {
+  if (!localNode.value) return
+  const fields = localNode.value.data.params[key] || {}
+  Object.keys(fields).forEach(fieldName => {
+    collapsedFields.value.add(fieldName)
+  })
+}
+
+function expandAllFields() {
+  collapsedFields.value.clear()
+}
+
+function isFieldVisible(fieldName: string): boolean {
+  if (!fieldSearchQuery.value) return true
+  return fieldName.toLowerCase().includes(fieldSearchQuery.value.toLowerCase())
+}
+
+function getVisibleFieldsCount(key: string): number {
+  if (!localNode.value) return 0
+  const fields = localNode.value.data.params[key] || {}
+  return Object.keys(fields).filter(isFieldVisible).length
 }
 </script>
 
@@ -299,38 +333,84 @@ function toggleFieldCollapse(fieldName: string) {
 
           <!-- Field Array Input -->
           <div v-else-if="field.type === 'field_array'" class="space-y-3">
-            <div class="flex items-center justify-between mb-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="default"
-                @click="addFieldArrayItem(field.key)"
-                class="w-full"
-              >
-                <Plus class="h-4 w-4 mr-2" />
-                Add Field
-              </Button>
+            <!-- Sticky Header with Actions -->
+            <div class="sticky top-0 z-10 bg-background pb-2 space-y-2 border-b border-border">
+              <div class="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="default"
+                  @click="addFieldArrayItem(field.key)"
+                  class="flex-1"
+                >
+                  <Plus class="h-4 w-4 mr-2" />
+                  Add Field
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  @click="expandAllFields()"
+                  title="Expand all fields"
+                  v-if="Object.keys(localNode.data.params[field.key] || {}).length > 0"
+                >
+                  <ChevronDown class="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  @click="collapseAllFields(field.key)"
+                  title="Collapse all fields"
+                  v-if="Object.keys(localNode.data.params[field.key] || {}).length > 0"
+                >
+                  <ChevronUp class="h-4 w-4" />
+                </Button>
+              </div>
+              
+              <!-- Search Bar -->
+              <div v-if="Object.keys(localNode.data.params[field.key] || {}).length > 3" class="relative">
+                <Input
+                  v-model="fieldSearchQuery"
+                  placeholder="Search fields by name..."
+                  class="pr-8"
+                />
+                <div class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  {{ getVisibleFieldsCount(field.key) }}/{{ Object.keys(localNode.data.params[field.key] || {}).length }}
+                </div>
+              </div>
             </div>
             
             <div
               v-for="(fieldData, fieldName, index) in (localNode.data.params[field.key] || {})"
               :key="fieldName"
-              class="relative border-2 rounded-lg p-4 space-y-3 bg-card shadow-sm hover:shadow-md transition-shadow"
+              v-show="isFieldVisible(fieldName as string)"
+              data-field-card
+              class="relative border-2 rounded-lg bg-card shadow-sm hover:shadow-md transition-all"
+              :class="collapsedFields.has(fieldName as string) ? 'border-border' : 'border-primary/20'"
             >
-              <div class="flex items-center justify-between pb-3 border-b">
-                <div class="flex items-center gap-2">
-                  <div class="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+              <div 
+                class="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                @click="toggleFieldCollapse(fieldName as string)"
+              >
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                  <div class="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
                     {{ index + 1 }}
                   </div>
-                  <h4 class="font-semibold text-sm truncate max-w-[200px]" :title="fieldName as string">{{ fieldName }}</h4>
+                  <h4 class="font-semibold text-sm truncate" :title="fieldName as string">{{ fieldName }}</h4>
+                  <div class="text-xs text-muted-foreground">
+                    <span v-if="(fieldData as any).selector" class="font-mono bg-muted px-1.5 py-0.5 rounded">
+                      {{ (fieldData as any).selector }}
+                    </span>
+                  </div>
                 </div>
-                <div class="flex items-center gap-1">
+                <div class="flex items-center gap-1 shrink-0">
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
                     class="h-8 w-8 p-0 hover:bg-primary/10"
-                    @click="duplicateFieldArrayItem(field.key, fieldName as string)"
+                    @click.stop="duplicateFieldArrayItem(field.key, fieldName as string)"
                     title="Duplicate field"
                   >
                     <Copy class="h-3.5 w-3.5" />
@@ -340,21 +420,36 @@ function toggleFieldCollapse(fieldName: string) {
                     size="sm"
                     variant="ghost"
                     class="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                    @click="removeFieldArrayItem(field.key, fieldName as string)"
+                    @click.stop="removeFieldArrayItem(field.key, fieldName as string)"
                     title="Delete field"
                   >
                     <Trash2 class="h-3.5 w-3.5" />
                   </Button>
+                  <div class="h-4 w-4 text-muted-foreground shrink-0">
+                    <ChevronDown 
+                      v-if="!collapsedFields.has(fieldName as string)" 
+                      class="h-4 w-4 transition-transform"
+                    />
+                    <ChevronUp 
+                      v-else 
+                      class="h-4 w-4 transition-transform"
+                    />
+                  </div>
                 </div>
               </div>
               
-              <div class="grid gap-3">
-                <div
-                  v-for="itemField in field.arrayItemSchema"
-                  :key="itemField.key"
-                  v-show="shouldShowField(itemField, fieldData as any)"
-                  class="space-y-2"
-                >
+              <!-- Collapsible Content -->
+              <div 
+                v-show="!collapsedFields.has(fieldName as string)"
+                class="p-4 pt-3 border-t border-border"
+              >
+                <div class="grid gap-3">
+                  <div
+                    v-for="itemField in field.arrayItemSchema"
+                    :key="itemField.key"
+                    v-show="shouldShowField(itemField, fieldData as any)"
+                    class="space-y-2"
+                  >
                   <!-- Field Name (special handling) -->
                   <div v-if="itemField.key === 'name'">
                     <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
@@ -440,7 +535,26 @@ function toggleFieldCollapse(fieldName: string) {
                 </div>
               </div>
             </div>
+            </div>
 
+            <!-- No Results Message -->
+            <div
+              v-if="fieldSearchQuery && getVisibleFieldsCount(field.key) === 0"
+              class="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg"
+            >
+              <p class="text-sm">No fields found matching "{{ fieldSearchQuery }}"</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                @click="fieldSearchQuery = ''"
+                class="mt-2"
+              >
+                Clear search
+              </Button>
+            </div>
+
+            <!-- Empty State -->
             <div
               v-if="!localNode.data.params[field.key] || Object.keys(localNode.data.params[field.key]).length === 0"
               class="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
