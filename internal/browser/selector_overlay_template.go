@@ -186,6 +186,14 @@ const selectorOverlayTemplate = `
 			padding: 12px;
 			margin-bottom: 8px;
 			position: relative;
+			transition: all 0.2s;
+		}
+		
+		.crawlify-field-item:hover {
+			background: #f3f4f6;
+			border-color: #d1d5db;
+			transform: translateX(2px);
+			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 		}
 		
 		.crawlify-field-name {
@@ -433,20 +441,120 @@ const selectorOverlayTemplate = `
 			margin-top: 2px;
 		}
 		
-		.crawlify-test-button {
-			background: #8b5cf6;
-			color: white;
+		.crawlify-detailed-view {
+			animation: slideIn 0.3s ease-out;
+		}
+		
+		@keyframes slideIn {
+			from {
+				opacity: 0;
+				transform: translateX(20px);
+			}
+			to {
+				opacity: 1;
+				transform: translateX(0);
+			}
+		}
+		
+		.crawlify-detailed-header {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			margin-bottom: 16px;
+			padding-bottom: 12px;
+			border-bottom: 2px solid #e5e7eb;
+		}
+		
+		.crawlify-back-button {
+			background: #f3f4f6;
+			color: #374151;
 			border: none;
-			border-radius: 4px;
-			padding: 4px 8px;
-			font-size: 11px;
+			border-radius: 6px;
+			padding: 6px 12px;
+			font-size: 13px;
+			font-weight: 600;
 			cursor: pointer;
-			margin-left: 8px;
 			transition: background 0.2s;
 		}
 		
-		.crawlify-test-button:hover {
-			background: #7c3aed;
+		.crawlify-back-button:hover {
+			background: #e5e7eb;
+		}
+		
+		.crawlify-detailed-title {
+			font-size: 16px;
+			font-weight: 700;
+			color: #1f2937;
+			flex: 1;
+		}
+		
+		.crawlify-tabs {
+			display: flex;
+			gap: 4px;
+			margin-bottom: 16px;
+			background: #f3f4f6;
+			padding: 4px;
+			border-radius: 8px;
+		}
+		
+		.crawlify-tab {
+			flex: 1;
+			background: transparent;
+			color: #6b7280;
+			border: none;
+			border-radius: 6px;
+			padding: 8px 12px;
+			font-size: 13px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all 0.2s;
+		}
+		
+		.crawlify-tab:hover {
+			background: #e5e7eb;
+			color: #374151;
+		}
+		
+		.crawlify-tab.active {
+			background: white;
+			color: #1f2937;
+			box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		}
+		
+		.crawlify-tab-content {
+			animation: fadeIn 0.3s ease-out;
+		}
+		
+		@keyframes fadeIn {
+			from {
+				opacity: 0;
+			}
+			to {
+				opacity: 1;
+			}
+		}
+		
+		.crawlify-config-section {
+			background: #f9fafb;
+			border: 1px solid #e5e7eb;
+			border-radius: 6px;
+			padding: 12px;
+			margin-bottom: 12px;
+		}
+		
+		.crawlify-config-label {
+			font-size: 11px;
+			font-weight: 600;
+			color: #6b7280;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			margin-bottom: 4px;
+		}
+		
+		.crawlify-config-value {
+			font-size: 13px;
+			color: #1f2937;
+			font-weight: 500;
 		}
 		
 		.crawlify-test-results {
@@ -650,7 +758,11 @@ const selectorOverlayTemplate = `
 					status: null,
 					statusType: 'success',
 					testingSelector: null,
-					testResults: null
+					testResults: null,
+					detailedViewField: null,
+					detailedViewTab: 'test', // 'test' or 'config'
+					lockedElement: null,
+					lockedElementSelector: null
 				};
 			},
 			methods: {
@@ -974,8 +1086,8 @@ const selectorOverlayTemplate = `
 				handleMouseMove(event) {
 					if (!this.selectionActive) return;
 					
-					// Don't update hover when test modal is open
-					if (this.testResults) return;
+					// Don't update hover when element is locked or in detailed view
+					if (this.lockedElement || this.detailedViewField) return;
 					
 					// Find the actual target element (not our overlay)
 					const elements = document.elementsFromPoint(event.clientX, event.clientY);
@@ -989,6 +1101,50 @@ const selectorOverlayTemplate = `
 						this.hoveredElementSelector = this.generateSelector(targetElement);
 						this.highlightElement(targetElement);
 						this.updateElementCount();
+					}
+				},
+				
+				lockElement() {
+					if (!this.hoveredElement || !this.hoveredElementSelector) return;
+					
+					this.lockedElement = this.hoveredElement;
+					this.lockedElementSelector = this.hoveredElementSelector;
+					this.selectionActive = false;
+					
+					// Show locked highlight
+					this.showLockedHighlight();
+					this.showStatus('Element locked. Click anywhere on page to unlock.', 'success');
+				},
+				
+				unlockElement() {
+					this.lockedElement = null;
+					this.lockedElementSelector = null;
+					this.selectionActive = true;
+					
+					// Remove locked highlights
+					document.querySelectorAll('.crawlify-locked-highlight, .crawlify-element-tooltip').forEach(el => el.remove());
+					this.showStatus('Element unlocked. Resume selection.', 'success');
+				},
+				
+				handlePageClick(event) {
+					// Ignore clicks on overlay
+					if (event.target.closest('#crawlify-selector-overlay')) {
+						return;
+					}
+					
+					// If element is locked, unlock it
+					if (this.lockedElement) {
+						this.unlockElement();
+						event.preventDefault();
+						event.stopPropagation();
+						return;
+					}
+					
+					// If hovering over an element, lock it
+					if (this.hoveredElement && !this.detailedViewField) {
+						this.lockElement();
+						event.preventDefault();
+						event.stopPropagation();
 					}
 				},
 				
@@ -1042,6 +1198,82 @@ const selectorOverlayTemplate = `
 					document.body.appendChild(tag);
 				},
 				
+				showLockedHighlight() {
+					if (!this.lockedElement) return;
+					
+					// Remove old locked highlights
+					document.querySelectorAll('.crawlify-locked-highlight, .crawlify-element-tooltip').forEach(el => el.remove());
+					
+					const rect = this.lockedElement.getBoundingClientRect();
+					
+					// Locked highlight (thicker border, different color)
+					const highlight = document.createElement('div');
+					highlight.className = 'crawlify-locked-highlight';
+					highlight.style.position = 'fixed';
+					highlight.style.top = rect.top + 'px';
+					highlight.style.left = rect.left + 'px';
+					highlight.style.width = rect.width + 'px';
+					highlight.style.height = rect.height + 'px';
+					highlight.style.border = '4px solid #f59e0b';
+					highlight.style.background = 'rgba(245, 158, 11, 0.1)';
+					highlight.style.pointerEvents = 'none';
+					highlight.style.zIndex = '999999';
+					highlight.style.boxShadow = '0 0 0 2px rgba(245, 158, 11, 0.3), 0 4px 12px rgba(245, 158, 11, 0.4)';
+					highlight.style.borderRadius = '4px';
+					document.body.appendChild(highlight);
+					
+					// Element tooltip with type and selector
+					const tooltip = document.createElement('div');
+					tooltip.className = 'crawlify-element-tooltip';
+					tooltip.style.position = 'fixed';
+					tooltip.style.background = '#1f2937';
+					tooltip.style.color = '#f9fafb';
+					tooltip.style.padding = '8px 12px';
+					tooltip.style.borderRadius = '6px';
+					tooltip.style.fontSize = '12px';
+					tooltip.style.zIndex = '1000000';
+					tooltip.style.pointerEvents = 'none';
+					tooltip.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+					tooltip.style.maxWidth = '300px';
+					tooltip.style.wordWrap = 'break-word';
+					
+					// Get element type
+					const tagName = this.lockedElement.tagName.toLowerCase();
+					let elementType = tagName;
+					if (tagName === 'a') elementType = 'Link';
+					else if (tagName === 'button') elementType = 'Button';
+					else if (tagName === 'input') elementType = 'Input (' + (this.lockedElement.type || 'text') + ')';
+					else if (tagName === 'select') elementType = 'Select';
+					else if (tagName === 'textarea') elementType = 'Textarea';
+					else if (tagName === 'img') elementType = 'Image';
+					else if (tagName === 'div') elementType = 'Div';
+					else if (tagName === 'span') elementType = 'Span';
+					
+					tooltip.innerHTML = ` + "`" + `
+						<div style="font-weight: 600; margin-bottom: 4px; color: #fbbf24;">
+							🔒 Locked Element
+						</div>
+						<div style="margin-bottom: 4px;">
+							<span style="color: #9ca3af;">Type:</span> 
+							<span style="color: #60a5fa;">${elementType}</span>
+						</div>
+						<div style="font-family: monospace; font-size: 11px; color: #d1d5db;">
+							${this.lockedElementSelector}
+						</div>
+						<div style="margin-top: 6px; font-size: 10px; color: #9ca3af; font-style: italic;">
+							Click anywhere to unlock
+						</div>
+					` + "`" + `;
+					
+					// Position tooltip near the element
+					const tooltipTop = rect.top > 120 ? rect.top - 100 : rect.bottom + 10;
+					const tooltipLeft = Math.min(rect.left, window.innerWidth - 320);
+					tooltip.style.top = tooltipTop + 'px';
+					tooltip.style.left = tooltipLeft + 'px';
+					
+					document.body.appendChild(tooltip);
+				},
+				
 				showStatus(message, type) {
 					this.status = message;
 					this.statusType = type;
@@ -1083,7 +1315,25 @@ const selectorOverlayTemplate = `
 					}
 				},
 				
-				testSelector(field) {
+				openDetailedView(field) {
+					this.detailedViewField = field;
+					this.detailedViewTab = 'test';
+					
+					// Run test automatically when opening detailed view
+					this.testSelectorInline(field);
+				},
+				
+				closeDetailedView() {
+					this.detailedViewField = null;
+					this.testResults = null;
+					document.querySelectorAll('.crawlify-test-highlight').forEach(el => el.remove());
+				},
+				
+				switchTab(tab) {
+					this.detailedViewTab = tab;
+				},
+				
+				testSelectorInline(field) {
 					this.testingSelector = field.name;
 					this.testResults = null;
 					
@@ -1189,6 +1439,7 @@ const selectorOverlayTemplate = `
 			},
 			mounted() {
 				document.addEventListener('mousemove', this.handleMouseMove);
+				document.addEventListener('click', this.handlePageClick, true);
 				
 				// Keyboard shortcuts
 				document.addEventListener('keydown', this.handleKeyDown);
@@ -1200,6 +1451,7 @@ const selectorOverlayTemplate = `
 			},
 			beforeUnmount() {
 				document.removeEventListener('mousemove', this.handleMouseMove);
+				document.removeEventListener('click', this.handlePageClick, true);
 				document.removeEventListener('keydown', this.handleKeyDown);
 			},
 			computed: {
@@ -1291,36 +1543,158 @@ const selectorOverlayTemplate = `
 							</button>
 						</div>
 						
-						<div class="crawlify-fields" v-if="selectedFields.length > 0">
-							<div style="font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #374151;">
-								Selected Fields ({{ selectedFields.length }})
+						<!-- Fields List View -->
+						<div v-if="!detailedViewField" class="crawlify-fields">
+							<div v-if="selectedFields.length > 0">
+								<div style="font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #374151;">
+									Selected Fields ({{ selectedFields.length }})
+								</div>
+								<div 
+									v-for="(field, index) in selectedFields" 
+									:key="index"
+									class="crawlify-field-item"
+									@click="openDetailedView(field)"
+									style="cursor: pointer;">
+									<button class="crawlify-field-remove" @click.stop="removeField(index)">×</button>
+									<div class="crawlify-field-name">
+										{{ field.name }}
+										<span v-if="field.multiple" class="crawlify-field-count">
+											{{ field.elementCount || '?' }} elements
+										</span>
+										<span v-else style="color: #6b7280; font-size: 12px;"> (single)</span>
+									</div>
+									<div class="crawlify-field-selector">{{ field.selector }}</div>
+									<div v-if="field.preview" class="crawlify-field-preview">
+										Preview: "{{ field.preview }}"
+									</div>
+									<div v-if="field.validation" 
+										class="crawlify-field-validation"
+										:class="field.validation.type">
+										<span class="crawlify-field-validation-icon">
+											{{ field.validation.type === 'valid' ? '✓' : field.validation.type === 'warning' ? '⚠' : '✗' }}
+										</span>
+										<span>{{ field.validation.message }}</span>
+									</div>
+								</div>
 							</div>
-							<div 
-								v-for="(field, index) in selectedFields" 
-								:key="index"
-								class="crawlify-field-item">
-								<button class="crawlify-field-remove" @click="removeField(index)">×</button>
-								<div class="crawlify-field-name">
-									{{ field.name }}
-									<span v-if="field.multiple" class="crawlify-field-count">
-										{{ field.elementCount || '?' }} elements
-									</span>
-									<span v-else style="color: #6b7280; font-size: 12px;"> (single)</span>
-									<button class="crawlify-test-button" @click="testSelector(field)" title="Test this selector">
-										🧪 Test
-									</button>
+						</div>
+						
+						<!-- Detailed View -->
+						<div v-if="detailedViewField" class="crawlify-detailed-view">
+							<div class="crawlify-detailed-header">
+								<button class="crawlify-back-button" @click="closeDetailedView">
+									← Back
+								</button>
+								<div class="crawlify-detailed-title">{{ detailedViewField.name }}</div>
+							</div>
+							
+							<!-- Tabs -->
+							<div class="crawlify-tabs">
+								<button 
+									class="crawlify-tab"
+									:class="{ active: detailedViewTab === 'test' }"
+									@click="switchTab('test')">
+									🧪 Test Results
+								</button>
+								<button 
+									class="crawlify-tab"
+									:class="{ active: detailedViewTab === 'config' }"
+									@click="switchTab('config')">
+									⚙️ Configuration
+								</button>
+							</div>
+							
+							<!-- Test Results Tab -->
+							<div v-if="detailedViewTab === 'test'" class="crawlify-tab-content">
+								<div v-if="testResults && !testResults.error">
+									<div class="crawlify-test-summary">
+										<div class="crawlify-test-summary-title">Summary</div>
+										<div class="crawlify-test-summary-detail">
+											<strong>Selector:</strong> <code style="background: white; padding: 2px 4px; border-radius: 2px;">{{ testResults.selector }}</code>
+										</div>
+										<div class="crawlify-test-summary-detail">
+											<strong>Total matches:</strong> {{ testResults.count }} element(s)
+										</div>
+										<div class="crawlify-test-summary-detail">
+											<strong>Extraction type:</strong> {{ testResults.type }}
+											<span v-if="testResults.attribute"> ({{ testResults.attribute }})</span>
+										</div>
+										<div class="crawlify-test-summary-detail" style="margin-top: 8px; color: #059669;">
+											✓ All matching elements are highlighted on the page
+										</div>
+									</div>
+									
+									<div style="font-weight: 600; margin: 12px 0 8px 0; color: #374151;">
+										Sample Data (first {{ Math.min(10, testResults.elements.length) }} of {{ testResults.count }})
+									</div>
+									
+									<div v-for="element in testResults.elements" :key="element.index" class="crawlify-test-element">
+										<div class="crawlify-test-element-header">
+											<span class="crawlify-test-element-index">#{{ element.index }}</span>
+											<span class="crawlify-test-element-tag">
+												&lt;{{ element.tagName }}&gt;
+												<span v-if="element.classes" style="color: #9ca3af;">{{ element.classes.substring(0, 30) }}</span>
+											</span>
+										</div>
+										<div class="crawlify-test-element-value">
+											{{ element.value || '(empty)' }}
+										</div>
+									</div>
+									
+									<div v-if="testResults.count > 10" style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 12px; padding: 8px; background: #f9fafb; border-radius: 4px;">
+										+ {{ testResults.count - 10 }} more elements
+									</div>
 								</div>
-								<div class="crawlify-field-selector">{{ field.selector }}</div>
-								<div v-if="field.preview" class="crawlify-field-preview">
-									Preview: "{{ field.preview }}"
+								
+								<div v-if="testResults && testResults.error" class="crawlify-test-error">
+									{{ testResults.error }}
+									<div style="margin-top: 8px; font-family: monospace; font-size: 11px;">
+										{{ testResults.selector }}
+									</div>
 								</div>
-								<div v-if="field.validation" 
-									class="crawlify-field-validation"
-									:class="field.validation.type">
-									<span class="crawlify-field-validation-icon">
-										{{ field.validation.type === 'valid' ? '✓' : field.validation.type === 'warning' ? '⚠' : '✗' }}
-									</span>
-									<span>{{ field.validation.message }}</span>
+							</div>
+							
+							<!-- Configuration Tab -->
+							<div v-if="detailedViewTab === 'config'" class="crawlify-tab-content">
+								<div class="crawlify-config-section">
+									<div class="crawlify-config-label">Field Name</div>
+									<div class="crawlify-config-value">{{ detailedViewField.name }}</div>
+								</div>
+								
+								<div class="crawlify-config-section">
+									<div class="crawlify-config-label">CSS Selector</div>
+									<div class="crawlify-config-value" style="font-family: monospace; font-size: 11px; word-break: break-all;">
+										{{ detailedViewField.selector }}
+									</div>
+								</div>
+								
+								<div class="crawlify-config-section">
+									<div class="crawlify-config-label">Extraction Type</div>
+									<div class="crawlify-config-value">{{ detailedViewField.type }}</div>
+								</div>
+								
+								<div v-if="detailedViewField.type === 'attribute'" class="crawlify-config-section">
+									<div class="crawlify-config-label">Attribute Name</div>
+									<div class="crawlify-config-value">{{ detailedViewField.attribute }}</div>
+								</div>
+								
+								<div class="crawlify-config-section">
+									<div class="crawlify-config-label">Selection Mode</div>
+									<div class="crawlify-config-value">
+										{{ detailedViewField.multiple ? 'Multiple Elements' : 'Single Element' }}
+									</div>
+								</div>
+								
+								<div class="crawlify-config-section">
+									<div class="crawlify-config-label">Element Count</div>
+									<div class="crawlify-config-value">{{ detailedViewField.elementCount || '?' }}</div>
+								</div>
+								
+								<div v-if="detailedViewField.preview" class="crawlify-config-section">
+									<div class="crawlify-config-label">Preview</div>
+									<div class="crawlify-config-value" style="font-style: italic; color: #6b7280;">
+										"{{ detailedViewField.preview }}"
+									</div>
 								</div>
 							</div>
 						</div>
@@ -1330,7 +1704,7 @@ const selectorOverlayTemplate = `
 						</div>
 						
 						<!-- Keyboard shortcuts help -->
-						<div class="crawlify-keyboard-hints">
+						<div v-if="!detailedViewField" class="crawlify-keyboard-hints">
 							<div style="font-weight: 600; margin-bottom: 6px; color: #475569;">⌨️ Keyboard Shortcuts</div>
 							<div class="crawlify-keyboard-hint">
 								<span>Add current field</span>
@@ -1352,64 +1726,6 @@ const selectorOverlayTemplate = `
 						
 						<div v-if="status" class="crawlify-status" :class="statusType">
 							{{ status }}
-						</div>
-					</div>
-					
-					<!-- Test Results Modal -->
-					<div v-if="testResults">
-						<div class="crawlify-test-overlay" @click="closeTestResults"></div>
-						<div class="crawlify-test-results">
-							<div class="crawlify-test-header">
-								<div class="crawlify-test-title">🧪 Selector Test Results</div>
-								<button class="crawlify-test-close" @click="closeTestResults">Close</button>
-							</div>
-							
-							<div v-if="testResults.error" class="crawlify-test-error">
-								{{ testResults.error }}
-								<div style="margin-top: 8px; font-family: monospace; font-size: 11px;">
-									{{ testResults.selector }}
-								</div>
-							</div>
-							
-							<div v-else>
-								<div class="crawlify-test-summary">
-									<div class="crawlify-test-summary-title">Summary</div>
-									<div class="crawlify-test-summary-detail">
-										<strong>Selector:</strong> <code style="background: white; padding: 2px 4px; border-radius: 2px;">{{ testResults.selector }}</code>
-									</div>
-									<div class="crawlify-test-summary-detail">
-										<strong>Total matches:</strong> {{ testResults.count }} element(s)
-									</div>
-									<div class="crawlify-test-summary-detail">
-										<strong>Extraction type:</strong> {{ testResults.type }}
-										<span v-if="testResults.attribute"> ({{ testResults.attribute }})</span>
-									</div>
-									<div class="crawlify-test-summary-detail" style="margin-top: 8px; color: #059669;">
-										✓ All matching elements are highlighted on the page
-									</div>
-								</div>
-								
-								<div style="font-weight: 600; margin-bottom: 8px; color: #374151;">
-									Sample Data (showing first {{ Math.min(10, testResults.elements.length) }} of {{ testResults.count }})
-								</div>
-								
-								<div v-for="element in testResults.elements" :key="element.index" class="crawlify-test-element">
-									<div class="crawlify-test-element-header">
-										<span class="crawlify-test-element-index">#{{ element.index }}</span>
-										<span class="crawlify-test-element-tag">
-											&lt;{{ element.tagName }}&gt;
-											<span v-if="element.classes" style="color: #9ca3af;">{{ element.classes.substring(0, 30) }}</span>
-										</span>
-									</div>
-									<div class="crawlify-test-element-value">
-										{{ element.value || '(empty)' }}
-									</div>
-								</div>
-								
-								<div v-if="testResults.count > 10" style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 12px; padding: 8px; background: #f9fafb; border-radius: 4px;">
-									+ {{ testResults.count - 10 }} more elements (scroll the page to see all highlights)
-								</div>
-							</div>
 						</div>
 					</div>
 				</div>
