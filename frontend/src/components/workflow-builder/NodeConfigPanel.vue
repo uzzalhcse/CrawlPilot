@@ -14,7 +14,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { X, Settings } from 'lucide-vue-next'
+import { X, Settings, Plus, Trash2, Copy, GripVertical, ChevronDown, ChevronUp } from 'lucide-vue-next'
 
 interface Props {
   node: WorkflowNode | null
@@ -30,6 +30,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const localNode = ref<WorkflowNode | null>(null)
+const collapsedFields = ref<Set<string>>(new Set())
 
 watch(
   () => props.node,
@@ -91,6 +92,93 @@ function parseJsonParam(value: string, key: string) {
     updateParam(key, parsed)
   } catch (e) {
     console.error('Invalid JSON:', e)
+  }
+}
+
+function addFieldArrayItem(key: string) {
+  if (!localNode.value) return
+  if (!localNode.value.data.params[key]) {
+    localNode.value.data.params[key] = {}
+  }
+  const fields = localNode.value.data.params[key]
+  const newFieldName = `field_${Object.keys(fields).length + 1}`
+  fields[newFieldName] = {
+    selector: '',
+    type: 'text',
+    transform: 'none',
+    attribute: '',
+    default: ''
+  }
+}
+
+function removeFieldArrayItem(key: string, fieldName: string) {
+  if (!localNode.value) return
+  const fields = localNode.value.data.params[key]
+  if (fields && fields[fieldName]) {
+    delete fields[fieldName]
+  }
+}
+
+function updateFieldArrayItem(key: string, fieldName: string, itemKey: string, value: any) {
+  if (!localNode.value) return
+  if (!localNode.value.data.params[key]) {
+    localNode.value.data.params[key] = {}
+  }
+  if (!localNode.value.data.params[key][fieldName]) {
+    localNode.value.data.params[key][fieldName] = {}
+  }
+  localNode.value.data.params[key][fieldName][itemKey] = value
+}
+
+function renameFieldArrayItem(key: string, oldName: string, newName: string) {
+  if (!localNode.value || !newName || oldName === newName) return
+  const fields = localNode.value.data.params[key]
+  if (fields && fields[oldName]) {
+    fields[newName] = fields[oldName]
+    delete fields[oldName]
+  }
+}
+
+function shouldShowField(itemField: any, fieldData: any): boolean {
+  // Show attribute field only when type is 'attr'
+  if (itemField.key === 'attribute') {
+    return fieldData.type === 'attr'
+  }
+  
+  // Show transform field only when type is not empty
+  if (itemField.key === 'transform') {
+    return fieldData.type && fieldData.type !== ''
+  }
+  
+  // Show default field always
+  // Show all other fields by default
+  return true
+}
+
+function duplicateFieldArrayItem(key: string, fieldName: string) {
+  if (!localNode.value) return
+  const fields = localNode.value.data.params[key]
+  if (fields && fields[fieldName]) {
+    const originalField = fields[fieldName]
+    let newFieldName = `${fieldName}_copy`
+    let counter = 1
+    
+    // Find unique name
+    while (fields[newFieldName]) {
+      newFieldName = `${fieldName}_copy_${counter}`
+      counter++
+    }
+    
+    // Deep clone the field
+    fields[newFieldName] = JSON.parse(JSON.stringify(originalField))
+  }
+}
+
+function toggleFieldCollapse(fieldName: string) {
+  if (collapsedFields.value.has(fieldName)) {
+    collapsedFields.value.delete(fieldName)
+  } else {
+    collapsedFields.value.add(fieldName)
   }
 }
 </script>
@@ -207,6 +295,160 @@ function parseJsonParam(value: string, key: string) {
               :checked="localNode.data.params[field.key] ?? field.defaultValue ?? false"
               @update:checked="(val: boolean) => updateParam(field.key, val)"
             />
+          </div>
+
+          <!-- Field Array Input -->
+          <div v-else-if="field.type === 'field_array'" class="space-y-3">
+            <div class="flex items-center justify-between mb-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                @click="addFieldArrayItem(field.key)"
+                class="w-full"
+              >
+                <Plus class="h-4 w-4 mr-2" />
+                Add Field
+              </Button>
+            </div>
+            
+            <div
+              v-for="(fieldData, fieldName, index) in (localNode.data.params[field.key] || {})"
+              :key="fieldName"
+              class="relative border-2 rounded-lg p-4 space-y-3 bg-card shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div class="flex items-center justify-between pb-3 border-b">
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                    {{ index + 1 }}
+                  </div>
+                  <h4 class="font-semibold text-sm truncate max-w-[200px]" :title="fieldName as string">{{ fieldName }}</h4>
+                </div>
+                <div class="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    class="h-8 w-8 p-0 hover:bg-primary/10"
+                    @click="duplicateFieldArrayItem(field.key, fieldName as string)"
+                    title="Duplicate field"
+                  >
+                    <Copy class="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    class="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                    @click="removeFieldArrayItem(field.key, fieldName as string)"
+                    title="Delete field"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+              
+              <div class="grid gap-3">
+                <div
+                  v-for="itemField in field.arrayItemSchema"
+                  :key="itemField.key"
+                  v-show="shouldShowField(itemField, fieldData as any)"
+                  class="space-y-2"
+                >
+                  <!-- Field Name (special handling) -->
+                  <div v-if="itemField.key === 'name'">
+                    <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
+                      {{ itemField.label }}
+                      <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                    </Label>
+                    <Input
+                      :id="`${field.key}_${fieldName}_${itemField.key}`"
+                      :model-value="fieldName"
+                      @blur="(e: Event) => renameFieldArrayItem(field.key, fieldName as string, (e.target as HTMLInputElement).value)"
+                      :placeholder="itemField.placeholder"
+                      class="mt-1.5"
+                    />
+                  </div>
+
+                  <!-- Text Input -->
+                  <div v-else-if="itemField.type === 'text'">
+                    <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
+                      {{ itemField.label }}
+                      <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                    </Label>
+                    <Input
+                      :id="`${field.key}_${fieldName}_${itemField.key}`"
+                      :model-value="(fieldData as any)[itemField.key] || ''"
+                      @update:model-value="(val: string) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
+                      :placeholder="itemField.placeholder"
+                      :class="[
+                        'mt-1.5',
+                        itemField.required && !(fieldData as any)[itemField.key] ? 'border-yellow-500 focus-visible:ring-yellow-500' : ''
+                      ]"
+                    />
+                    <p v-if="itemField.description" class="text-xs text-muted-foreground mt-1">
+                      {{ itemField.description }}
+                    </p>
+                  </div>
+
+                  <!-- Select Input -->
+                  <div v-else-if="itemField.type === 'select'">
+                    <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
+                      {{ itemField.label }}
+                      <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                    </Label>
+                    <Select
+                      :model-value="(fieldData as any)[itemField.key] || itemField.defaultValue"
+                      @update:model-value="(val) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
+                    >
+                      <SelectTrigger class="mt-1.5">
+                        <SelectValue :placeholder="itemField.placeholder || 'Select option'" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          v-for="option in itemField.options"
+                          :key="option.value"
+                          :value="option.value"
+                        >
+                          {{ option.label }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p v-if="itemField.description" class="text-xs text-muted-foreground mt-1">
+                      {{ itemField.description }}
+                    </p>
+                  </div>
+
+                  <!-- Number Input -->
+                  <div v-else-if="itemField.type === 'number'">
+                    <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
+                      {{ itemField.label }}
+                      <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                    </Label>
+                    <Input
+                      :id="`${field.key}_${fieldName}_${itemField.key}`"
+                      type="number"
+                      :model-value="(fieldData as any)[itemField.key] || itemField.defaultValue || 0"
+                      @update:model-value="(val) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, Number(val))"
+                      :placeholder="itemField.placeholder"
+                      class="mt-1.5"
+                    />
+                    <p v-if="itemField.description" class="text-xs text-muted-foreground mt-1">
+                      {{ itemField.description }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="!localNode.data.params[field.key] || Object.keys(localNode.data.params[field.key]).length === 0"
+              class="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+            >
+              <Plus class="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p class="text-sm font-medium">No fields defined yet</p>
+              <p class="text-xs mt-1">Click "Add Field" button above to create your first field</p>
+            </div>
           </div>
 
           <!-- Description -->

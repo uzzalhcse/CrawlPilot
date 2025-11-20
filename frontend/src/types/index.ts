@@ -139,10 +139,11 @@ export interface NodeTemplate {
 export interface ParamField {
   key: string
   label: string
-  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array'
+  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array' | 'field_array'
   required?: boolean
   defaultValue?: any
   options?: { label: string; value: string }[]
   placeholder?: string
   description?: string
+  arrayItemSchema?: ParamField[]
 }

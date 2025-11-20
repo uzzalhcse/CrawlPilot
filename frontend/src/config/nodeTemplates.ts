@@ -38,7 +38,8 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'URL Discovery',
     defaultParams: {
       selector: 'a',
-      limit: 0
+      limit: 0,
+      url_type: ''
     },
     paramSchema: [
       {
@@ -48,6 +49,13 @@ export const nodeTemplates: NodeTemplate[] = [
         required: true,
         defaultValue: 'a',
         placeholder: 'a, .link-class'
+      },
+      {
+        key: 'url_type',
+        label: 'URL Type',
+        type: 'text',
+        placeholder: 'category, product, listing',
+        description: 'Type/category of URLs being extracted (for organization)'
       },
       {
         key: 'limit',
@@ -94,7 +102,12 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'URL Discovery',
     defaultParams: {
       next_selector: '',
-      max_pages: 10
+      max_pages: 10,
+      type: 'auto',
+      wait_after: 0,
+      link_selector: '',
+      item_selector: '',
+      url_type: ''
     },
     paramSchema: [
       {
@@ -105,10 +118,48 @@ export const nodeTemplates: NodeTemplate[] = [
         placeholder: '.next-page, a[rel="next"]'
       },
       {
+        key: 'link_selector',
+        label: 'Link Selector (for pagination links)',
+        type: 'text',
+        placeholder: '.pagination a',
+        description: 'Selector for pagination number links'
+      },
+      {
+        key: 'item_selector',
+        label: 'Item Selector',
+        type: 'text',
+        placeholder: '.product-item a',
+        description: 'Selector for items to extract URLs from on each page'
+      },
+      {
+        key: 'url_type',
+        label: 'URL Type',
+        type: 'text',
+        placeholder: 'product, article',
+        description: 'Type of URLs being extracted from pagination'
+      },
+      {
+        key: 'type',
+        label: 'Pagination Type',
+        type: 'select',
+        defaultValue: 'auto',
+        options: [
+          { label: 'Auto (Next Button)', value: 'auto' },
+          { label: 'Manual (URL Pattern)', value: 'manual' }
+        ]
+      },
+      {
         key: 'max_pages',
         label: 'Max Pages',
         type: 'number',
         defaultValue: 10
+      },
+      {
+        key: 'wait_after',
+        label: 'Wait After Navigation (ms)',
+        type: 'number',
+        defaultValue: 0,
+        description: 'Time to wait after navigating to next page'
       }
     ]
   },
@@ -120,16 +171,95 @@ export const nodeTemplates: NodeTemplate[] = [
     description: 'Extract structured data from the page',
     category: 'Extraction',
     defaultParams: {
-      schema: {}
+      schema: '',
+      fields: {},
+      timeout: 10000,
+      limit: 0
     },
     paramSchema: [
       {
         key: 'schema',
-        label: 'Data Schema (JSON)',
-        type: 'textarea',
+        label: 'Schema Name',
+        type: 'text',
         required: true,
-        placeholder: '{\n  "title": ".product-title",\n  "price": ".product-price"\n}',
-        description: 'JSON object mapping field names to CSS selectors'
+        placeholder: 'product_data, article_data',
+        description: 'Name of the data schema being extracted'
+      },
+      {
+        key: 'fields',
+        label: 'Field Definitions',
+        type: 'field_array',
+        required: true,
+        description: 'Define fields to extract from the page',
+        arrayItemSchema: [
+          {
+            key: 'name',
+            label: 'Field Name',
+            type: 'text',
+            required: true,
+            placeholder: 'title, price, description'
+          },
+          {
+            key: 'selector',
+            label: 'CSS Selector',
+            type: 'text',
+            required: true,
+            placeholder: '.product-title, #price'
+          },
+          {
+            key: 'type',
+            label: 'Extraction Type',
+            type: 'select',
+            defaultValue: 'text',
+            options: [
+              { label: 'Text', value: 'text' },
+              { label: 'Attribute', value: 'attr' },
+              { label: 'HTML', value: 'html' }
+            ]
+          },
+          {
+            key: 'attribute',
+            label: 'Attribute Name',
+            type: 'text',
+            required: true,
+            placeholder: 'src, href, data-id',
+            description: 'Specify which HTML attribute to extract (e.g., src for images, href for links)'
+          },
+          {
+            key: 'transform',
+            label: 'Transform',
+            type: 'select',
+            defaultValue: 'none',
+            options: [
+              { label: 'None', value: 'none' },
+              { label: 'Trim', value: 'trim' },
+              { label: 'Clean HTML', value: 'clean_html' },
+              { label: 'Lowercase', value: 'lowercase' },
+              { label: 'Uppercase', value: 'uppercase' }
+            ]
+          },
+          {
+            key: 'default',
+            label: 'Default Value',
+            type: 'text',
+            placeholder: 'N/A, 0',
+            description: 'Value to use if extraction fails'
+          }
+        ]
+      },
+      {
+        key: 'timeout',
+        label: 'Timeout (ms)',
+        type: 'number',
+        defaultValue: 10000,
+        description: 'Maximum time to wait for extraction'
+      },
+      {
+        key: 'limit',
+        label: 'Item Limit',
+        type: 'number',
+        defaultValue: 0,
+        description: 'Maximum number of items to extract (0 = unlimited)'
       }
     ]
   },
@@ -192,8 +322,66 @@ export const nodeTemplates: NodeTemplate[] = [
       }
     ]
   },
+  {
+    type: 'extract_json',
+    label: 'Extract JSON',
+    description: 'Extract JSON data from script tags or API responses',
+    category: 'Extraction',
+    defaultParams: {
+      selector: 'script[type="application/ld+json"]',
+      path: ''
+    },
+    paramSchema: [
+      {
+        key: 'selector',
+        label: 'CSS Selector',
+        type: 'text',
+        required: true,
+        placeholder: 'script[type="application/ld+json"]',
+        description: 'Selector for element containing JSON data'
+      },
+      {
+        key: 'path',
+        label: 'JSON Path',
+        type: 'text',
+        placeholder: '$.data.items',
+        description: 'Optional JSON path to extract specific data'
+      }
+    ]
+  },
 
   // Interaction Nodes
+  {
+    type: 'navigate',
+    label: 'Navigate',
+    description: 'Navigate to a URL',
+    category: 'Interaction',
+    defaultParams: {
+      url: '',
+      wait_until: 'load'
+    },
+    paramSchema: [
+      {
+        key: 'url',
+        label: 'URL',
+        type: 'text',
+        required: true,
+        placeholder: 'https://example.com'
+      },
+      {
+        key: 'wait_until',
+        label: 'Wait Until',
+        type: 'select',
+        defaultValue: 'load',
+        options: [
+          { label: 'Load', value: 'load' },
+          { label: 'DOM Content Loaded', value: 'domcontentloaded' },
+          { label: 'Network Idle', value: 'networkidle' }
+        ],
+        description: 'When to consider navigation succeeded'
+      }
+    ]
+  },
   {
     type: 'click',
     label: 'Click Element',
@@ -241,6 +429,58 @@ export const nodeTemplates: NodeTemplate[] = [
     ]
   },
   {
+    type: 'type',
+    label: 'Type Text',
+    description: 'Type text into an input field',
+    category: 'Interaction',
+    defaultParams: {
+      selector: '',
+      text: '',
+      delay: 0
+    },
+    paramSchema: [
+      {
+        key: 'selector',
+        label: 'CSS Selector',
+        type: 'text',
+        required: true,
+        placeholder: 'input[name="search"]'
+      },
+      {
+        key: 'text',
+        label: 'Text to Type',
+        type: 'text',
+        required: true,
+        placeholder: 'Search query'
+      },
+      {
+        key: 'delay',
+        label: 'Delay Between Keys (ms)',
+        type: 'number',
+        defaultValue: 0,
+        description: 'Delay between keystrokes to simulate human typing'
+      }
+    ]
+  },
+  {
+    type: 'hover',
+    label: 'Hover Element',
+    description: 'Hover over an element',
+    category: 'Interaction',
+    defaultParams: {
+      selector: ''
+    },
+    paramSchema: [
+      {
+        key: 'selector',
+        label: 'CSS Selector',
+        type: 'text',
+        required: true,
+        placeholder: '.menu-item'
+      }
+    ]
+  },
+  {
     type: 'wait',
     label: 'Wait',
     description: 'Wait for specified duration',
@@ -283,6 +523,40 @@ export const nodeTemplates: NodeTemplate[] = [
       }
     ]
   },
+  {
+    type: 'screenshot',
+    label: 'Take Screenshot',
+    description: 'Capture a screenshot of the page or element',
+    category: 'Interaction',
+    defaultParams: {
+      selector: '',
+      full_page: false,
+      path: ''
+    },
+    paramSchema: [
+      {
+        key: 'selector',
+        label: 'CSS Selector (Optional)',
+        type: 'text',
+        placeholder: '.target-element',
+        description: 'Leave empty for full page screenshot'
+      },
+      {
+        key: 'full_page',
+        label: 'Full Page',
+        type: 'boolean',
+        defaultValue: false,
+        description: 'Capture entire scrollable page'
+      },
+      {
+        key: 'path',
+        label: 'Save Path',
+        type: 'text',
+        placeholder: 'screenshots/page.png',
+        description: 'Path to save screenshot'
+      }
+    ]
+  },
 
   // Transformation Nodes
   {
@@ -322,6 +596,25 @@ export const nodeTemplates: NodeTemplate[] = [
         type: 'text',
         required: true,
         placeholder: 'field > 100'
+      }
+    ]
+  },
+  {
+    type: 'map',
+    label: 'Map Data',
+    description: 'Transform data by applying a mapping function',
+    category: 'Transformation',
+    defaultParams: {
+      mapping: {}
+    },
+    paramSchema: [
+      {
+        key: 'mapping',
+        label: 'Field Mapping',
+        type: 'textarea',
+        required: true,
+        placeholder: '{\n  "new_field": "old_field",\n  "full_name": "first_name + last_name"\n}',
+        description: 'JSON object mapping new field names to transformations or expressions'
       }
     ]
   },
