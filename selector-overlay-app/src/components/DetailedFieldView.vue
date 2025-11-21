@@ -85,6 +85,25 @@
               🔍 Run Test
             </button>
 
+            <!-- Array Detection Banner -->
+            <div v-if="props.testResults.length > 1" class="mt-3 p-3 bg-purple-50 border-2 border-purple-200 rounded-lg">
+              <div class="flex items-start gap-2">
+                <span class="text-purple-600 text-lg">📋</span>
+                <div class="flex-1">
+                  <div class="font-semibold text-purple-900 text-sm mb-1">
+                    Multiple Elements Detected
+                  </div>
+                  <p class="text-xs text-purple-700 mb-2">
+                    This selector matches {{ props.testResults.length }} elements. You can extract all of them as an array.
+                  </p>
+                  <div class="text-xs text-purple-600 bg-purple-100 p-2 rounded border border-purple-200">
+                    💡 <strong>Tip:</strong> Enable "Extract Multiple Values" in the workflow builder to get an array like: 
+                    <code class="bg-white px-1 py-0.5 rounded text-purple-800">["value1", "value2", "value3"]</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div v-if="props.testResults.length > 0" class="mt-3">
               <!-- Results Header -->
               <div class="bg-gradient-to-b from-blue-50 to-blue-100 px-3 py-2 border-2 border-blue-200 rounded-t-lg">

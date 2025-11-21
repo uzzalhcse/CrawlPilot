@@ -56,6 +56,12 @@
               "type": "text",
               "transform": "trim"
             },
+            "images": {
+              "selector": ".productImageList img",
+              "type": "attr",
+              "attribute": "src",
+              "multiple": true
+            },
             "maker": {
               "selector": "meta[property='og:site_name']",
               "type": "attr",
@@ -85,6 +91,17 @@
               "type": "text",
               "transform": "trim",
               "default": "Open Price"
+            },
+            "attributes": {
+              "extractions": [
+                {
+                  "key_selector": ".ProductDetail_Section_Spec_Item_Head",
+                  "value_selector": ".ProductDetail_Section_Spec_Item_Body",
+                  "key_type": "text",
+                  "value_type": "text",
+                  "transform": "trim"
+                }
+              ]
             }
           }
         }

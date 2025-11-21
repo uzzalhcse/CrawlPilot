@@ -190,21 +190,21 @@ export const nodeTemplates: NodeTemplate[] = [
         label: 'Field Definitions',
         type: 'field_array',
         required: true,
-        description: 'Define fields to extract from the page',
+        description: 'Define fields to extract from the page. Supports single values, simple arrays, and nested object arrays.',
         arrayItemSchema: [
           {
             key: 'name',
             label: 'Field Name',
             type: 'text',
             required: true,
-            placeholder: 'title, price, description'
+            placeholder: 'title, images, attributes'
           },
           {
             key: 'selector',
             label: 'CSS Selector',
             type: 'text',
             required: true,
-            placeholder: '.product-title, #price'
+            placeholder: '.product-title, .gallery img, table.specs tr'
           },
           {
             key: 'type',
@@ -214,16 +214,31 @@ export const nodeTemplates: NodeTemplate[] = [
             options: [
               { label: 'Text', value: 'text' },
               { label: 'Attribute', value: 'attr' },
-              { label: 'HTML', value: 'html' }
+              { label: 'HTML', value: 'html' },
+              { label: 'Href', value: 'href' },
+              { label: 'Src', value: 'src' }
             ]
           },
           {
             key: 'attribute',
             label: 'Attribute Name',
             type: 'text',
-            required: true,
-            placeholder: 'src, href, data-id',
-            description: 'Specify which HTML attribute to extract (e.g., src for images, href for links)'
+            placeholder: 'src, href, data-id, alt',
+            description: 'Required for "attr" type - specify which HTML attribute to extract'
+          },
+          {
+            key: 'multiple',
+            label: 'Extract Multiple Values',
+            type: 'boolean',
+            defaultValue: false,
+            description: 'Extract array of values instead of single value'
+          },
+          {
+            key: 'limit',
+            label: 'Array Limit',
+            type: 'number',
+            defaultValue: 0,
+            description: 'Max items in array (0 = unlimited). Only applies when "multiple" is enabled'
           },
           {
             key: 'transform',
@@ -235,15 +250,30 @@ export const nodeTemplates: NodeTemplate[] = [
               { label: 'Trim', value: 'trim' },
               { label: 'Clean HTML', value: 'clean_html' },
               { label: 'Lowercase', value: 'lowercase' },
-              { label: 'Uppercase', value: 'uppercase' }
+              { label: 'Uppercase', value: 'uppercase' },
+              { label: 'Extract Price', value: 'extract_price' }
             ]
           },
           {
-            key: 'default',
+            key: 'default_value',
             label: 'Default Value',
             type: 'text',
-            placeholder: 'N/A, 0',
+            placeholder: 'N/A, 0, []',
             description: 'Value to use if extraction fails'
+          },
+          {
+            key: 'fields',
+            label: 'Nested Fields (for object arrays)',
+            type: 'textarea',
+            placeholder: '{\n  "key": {"selector": "th", "type": "text"},\n  "value": {"selector": "td", "type": "text"}\n}',
+            description: 'JSON object defining nested fields. Only used when "multiple" is true for extracting array of objects'
+          },
+          {
+            key: 'extractions',
+            label: 'Independent Array Extractions',
+            type: 'textarea',
+            placeholder: '[\n  {\n    "key_selector": ".spec-label",\n    "value_selector": ".spec-value",\n    "key_type": "text",\n    "value_type": "text",\n    "transform": "trim"\n  }\n]',
+            description: 'JSON array for extracting key-value pairs from independent selectors (not nested). Use this when keys and values are in separate lists that need to be paired by index.'
           }
         ]
       },

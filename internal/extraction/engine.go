@@ -24,6 +24,19 @@ type ExtractConfig struct {
 	Transform    interface{}            `json:"transform,omitempty" yaml:"transform,omitempty"` // Can be string or []TransformConfig
 	Fields       map[string]interface{} `json:"fields,omitempty" yaml:"fields,omitempty"`
 	DefaultValue interface{}            `json:"default_value,omitempty" yaml:"default_value,omitempty"`
+	Extractions  []ExtractionPair       `json:"extractions,omitempty" yaml:"extractions,omitempty"` // For independent array extraction
+}
+
+// ExtractionPair defines a pair of independent key-value selectors
+type ExtractionPair struct {
+	KeySelector    string      `json:"key_selector" yaml:"key_selector"`
+	ValueSelector  string      `json:"value_selector" yaml:"value_selector"`
+	KeyType        string      `json:"key_type" yaml:"key_type"`     // text, attr, html, href, src
+	ValueType      string      `json:"value_type" yaml:"value_type"` // text, attr, html, href, src
+	KeyAttribute   string      `json:"key_attribute,omitempty" yaml:"key_attribute,omitempty"`
+	ValueAttribute string      `json:"value_attribute,omitempty" yaml:"value_attribute,omitempty"`
+	Transform      interface{} `json:"transform,omitempty" yaml:"transform,omitempty"`
+	Limit          int         `json:"limit,omitempty" yaml:"limit,omitempty"` // Limit for this extraction pair
 }
 
 type TransformConfig struct {
@@ -39,6 +52,11 @@ func NewExtractionEngine(page playwright.Page) *ExtractionEngine {
 
 // Extract extracts data based on configuration
 func (ee *ExtractionEngine) Extract(config ExtractConfig) (interface{}, error) {
+	// Check if this is an independent arrays extraction
+	if len(config.Extractions) > 0 {
+		return ee.extractFieldValueIndependentArrays(nil, config)
+	}
+
 	if config.Multiple {
 		return ee.extractMultiple(config)
 	}
@@ -208,7 +226,29 @@ func (ee *ExtractionEngine) extractMultiple(config ExtractConfig) (interface{}, 
 }
 
 // extractFieldValue extracts a field value from a locator
+// Supports both single values and arrays (simple arrays and nested object arrays)
 func (ee *ExtractionEngine) extractFieldValue(locator playwright.Locator, config ExtractConfig) (interface{}, error) {
+	// Check if this is an independent arrays extraction (multiple unrelated sources)
+	if len(config.Extractions) > 0 {
+		return ee.extractFieldValueIndependentArrays(locator, config)
+	}
+
+	// Check if this field should extract multiple values
+	if config.Multiple {
+		// Check if nested fields are defined (nested object array)
+		if len(config.Fields) > 0 {
+			return ee.extractFieldValueNestedArray(locator, config)
+		}
+		// Simple array extraction
+		return ee.extractFieldValueSimpleArray(locator, config)
+	}
+
+	// Single value extraction
+	return ee.extractFieldValueSingle(locator, config)
+}
+
+// extractFieldValueSingle extracts a single value from a locator
+func (ee *ExtractionEngine) extractFieldValueSingle(locator playwright.Locator, config ExtractConfig) (interface{}, error) {
 	var subLocator playwright.Locator
 	if config.Selector != "" {
 		subLocator = locator.Locator(config.Selector)
@@ -216,40 +256,49 @@ func (ee *ExtractionEngine) extractFieldValue(locator playwright.Locator, config
 		subLocator = locator
 	}
 
+	// Check if element exists
+	count, err := subLocator.Count()
+	if err != nil || count == 0 {
+		if config.DefaultValue != nil {
+			return config.DefaultValue, nil
+		}
+		return nil, fmt.Errorf("selector not found: %s", config.Selector)
+	}
+
 	var value string
 	switch config.Type {
 	case "text":
-		text, err := subLocator.TextContent()
+		text, err := subLocator.First().TextContent()
 		if err != nil {
 			return config.DefaultValue, err
 		}
 		value = text
 	case "attr":
-		attr, err := subLocator.GetAttribute(config.Attribute)
+		attr, err := subLocator.First().GetAttribute(config.Attribute)
 		if err != nil {
 			return config.DefaultValue, err
 		}
 		value = attr
 	case "html":
-		html, err := subLocator.InnerHTML()
+		html, err := subLocator.First().InnerHTML()
 		if err != nil {
 			return config.DefaultValue, err
 		}
 		value = html
 	case "href":
-		href, err := subLocator.GetAttribute("href")
+		href, err := subLocator.First().GetAttribute("href")
 		if err != nil {
 			return config.DefaultValue, err
 		}
 		value = href
 	case "src":
-		src, err := subLocator.GetAttribute("src")
+		src, err := subLocator.First().GetAttribute("src")
 		if err != nil {
 			return config.DefaultValue, err
 		}
 		value = src
 	default:
-		text, err := subLocator.TextContent()
+		text, err := subLocator.First().TextContent()
 		if err != nil {
 			return config.DefaultValue, err
 		}
@@ -265,6 +314,285 @@ func (ee *ExtractionEngine) extractFieldValue(locator playwright.Locator, config
 	}
 
 	return value, nil
+}
+
+// extractFieldValueSimpleArray extracts an array of simple values (strings, numbers, etc.)
+// Example: ["image1.jpg", "image2.jpg", "image3.jpg"]
+func (ee *ExtractionEngine) extractFieldValueSimpleArray(locator playwright.Locator, config ExtractConfig) (interface{}, error) {
+	var subLocator playwright.Locator
+	if config.Selector != "" {
+		subLocator = locator.Locator(config.Selector)
+	} else {
+		return nil, fmt.Errorf("selector required for multiple field extraction")
+	}
+
+	count, err := subLocator.Count()
+	if err != nil || count == 0 {
+		if config.DefaultValue != nil {
+			return config.DefaultValue, nil
+		}
+		return []interface{}{}, nil
+	}
+
+	// Apply limit if specified
+	if config.Limit > 0 && config.Limit < count {
+		count = config.Limit
+	}
+
+	var results []interface{}
+	for i := 0; i < count; i++ {
+		element := subLocator.Nth(i)
+
+		var value string
+		switch config.Type {
+		case "text":
+			text, err := element.TextContent()
+			if err == nil {
+				value = text
+			}
+		case "attr":
+			attr, err := element.GetAttribute(config.Attribute)
+			if err == nil {
+				value = attr
+			}
+		case "html":
+			html, err := element.InnerHTML()
+			if err == nil {
+				value = html
+			}
+		case "href":
+			href, err := element.GetAttribute("href")
+			if err == nil {
+				value = href
+			}
+		case "src":
+			src, err := element.GetAttribute("src")
+			if err == nil {
+				value = src
+			}
+		default:
+			text, err := element.TextContent()
+			if err == nil {
+				value = text
+			}
+		}
+
+		// Apply transformations
+		if config.Transform != nil {
+			transforms := ee.parseTransforms(config.Transform)
+			if len(transforms) > 0 {
+				transformed, err := ee.applyTransformations(value, transforms)
+				if err == nil {
+					results = append(results, transformed)
+					continue
+				}
+			}
+		}
+
+		results = append(results, value)
+	}
+
+	return results, nil
+}
+
+// extractFieldValueNestedArray extracts an array of objects with nested fields
+// Example: [{"key": "color", "value": "black"}, {"key": "size", "value": "large"}]
+func (ee *ExtractionEngine) extractFieldValueNestedArray(locator playwright.Locator, config ExtractConfig) (interface{}, error) {
+	var subLocator playwright.Locator
+	if config.Selector != "" {
+		subLocator = locator.Locator(config.Selector)
+	} else {
+		return nil, fmt.Errorf("selector required for multiple field extraction")
+	}
+
+	count, err := subLocator.Count()
+	if err != nil || count == 0 {
+		if config.DefaultValue != nil {
+			return config.DefaultValue, nil
+		}
+		return []interface{}{}, nil
+	}
+
+	// Apply limit if specified
+	if config.Limit > 0 && config.Limit < count {
+		count = config.Limit
+	}
+
+	var results []interface{}
+	for i := 0; i < count; i++ {
+		element := subLocator.Nth(i)
+		item := make(map[string]interface{})
+
+		// Extract each nested field
+		for fieldName, fieldConfigRaw := range config.Fields {
+			var fieldConfig ExtractConfig
+
+			// Convert field config to ExtractConfig
+			jsonData, err := json.Marshal(fieldConfigRaw)
+			if err != nil {
+				continue
+			}
+			if err := json.Unmarshal(jsonData, &fieldConfig); err != nil {
+				continue
+			}
+
+			// Recursively extract field value (supports nested arrays within nested arrays)
+			value, err := ee.extractFieldValue(element, fieldConfig)
+			if err == nil {
+				item[fieldName] = value
+			} else if fieldConfig.DefaultValue != nil {
+				item[fieldName] = fieldConfig.DefaultValue
+			}
+		}
+
+		results = append(results, item)
+	}
+
+	return results, nil
+}
+
+// extractFieldValueIndependentArrays extracts arrays from multiple independent sources and merges them
+// Example: Extract keys from one selector and values from another, then pair them by index
+func (ee *ExtractionEngine) extractFieldValueIndependentArrays(locator playwright.Locator, config ExtractConfig) (interface{}, error) {
+	var allResults []interface{}
+
+	// Use page as base if locator is nil, otherwise use the provided locator
+	var baseLocator playwright.Page
+	if locator == nil {
+		baseLocator = ee.page
+	}
+
+	// Process each extraction pair
+	for _, extraction := range config.Extractions {
+		// Extract keys - use page directly if no parent locator
+		var keyLocator playwright.Locator
+		if locator != nil {
+			keyLocator = locator.Locator(extraction.KeySelector)
+		} else {
+			keyLocator = baseLocator.Locator(extraction.KeySelector)
+		}
+
+		keyCount, err := keyLocator.Count()
+		if err != nil || keyCount == 0 {
+			continue
+		}
+
+		// Extract values
+		var valueLocator playwright.Locator
+		if locator != nil {
+			valueLocator = locator.Locator(extraction.ValueSelector)
+		} else {
+			valueLocator = baseLocator.Locator(extraction.ValueSelector)
+		}
+
+		valueCount, err := valueLocator.Count()
+		if err != nil || valueCount == 0 {
+			continue
+		}
+
+		// Use the minimum count to avoid index out of bounds
+		count := keyCount
+		if valueCount < count {
+			count = valueCount
+		}
+
+		// Apply limit if specified
+		if extraction.Limit > 0 && extraction.Limit < count {
+			count = extraction.Limit
+		}
+
+		// Extract and pair key-value items
+		for i := 0; i < count; i++ {
+			keyElement := keyLocator.Nth(i)
+			valueElement := valueLocator.Nth(i)
+
+			// Extract key
+			var key string
+			switch extraction.KeyType {
+			case "text", "":
+				text, err := keyElement.TextContent()
+				if err == nil {
+					key = text
+				}
+			case "attr":
+				attr, err := keyElement.GetAttribute(extraction.KeyAttribute)
+				if err == nil {
+					key = attr
+				}
+			case "html":
+				html, err := keyElement.InnerHTML()
+				if err == nil {
+					key = html
+				}
+			case "href":
+				href, err := keyElement.GetAttribute("href")
+				if err == nil {
+					key = href
+				}
+			case "src":
+				src, err := keyElement.GetAttribute("src")
+				if err == nil {
+					key = src
+				}
+			}
+
+			// Extract value
+			var value string
+			switch extraction.ValueType {
+			case "text", "":
+				text, err := valueElement.TextContent()
+				if err == nil {
+					value = text
+				}
+			case "attr":
+				attr, err := valueElement.GetAttribute(extraction.ValueAttribute)
+				if err == nil {
+					value = attr
+				}
+			case "html":
+				html, err := valueElement.InnerHTML()
+				if err == nil {
+					value = html
+				}
+			case "href":
+				href, err := valueElement.GetAttribute("href")
+				if err == nil {
+					value = href
+				}
+			case "src":
+				src, err := valueElement.GetAttribute("src")
+				if err == nil {
+					value = src
+				}
+			}
+
+			// Apply transformations if specified
+			if extraction.Transform != nil {
+				transforms := ee.parseTransforms(extraction.Transform)
+				if len(transforms) > 0 {
+					if transformedKey, err := ee.applyTransformations(key, transforms); err == nil {
+						if str, ok := transformedKey.(string); ok {
+							key = str
+						}
+					}
+					if transformedValue, err := ee.applyTransformations(value, transforms); err == nil {
+						if str, ok := transformedValue.(string); ok {
+							value = str
+						}
+					}
+				}
+			}
+
+			// Create key-value pair
+			item := map[string]interface{}{
+				"key":   key,
+				"value": value,
+			}
+			allResults = append(allResults, item)
+		}
+	}
+
+	return allResults, nil
 }
 
 // parseTransforms converts various transform formats to []TransformConfig

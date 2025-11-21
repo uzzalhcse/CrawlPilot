@@ -141,11 +141,14 @@
                 <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="getFieldTypeBadge(field)">
                   {{ field.type }}
                 </span>
+                <span v-if="field.matchCount && field.matchCount > 1" class="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700 border border-purple-300" title="Multiple elements detected - consider using array extraction">
+                  📋 Array
+                </span>
               </div>
               <div class="text-xs text-gray-500 font-mono truncate mt-1">
                 {{ field.selector }}
               </div>
-              <div v-if="field.matchCount" class="text-xs text-blue-600 mt-1">
+              <div v-if="field.matchCount" class="text-xs mt-1" :class="field.matchCount > 1 ? 'text-purple-600 font-semibold' : 'text-blue-600'">
                 {{ field.matchCount }} {{ field.matchCount === 1 ? 'match' : 'matches' }}
               </div>
               <div v-if="field.sampleValue" class="text-xs text-gray-600 truncate mt-1 italic">

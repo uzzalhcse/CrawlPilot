@@ -147,7 +147,11 @@ function addFieldArrayItem(key: string) {
     type: 'text',
     transform: 'none',
     attribute: '',
-    default: ''
+    default_value: '',
+    multiple: false,
+    limit: 0,
+    fields: '',
+    extractions: ''
   }
   
   // Scroll to the new field after it's added
@@ -194,12 +198,32 @@ function shouldShowField(itemField: any, fieldData: any): boolean {
     return fieldData.type === 'attr'
   }
   
+  // Show limit field only when multiple is true
+  if (itemField.key === 'limit') {
+    return fieldData.multiple === true
+  }
+  
+  // Show nested fields textarea only when multiple is true and extractions is not used
+  if (itemField.key === 'fields') {
+    return fieldData.multiple === true && !fieldData.extractions
+  }
+  
+  // Show extractions only when it's defined or when not using standard extraction
+  if (itemField.key === 'extractions') {
+    // Show if extractions field exists or if neither selector nor multiple are set
+    return fieldData.extractions || (!fieldData.selector && !fieldData.multiple)
+  }
+  
+  // Hide selector, type, attribute, multiple if extractions is being used
+  if (itemField.key === 'selector' || itemField.key === 'type' || itemField.key === 'multiple') {
+    return !fieldData.extractions
+  }
+  
   // Show transform field only when type is not empty
   if (itemField.key === 'transform') {
     return fieldData.type && fieldData.type !== ''
   }
   
-  // Show default field always
   // Show all other fields by default
   return true
 }
@@ -314,7 +338,11 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
       type: field.type === 'attribute' ? 'attr' : field.type,
       attribute: field.attribute || '',
       transform: 'none',
-      default: ''
+      default_value: '',
+      multiple: false,
+      limit: 0,
+      fields: '',
+      extractions: ''
     }
   })
 }
@@ -455,6 +483,16 @@ async function closeVisualSelector() {
 
           <!-- Field Array Input -->
           <div v-else-if="field.type === 'field_array'" class="space-y-3">
+            <!-- Array Fields Help Banner -->
+            <div v-if="!localNode.data.params[field.key] || Object.keys(localNode.data.params[field.key]).length === 0" class="p-3 bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg">
+              <div class="text-sm font-semibold text-purple-900 mb-2">✨ Array Field Extraction</div>
+              <div class="text-xs text-purple-700 space-y-1">
+                <div>• <strong>Single values:</strong> Extract one value per field (default)</div>
+                <div>• <strong>Simple arrays:</strong> Enable "multiple" to extract arrays like <code class="bg-white px-1 py-0.5 rounded">["img1.jpg", "img2.jpg"]</code></div>
+                <div>• <strong>Object arrays:</strong> Use "fields" to extract structured data like <code class="bg-white px-1 py-0.5 rounded">[{"key": "color", "value": "red"}]</code></div>
+              </div>
+            </div>
+            
             <!-- Visual Selector Status Banner -->
             <div v-if="isVisualSelectorOpen" class="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
               <div class="flex items-center justify-between">
@@ -540,7 +578,7 @@ async function closeVisualSelector() {
             </div>
             
             <div
-              v-for="(fieldData, fieldName, index) in (localNode.data.params[field.key] || {})"
+              v-for="(fieldData, fieldName) in (localNode.data.params[field.key] || {})"
               :key="fieldName"
               v-show="isFieldVisible(fieldName as string)"
               data-field-card
@@ -553,9 +591,18 @@ async function closeVisualSelector() {
               >
                 <div class="flex items-center gap-2 flex-1 min-w-0">
                   <div class="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
-                    {{ index + 1 }}
+                    {{ Object.keys(localNode.data.params[field.key] || {}).indexOf(fieldName as string) + 1 }}
                   </div>
                   <h4 class="font-semibold text-sm truncate" :title="fieldName as string">{{ fieldName }}</h4>
+                  <span v-if="(fieldData as any).multiple" class="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-medium border border-purple-300 shrink-0">
+                    📋 Array
+                  </span>
+                  <span v-if="(fieldData as any).multiple && (fieldData as any).fields" class="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium border border-blue-300 shrink-0" title="Nested object array">
+                    🔗 Nested
+                  </span>
+                  <span v-if="(fieldData as any).extractions" class="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded font-medium border border-orange-300 shrink-0" title="Independent array extraction">
+                    ⚡ Independent
+                  </span>
                   <div class="text-xs text-muted-foreground">
                     <span v-if="(fieldData as any).selector" class="font-mono bg-muted px-1.5 py-0.5 rounded">
                       {{ (fieldData as any).selector }}
@@ -689,6 +736,92 @@ async function closeVisualSelector() {
                     <p v-if="itemField.description" class="text-xs text-muted-foreground mt-1">
                       {{ itemField.description }}
                     </p>
+                  </div>
+
+                  <!-- Boolean Switch -->
+                  <div v-else-if="itemField.type === 'boolean'" class="flex items-center justify-between py-2">
+                    <div class="space-y-0.5">
+                      <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
+                        {{ itemField.label }}
+                        <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                      </Label>
+                      <p v-if="itemField.description" class="text-xs text-muted-foreground">
+                        {{ itemField.description }}
+                      </p>
+                      <!-- Array extraction help -->
+                      <div v-if="itemField.key === 'multiple' && (fieldData as any)[itemField.key]" class="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-700">
+                        <div class="font-semibold mb-1">✨ Array Extraction Enabled</div>
+                        <div>This field will extract an array of values instead of a single value.</div>
+                        <div class="mt-1 text-purple-600">
+                          💡 Use <strong>limit</strong> to control max items, and <strong>fields</strong> for nested objects.
+                        </div>
+                      </div>
+                    </div>
+                    <Switch
+                      :id="`${field.key}_${fieldName}_${itemField.key}`"
+                      :checked="(fieldData as any)[itemField.key] ?? itemField.defaultValue ?? false"
+                      @update:checked="(val: boolean) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
+                    />
+                  </div>
+
+                  <!-- Textarea Input -->
+                  <div v-else-if="itemField.type === 'textarea'">
+                    <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
+                      {{ itemField.label }}
+                      <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                    </Label>
+                    <Textarea
+                      :id="`${field.key}_${fieldName}_${itemField.key}`"
+                      :model-value="(fieldData as any)[itemField.key] || ''"
+                      @update:model-value="(val: string) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
+                      :placeholder="itemField.placeholder"
+                      rows="4"
+                      class="mt-1.5 font-mono text-xs"
+                    />
+                    <p v-if="itemField.description" class="text-xs text-muted-foreground mt-1">
+                      {{ itemField.description }}
+                    </p>
+                    <!-- Nested fields example -->
+                    <div v-if="itemField.key === 'fields' && !(fieldData as any)[itemField.key]" class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                      <div class="text-xs text-blue-900 font-semibold mb-2">📘 Example: Nested Object Arrays</div>
+                      <pre class="text-xs bg-white p-2 rounded border border-blue-300 overflow-x-auto text-blue-800">{{
+`{
+  "key": {
+    "selector": "th",
+    "type": "text"
+  },
+  "value": {
+    "selector": "td",
+    "type": "text"
+  }
+}`
+                      }}</pre>
+                      <div class="text-xs text-blue-700 mt-2">
+                        👆 This extracts an array like: <code class="bg-white px-1 py-0.5 rounded">[{"key": "color", "value": "black"}, ...]</code>
+                      </div>
+                    </div>
+                    
+                    <!-- Independent extractions example -->
+                    <div v-if="itemField.key === 'extractions' && !(fieldData as any)[itemField.key]" class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
+                      <div class="text-xs text-purple-900 font-semibold mb-2">🔗 Example: Independent Array Extractions</div>
+                      <pre class="text-xs bg-white p-2 rounded border border-purple-300 overflow-x-auto text-purple-800">{{
+`[
+  {
+    "key_selector": ".spec-label",
+    "value_selector": ".spec-value",
+    "key_type": "text",
+    "value_type": "text",
+    "transform": "trim"
+  }
+]`
+                      }}</pre>
+                      <div class="text-xs text-purple-700 mt-2">
+                        ⚡ <strong>Use this when:</strong> Keys and values are in <strong>separate independent lists</strong> (not nested within parent containers). They will be paired by index position.
+                      </div>
+                      <div class="text-xs text-purple-600 bg-purple-100 p-2 rounded border border-purple-200 mt-2">
+                        💡 Perfect for: Specification tables where <code class="bg-white px-1 py-0.5 rounded">&lt;th&gt;</code> and <code class="bg-white px-1 py-0.5 rounded">&lt;td&gt;</code> are separate lists
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

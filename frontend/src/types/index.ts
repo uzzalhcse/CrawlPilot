@@ -139,11 +139,40 @@ export interface NodeTemplate {
 export interface ParamField {
   key: string
   label: string
-  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array' | 'field_array'
+  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array' | 'field_array' | 'nested_field_array'
   required?: boolean
   defaultValue?: any
   options?: { label: string; value: string }[]
   placeholder?: string
   description?: string
   arrayItemSchema?: ParamField[]
+}
+
+// Field configuration for extraction
+export interface FieldConfig {
+  selector?: string
+  type?: 'text' | 'attr' | 'html' | 'href' | 'src'
+  attribute?: string
+  multiple?: boolean
+  limit?: number
+  transform?: string | TransformConfig[]
+  default_value?: any
+  fields?: Record<string, FieldConfig>
+  extractions?: ExtractionPair[]
+}
+
+export interface ExtractionPair {
+  key_selector: string
+  value_selector: string
+  key_type: 'text' | 'attr' | 'html' | 'href' | 'src'
+  value_type: 'text' | 'attr' | 'html' | 'href' | 'src'
+  key_attribute?: string
+  value_attribute?: string
+  transform?: string | TransformConfig[]
+  limit?: number
+}
+
+export interface TransformConfig {
+  type: string
+  params?: Record<string, any>
 }
