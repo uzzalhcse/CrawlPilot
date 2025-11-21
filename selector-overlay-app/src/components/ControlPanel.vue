@@ -204,6 +204,7 @@
       @save-edit="emit('saveEdit', $event)"
       @cancel-edit="emit('cancelEdit')"
       @test-selector="emit('testSelector', $event)"
+      @scroll-to-result="emit('scrollToResult', $event)"
     />
   </div>
 </template>
@@ -244,6 +245,7 @@ const emit = defineEmits<{
   'saveEdit': [field: Partial<SelectedField>]
   'cancelEdit': []
   'testSelector': [selector: string]
+  'scrollToResult': [result: TestResult]
 }>()
 
 const canAddField = computed(() => {

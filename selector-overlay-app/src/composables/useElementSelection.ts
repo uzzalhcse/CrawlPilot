@@ -67,14 +67,25 @@ export function useElementSelection() {
       e.preventDefault()
       e.stopPropagation()
       lockedElement.value = target
+      // Update hoveredElement to match the locked element to ensure selector consistency
+      hoveredElement.value = target
     }
   }
 
   const addField = () => {
     if (!lockedElement.value || !currentFieldName.value.trim()) return
 
+    // Generate selector from the locked element (this is the source of truth)
     const selector = generateSelector(lockedElement.value)
     const sampleValue = getSampleValue(lockedElement.value, currentFieldType.value, currentFieldAttribute.value)
+    
+    // Calculate match count based on the actual selector generated
+    let matchCount = 0
+    try {
+      matchCount = document.querySelectorAll(selector).length
+    } catch {
+      matchCount = 0
+    }
     
     const field: SelectedField = {
       id: `field-${Date.now()}`,
@@ -84,7 +95,7 @@ export function useElementSelection() {
       attribute: currentFieldType.value === 'attribute' ? currentFieldAttribute.value : undefined,
       timestamp: Date.now(),
       sampleValue,
-      matchCount: hoveredElementCount.value
+      matchCount
     }
 
     selectedFields.value.push(field)
@@ -147,7 +158,8 @@ export function useElementSelection() {
   const testSelectorInline = (selector: string) => {
     try {
       const elements = document.querySelectorAll(selector)
-      testResults.value = Array.from(elements).slice(0, 10).map((el, index) => ({
+      // Show all matching elements, not just 10
+      testResults.value = Array.from(elements).map((el, index) => ({
         element: el as Element,
         index,
         value: el.textContent?.trim() || ''
@@ -156,6 +168,31 @@ export function useElementSelection() {
       testResults.value = []
       console.error('Invalid selector:', error)
     }
+  }
+
+  const scrollToTestResult = (testResult: TestResult) => {
+    const element = testResult.element
+    if (!element) return
+
+    // Remove any existing highlight animations
+    document.querySelectorAll('.crawlify-pulse-highlight').forEach(el => {
+      el.classList.remove('crawlify-pulse-highlight')
+    })
+
+    // Scroll element into view with smooth animation
+    element.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'center'
+    })
+
+    // Add special highlight class with animation
+    element.classList.add('crawlify-pulse-highlight')
+
+    // Remove the highlight after animation completes
+    setTimeout(() => {
+      element.classList.remove('crawlify-pulse-highlight')
+    }, 2000)
   }
 
   const getSampleValue = (element: Element, type: FieldType, attribute?: string): string => {
@@ -231,6 +268,7 @@ export function useElementSelection() {
     saveEdit,
     cancelEdit,
     testSelectorInline,
+    scrollToTestResult,
     getSelections
   }
 }

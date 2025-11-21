@@ -30,6 +30,7 @@
       @save-edit="saveEdit"
       @cancel-edit="cancelEdit"
       @test-selector="testSelectorInline"
+      @scroll-to-result="scrollToTestResult"
     />
   </div>
 </template>
@@ -64,6 +65,7 @@ const {
   saveEdit,
   cancelEdit,
   testSelectorInline,
+  scrollToTestResult,
   getSelections
 } = useElementSelection()
 

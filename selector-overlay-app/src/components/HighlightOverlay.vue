@@ -62,6 +62,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import type { SelectedField, TestResult, FieldType } from '../types'
 import { getElementColor } from '../utils/elementColors'
+import { generateSelector } from '../utils/selectorGenerator'
 
 interface Props {
   hoveredElement: Element | null
@@ -168,13 +169,8 @@ const tagLabel = computed(() => {
   const element = props.lockedElement || props.hoveredElement
   if (!element) return ''
   
-  const tag = element.tagName.toLowerCase()
-  const id = element.id ? `#${element.id}` : ''
-  const classes = element.classList.length > 0 
-    ? `.${Array.from(element.classList).slice(0, 2).join('.')}` 
-    : ''
-  
-  return `${tag}${id}${classes}`
+  // Show the actual generated selector that will be used
+  return generateSelector(element)
 })
 
 const tagLabelStyle = computed(() => {

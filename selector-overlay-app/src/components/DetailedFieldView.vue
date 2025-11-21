@@ -73,23 +73,60 @@
 
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">
-              Test Selector ({{ props.testResults.length }} results)
+              Test Selector
+              <span v-if="props.testResults.length > 0" class="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full font-semibold">
+                {{ props.testResults.length }} {{ props.testResults.length === 1 ? 'match' : 'matches' }}
+              </span>
             </label>
             <button
               @click="emit('testSelector', props.field.selector)"
-              class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium shadow-sm"
             >
-              Run Test
+              🔍 Run Test
             </button>
 
-            <div v-if="props.testResults.length > 0" class="mt-3 space-y-2">
-              <div
-                v-for="result in props.testResults"
-                :key="result.index"
-                class="bg-purple-50 p-2 rounded text-sm"
-              >
-                <div class="font-medium text-purple-900">#{{ result.index + 1 }}</div>
-                <div class="text-gray-700 mt-1">{{ result.value }}</div>
+            <div v-if="props.testResults.length > 0" class="mt-3 relative">
+              <!-- Scrollable Results Container -->
+              <div class="max-h-96 overflow-y-auto border-2 border-gray-300 rounded-lg bg-gray-50 shadow-inner">
+                <!-- Sticky Header -->
+                <div class="sticky top-0 z-10 bg-gradient-to-b from-blue-50 to-blue-100 px-3 py-2 border-b-2 border-blue-200">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-blue-900">
+                      📊 {{ props.testResults.length }} matching element(s)
+                    </span>
+                    <span class="text-xs text-blue-700">
+                      ⬇️ Scroll to view all
+                    </span>
+                  </div>
+                </div>
+                
+                <!-- Results List -->
+                <div class="p-3 space-y-2">
+                  <div
+                    v-for="result in props.testResults"
+                    :key="result.index"
+                    @click="emit('scrollToResult', result)"
+                    class="bg-white border-2 border-purple-200 p-3 rounded-lg text-sm hover:border-purple-500 hover:shadow-md transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                    title="Click to scroll and highlight this element on the page"
+                  >
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="font-semibold text-purple-900">🔹 Element #{{ result.index + 1 }}</span>
+                      <span class="text-xs bg-purple-600 text-white px-2 py-1 rounded font-medium">
+                        {{ result.index + 1 }}/{{ props.testResults.length }}
+                      </span>
+                    </div>
+                    <div class="text-gray-800 break-words bg-gray-50 p-2 rounded border border-gray-200">
+                      {{ result.value || '(empty content)' }}
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Bottom Indicator -->
+                <div class="sticky bottom-0 bg-gradient-to-t from-gray-100 to-transparent px-3 py-2 text-center">
+                  <span class="text-xs text-gray-600 font-medium">
+                    End of results
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -177,6 +214,7 @@ const emit = defineEmits<{
   'saveEdit': [field: Partial<SelectedField>]
   'cancelEdit': []
   'testSelector': [selector: string]
+  'scrollToResult': [result: TestResult]
 }>()
 
 const editedField = ref({
