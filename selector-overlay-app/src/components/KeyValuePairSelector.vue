@@ -362,11 +362,14 @@
         :class="[
           'flex-1 px-4 py-3 rounded-lg font-medium transition-colors text-base',
           canAddToField
-            ? 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+            ? props.editMode
+              ? 'bg-green-500 text-white hover:bg-green-600 active:bg-green-700'
+              : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
             : 'bg-gray-200 text-gray-400 cursor-not-allowed'
         ]"
       >
-        ✓ Add to Field List
+        <span v-if="props.editMode">✓ Update Extraction Pair</span>
+        <span v-else>✓ Add to Field List</span>
       </button>
     </div>
   </div>
@@ -409,6 +412,12 @@ const {
   getExtractionData,
   reset
 } = kvSelection
+
+const props = withDefaults(defineProps<{
+  editMode?: boolean
+}>(), {
+  editMode: false
+})
 
 const emit = defineEmits<{
   add: [data: {
@@ -517,12 +526,10 @@ function initializeWithData(data: {
   key_attribute?: string
   value_attribute?: string
 }) {
-  console.log('KeyValuePairSelector.initializeWithData called with:', data)
   // Reset first to clear any previous state
   kvSelection.reset()
   // Then initialize with the provided data
   kvSelection.initialize(data)
-  console.log('After initialize - keySelector:', kvSelection.keySelector.value)
 }
 
 defineExpose({

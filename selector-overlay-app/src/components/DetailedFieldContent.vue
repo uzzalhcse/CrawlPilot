@@ -148,6 +148,7 @@
             <KeyValuePairSelector
               ref="kvEditSelectorRef"
               v-model:field-name="tempFieldName"
+              :edit-mode="true"
               @add="handleSavePairEdit"
             />
 
@@ -169,6 +170,7 @@
             <KeyValuePairSelector
               ref="kvEditSelectorRef"
               v-model:field-name="tempFieldName"
+              :edit-mode="false"
               @add="handleSavePairEdit"
             />
 
@@ -756,7 +758,6 @@ async function startEditPair(index: number) {
     // Use a longer timeout to ensure component is fully mounted
     setTimeout(() => {
       if (kvEditSelectorRef.value) {
-        console.log('Initializing with data:', pair)
         kvEditSelectorRef.value.initializeWithData({
           key_selector: pair.key_selector,
           value_selector: pair.value_selector,
@@ -765,8 +766,6 @@ async function startEditPair(index: number) {
           key_attribute: pair.key_attribute,
           value_attribute: pair.value_attribute
         })
-      } else {
-        console.error('kvEditSelectorRef is not available')
       }
     }, 200)
   }

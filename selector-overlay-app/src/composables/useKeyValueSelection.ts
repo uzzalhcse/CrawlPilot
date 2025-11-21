@@ -193,8 +193,6 @@ export function useKeyValueSelection() {
     key_attribute?: string
     value_attribute?: string
   }) {
-    console.log('useKeyValueSelection.initialize called with:', data)
-    
     // Set selectors and types
     keySelector.value = data.key_selector
     valueSelector.value = data.value_selector
@@ -203,15 +201,12 @@ export function useKeyValueSelection() {
     keyAttribute.value = data.key_attribute || ''
     valueAttribute.value = data.value_attribute || ''
 
-    console.log('Set values - keySelector:', keySelector.value, 'valueSelector:', valueSelector.value)
-
     // Find and load matching elements for key
     if (data.key_selector) {
       try {
         const keyEls = Array.from(document.querySelectorAll(data.key_selector))
         keyElements.value = keyEls
         keyMatches.value = keyEls.map(el => extractContent(el, data.key_type, data.key_attribute))
-        console.log('Key elements found:', keyEls.length, 'matches:', keyMatches.value)
       } catch (e) {
         console.error('Error loading key selector:', e)
       }
@@ -223,7 +218,6 @@ export function useKeyValueSelection() {
         const valueEls = Array.from(document.querySelectorAll(data.value_selector))
         valueElements.value = valueEls
         valueMatches.value = valueEls.map(el => extractContent(el, data.value_type, data.value_attribute))
-        console.log('Value elements found:', valueEls.length, 'matches:', valueMatches.value)
       } catch (e) {
         console.error('Error loading value selector:', e)
       }

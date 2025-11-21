@@ -103,10 +103,8 @@ const handleKeyValueClick = (e: MouseEvent) => {
       e.stopPropagation()
       
       if (kvSelection.isSelectingKeys.value) {
-        console.log('Selecting key element:', target)
         kvSelection.selectKeyElement(target)
       } else if (kvSelection.isSelectingValues.value) {
-        console.log('Selecting value element:', target)
         kvSelection.selectValueElement(target)
       }
     }
