@@ -47,34 +47,6 @@
       </details>
     </div>
 
-    <!-- Mode Selector -->
-    <div v-if="!props.detailedViewField" class="mb-4">
-      <label class="block text-sm font-medium text-gray-700 mb-2">Selection Mode</label>
-      <div class="flex gap-2">
-        <button
-          @click="emit('update:mode', 'single')"
-          :class="[
-            'flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors',
-            props.mode === 'single'
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          ]"
-        >
-          Single
-        </button>
-        <button
-          @click="emit('update:mode', 'list')"
-          :class="[
-            'flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors',
-            props.mode === 'list'
-              ? 'bg-blue-500 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          ]"
-        >
-          List
-        </button>
-      </div>
-    </div>
 
     <!-- Field Configuration -->
     <div v-if="!props.detailedViewField" class="space-y-3 mb-4">
@@ -211,12 +183,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SelectedField, SelectionMode, FieldType, ValidationResult, TestResult } from '../types'
+import type { SelectedField, FieldType, ValidationResult, TestResult } from '../types'
 import DetailedFieldContent from './DetailedFieldContent.vue'
 import { getElementColor } from '../utils/elementColors'
 
 interface Props {
-  mode: SelectionMode
   fieldName: string
   fieldType: FieldType
   fieldAttribute: string
@@ -232,7 +203,6 @@ interface Props {
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
-  'update:mode': [mode: SelectionMode]
   'update:fieldName': [name: string]
   'update:fieldType': [type: FieldType]
   'update:fieldAttribute': [attr: string]

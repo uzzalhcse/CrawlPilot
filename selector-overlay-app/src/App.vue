@@ -13,7 +13,6 @@
     
     <!-- Control Panel -->
     <ControlPanel
-      v-model:mode="mode"
       v-model:field-name="currentFieldName"
       v-model:field-type="currentFieldType"
       v-model:field-attribute="currentFieldAttribute"
@@ -51,7 +50,6 @@ const {
   hoveredElementValidation,
   lockedElement,
   selectedFields,
-  mode,
   currentFieldName,
   currentFieldType,
   currentFieldAttribute,

@@ -1,5 +1,5 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import type { SelectedField, SelectionMode, FieldType, ElementInfo, TestResult } from '../types'
+import type { SelectedField, FieldType, ElementInfo, TestResult } from '../types'
 import { generateSelector } from '../utils/selectorGenerator'
 
 export function useElementSelection() {
@@ -7,7 +7,6 @@ export function useElementSelection() {
   const hoveredElement = ref<Element | null>(null)
   const lockedElement = ref<Element | null>(null)
   const selectedFields = ref<SelectedField[]>([])
-  const mode = ref<SelectionMode>('single')
   const currentFieldName = ref('')
   const currentFieldType = ref<FieldType>('text')
   const currentFieldAttribute = ref('')
@@ -39,10 +38,7 @@ export function useElementSelection() {
     if (count === 1) {
       return { isValid: true, isUnique: true, message: 'Unique selector' }
     }
-    if (mode.value === 'list') {
-      return { isValid: true, isUnique: false, message: `List selector (${count} items)` }
-    }
-    return { isValid: true, isUnique: false, message: `Multiple matches (${count})` }
+    return { isValid: true, isUnique: false, message: `${count} matches` }
   })
 
   const lockedElementSelector = computed(() => {
@@ -258,7 +254,6 @@ export function useElementSelection() {
     lockedElement,
     lockedElementSelector,
     selectedFields,
-    mode,
     currentFieldName,
     currentFieldType,
     currentFieldAttribute,
