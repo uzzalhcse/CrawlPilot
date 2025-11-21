@@ -1,6 +1,20 @@
-export type SelectionMode = 'single' | 'list'
+export type SelectionMode = 'single' | 'list' | 'key-value-pairs'
 
 export type FieldType = 'text' | 'attribute' | 'html'
+
+export interface ExtractionPair {
+  key_selector: string
+  value_selector: string
+  key_type: FieldType
+  value_type: FieldType
+  key_attribute?: string
+  value_attribute?: string
+  transform?: string
+}
+
+export interface KeyValueAttributes {
+  extractions: ExtractionPair[]
+}
 
 export interface SelectedField {
   id: string
@@ -11,6 +25,14 @@ export interface SelectedField {
   timestamp: number
   sampleValue?: string
   matchCount?: number
+  mode?: SelectionMode
+  attributes?: KeyValueAttributes
+}
+
+export interface KeyValuePair {
+  key: string
+  value: string
+  index: number
 }
 
 export interface ElementInfo {

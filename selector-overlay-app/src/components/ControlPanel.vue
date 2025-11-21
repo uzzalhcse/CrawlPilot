@@ -1,7 +1,7 @@
 <template>
-  <div class="fixed top-5 right-5 bg-white rounded-xl shadow-2xl p-6 min-w-[400px] max-w-[480px] max-h-[90vh] overflow-y-auto pointer-events-auto z-[1000000] border border-gray-200 crawlify-scrollbar" @click.stop>
-    <!-- Header -->
-    <div class="mb-4">
+  <div class="fixed top-5 right-5 bg-white rounded-xl shadow-2xl min-w-[400px] max-w-[480px] h-[90vh] flex flex-col pointer-events-auto z-[1000000] border border-gray-200 overflow-hidden" @click.stop>
+    <!-- Header (Fixed) -->
+    <div class="flex-shrink-0 px-6 pt-6 pb-2">
       <div class="flex items-start justify-between">
         <div>
           <h2 class="text-2xl font-bold text-gray-900">Element Selector</h2>
@@ -48,8 +48,36 @@
     </div>
 
 
-    <!-- Field Configuration -->
-    <div v-if="!props.detailedViewField" class="space-y-3 mb-4">
+    <!-- Scrollable Content Area -->
+    <div class="overflow-y-auto crawlify-scrollbar px-6 pb-6" style="height: calc(90vh - 140px);">
+      <!-- Tab Navigation -->
+      <div v-if="!props.detailedViewField" class="flex border-b border-gray-200 mb-4 sticky top-0 bg-white z-10 -mx-2">
+        <button
+          @click="activeTab = 'regular'"
+          :class="[
+            'flex-1 px-4 py-3 text-sm font-medium transition-all',
+            activeTab === 'regular'
+              ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+          ]"
+        >
+          📄 Single/Multiple
+        </button>
+        <button
+          @click="activeTab = 'key-value'"
+          :class="[
+            'flex-1 px-4 py-3 text-sm font-medium transition-all',
+            activeTab === 'key-value'
+              ? 'text-purple-600 border-b-2 border-purple-600 bg-purple-50'
+              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+          ]"
+        >
+          🔗 Key-Value Pairs
+        </button>
+      </div>
+
+      <!-- Tab Content - Regular Mode (Single/List) -->
+      <div v-if="!props.detailedViewField && activeTab === 'regular'" class="space-y-3 mb-4">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Field Name</label>
         <input
@@ -63,8 +91,23 @@
         />
       </div>
 
+      <!-- Multiple Value Option -->
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            v-model="extractMultiple"
+            class="w-4 h-4 text-blue-500 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+          />
+          <div>
+            <span class="text-sm font-medium text-gray-900">Extract Multiple Values</span>
+            <p class="text-xs text-gray-600">Returns an array instead of single value</p>
+          </div>
+        </label>
+      </div>
+
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Extract</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Extract Type</label>
         <select
           :value="props.fieldType"
           @change="emit('update:fieldType', ($event.target as HTMLSelectElement).value)"
@@ -116,6 +159,14 @@
       </button>
     </div>
 
+    <!-- Tab Content - Key-Value Pair Selector -->
+    <KeyValuePairSelector
+      v-if="!props.detailedViewField && activeTab === 'key-value'"
+      ref="kvSelectorRef"
+      v-model:field-name="kvFieldName"
+      @add="handleAddKeyValueField"
+    />
+
     <!-- Selected Fields List -->
     <div v-if="!props.detailedViewField" class="mt-6">
       <h3 class="text-sm font-semibold text-gray-900 mb-3">
@@ -138,20 +189,35 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <div class="font-medium text-gray-900 truncate">{{ field.name }}</div>
-                <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="getFieldTypeBadge(field)">
+                <!-- Key-Value Mode Badge -->
+                <span v-if="field.mode === 'key-value-pairs'" class="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700 border border-purple-300">
+                  🔗 K-V Pairs
+                </span>
+                <!-- Regular Type Badge -->
+                <span v-else class="text-xs px-1.5 py-0.5 rounded font-medium" :class="getFieldTypeBadge(field)">
                   {{ field.type }}
                 </span>
-                <span v-if="field.matchCount && field.matchCount > 1" class="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700 border border-purple-300" title="Multiple elements detected - consider using array extraction">
+                <!-- Array Badge -->
+                <span v-if="field.matchCount && field.matchCount > 1 && field.mode !== 'key-value-pairs'" class="text-xs px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700 border border-purple-300" title="Multiple elements detected - consider using array extraction">
                   📋 Array
                 </span>
               </div>
-              <div class="text-xs text-gray-500 font-mono truncate mt-1">
+              
+              <!-- Key-Value Selector Display -->
+              <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-xs text-gray-500 font-mono mt-1 space-y-0.5">
+                <div class="text-green-700">🔑 {{ field.attributes.extractions[0].key_selector }}</div>
+                <div class="text-blue-700">💎 {{ field.attributes.extractions[0].value_selector }}</div>
+              </div>
+              
+              <!-- Regular Selector Display -->
+              <div v-else class="text-xs text-gray-500 font-mono truncate mt-1">
                 {{ field.selector }}
               </div>
-              <div v-if="field.matchCount" class="text-xs mt-1" :class="field.matchCount > 1 ? 'text-purple-600 font-semibold' : 'text-blue-600'">
+              
+              <div v-if="field.matchCount && field.mode !== 'key-value-pairs'" class="text-xs mt-1" :class="field.matchCount > 1 ? 'text-purple-600 font-semibold' : 'text-blue-600'">
                 {{ field.matchCount }} {{ field.matchCount === 1 ? 'match' : 'matches' }}
               </div>
-              <div v-if="field.sampleValue" class="text-xs text-gray-600 truncate mt-1 italic">
+              <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-xs text-gray-600 truncate mt-1 italic">
                 "{{ field.sampleValue }}"
               </div>
             </div>
@@ -167,33 +233,36 @@
       </div>
     </div>
 
-    <!-- Detailed View Content (inside panel) -->
-    <DetailedFieldContent
-      v-if="props.detailedViewField"
-      :field="props.detailedViewField"
-      :tab="props.detailedViewTab"
-      :edit-mode="props.editMode"
-      :test-results="props.testResults"
-      @switch-tab="emit('switchTab', $event)"
-      @enable-edit="emit('enableEditMode')"
-      @save-edit="emit('saveEdit', $event)"
-      @cancel-edit="emit('cancelEdit')"
-      @test-selector="emit('testSelector', $event)"
-      @scroll-to-result="emit('scrollToResult', $event)"
-    />
+      <!-- Detailed View Content (inside panel) -->
+      <DetailedFieldContent
+        v-if="props.detailedViewField"
+        :field="props.detailedViewField"
+        :tab="props.detailedViewTab"
+        :edit-mode="props.editMode"
+        :test-results="props.testResults"
+        @switch-tab="emit('switchTab', $event)"
+        @enable-edit="emit('enableEditMode')"
+        @save-edit="emit('saveEdit', $event)"
+        @cancel-edit="emit('cancelEdit')"
+        @test-selector="emit('testSelector', $event)"
+        @scroll-to-result="emit('scrollToResult', $event)"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { SelectedField, FieldType, ValidationResult, TestResult } from '../types'
+import { computed, ref, watch } from 'vue'
+import type { SelectedField, FieldType, ValidationResult, TestResult, SelectionMode } from '../types'
 import DetailedFieldContent from './DetailedFieldContent.vue'
+import KeyValuePairSelector from './KeyValuePairSelector.vue'
 import { getElementColor } from '../utils/elementColors'
 
 interface Props {
   fieldName: string
   fieldType: FieldType
   fieldAttribute: string
+  mode: SelectionMode
   selectedFields: SelectedField[]
   hoveredElementCount: number
   hoveredElementValidation: ValidationResult | null
@@ -209,7 +278,9 @@ const emit = defineEmits<{
   'update:fieldName': [name: string]
   'update:fieldType': [type: FieldType]
   'update:fieldAttribute': [attr: string]
+  'update:mode': [mode: SelectionMode]
   'addField': []
+  'addKeyValueField': [data: any]
   'removeField': [id: string]
   'openDetailedView': [field: SelectedField]
   'closeDetailedView': []
@@ -221,12 +292,36 @@ const emit = defineEmits<{
   'scrollToResult': [result: TestResult]
 }>()
 
+const activeTab = ref<'regular' | 'key-value'>('regular')
+const extractMultiple = ref(false)
+const kvFieldName = ref('')
+const kvSelectorRef = ref<InstanceType<typeof KeyValuePairSelector> | null>(null)
+
+// Update mode based on active tab
+watch(activeTab, (tab) => {
+  const mode = tab === 'key-value' ? 'key-value-pairs' : extractMultiple.value ? 'list' : 'single'
+  emit('update:mode', mode)
+})
+
+// Update mode when extractMultiple changes
+watch(extractMultiple, (isMultiple) => {
+  if (activeTab.value === 'regular') {
+    const mode = isMultiple ? 'list' : 'single'
+    emit('update:mode', mode)
+  }
+})
+
 const canAddField = computed(() => {
   if (!props.fieldName.trim()) return false
   if (props.hoveredElementCount === 0) return false
   if (props.fieldType === 'attribute' && !props.fieldAttribute.trim()) return false
   return true
 })
+
+function handleAddKeyValueField(data: { fieldName: string; extractions: any[] }) {
+  emit('addKeyValueField', data)
+  kvFieldName.value = ''
+}
 
 const getFieldBorderClass = (field: SelectedField) => {
   const colors = getElementColor(field.type)

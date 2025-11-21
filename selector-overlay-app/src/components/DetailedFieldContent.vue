@@ -1,83 +1,282 @@
 <template>
   <div class="space-y-6">
-    <!-- Section 1: Basic Configuration -->
+    <!-- Basic Configuration (Common for all modes) -->
     <div class="bg-white rounded-lg border-2 border-gray-200 p-4 space-y-4">
-      <h3 class="text-lg font-bold text-gray-800 border-b pb-2">⚙️ Basic Configuration</h3>
+      <div class="flex items-center justify-between border-b border-gray-300 pb-2">
+        <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <span v-if="props.field.mode === 'key-value-pairs'">🔗</span>
+          <span v-else-if="props.field.mode === 'list'">📋</span>
+          <span v-else>📄</span>
+          {{ getModeTitle(props.field.mode) }}
+        </h3>
+        <button
+          v-if="!props.editMode"
+          @click="emit('enableEdit')"
+          class="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        >
+          ✏️ Edit
+        </button>
+        <div v-else class="flex gap-2">
+          <button
+            @click="handleSaveEdit"
+            class="px-3 py-1.5 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+          >
+            ✓ Save
+          </button>
+          <button
+            @click="emit('cancelEdit')"
+            class="px-3 py-1.5 text-sm bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+          >
+            ✕ Cancel
+          </button>
+        </div>
+      </div>
       
       <!-- Field Name -->
       <div>
         <label class="block text-base font-medium text-gray-700 mb-2">Field Name</label>
         <input
           v-model="editedField.name"
-          @change="handleFieldUpdate"
+          :disabled="!props.editMode"
           type="text"
-          class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          :class="[
+            'w-full px-4 py-3 text-base border rounded-lg transition-all',
+            props.editMode 
+              ? 'border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent' 
+              : 'border-gray-200 bg-gray-50 cursor-not-allowed'
+          ]"
           placeholder="Enter field name"
         />
       </div>
 
-      <!-- CSS Selector with Test Button -->
-      <div>
-        <div class="flex items-center justify-between mb-2">
-          <label class="block text-base font-medium text-gray-700">
-            CSS Selector
-            <button
-              type="button"
-              class="ml-1 text-gray-400 hover:text-gray-600 text-sm"
-              title="Enter a valid CSS selector to target elements on the page"
-            >
-              ⓘ
-            </button>
-          </label>
-          <button
-            @click="testCurrentSelector"
-            class="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium shadow-sm flex items-center gap-1"
-          >
-            <span>🔍</span>
-            <span>Test Selector</span>
-            <span v-if="props.testResults.length > 0" class="ml-1 px-2 py-0.5 bg-white text-blue-600 rounded-full text-xs font-bold">
-              {{ props.testResults.length }}
-            </span>
-          </button>
-        </div>
-        <textarea
-          v-model="editedField.selector"
-          @change="handleFieldUpdate"
-          rows="2"
-          class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono transition-all"
-          placeholder="e.g., .product-title, #main > div:first-child"
-        />
+      <!-- Mode Badge -->
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-gray-600 font-medium">Mode:</span>
+        <span 
+          :class="[
+            'px-2 py-1 rounded text-xs font-semibold',
+            props.field.mode === 'key-value-pairs' ? 'bg-purple-100 text-purple-700' :
+            props.field.mode === 'list' ? 'bg-blue-100 text-blue-700' :
+            'bg-gray-100 text-gray-700'
+          ]"
+        >
+          {{ getModeTitle(props.field.mode) }}
+        </span>
       </div>
 
-      <!-- Extraction Type -->
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-base font-medium text-gray-700 mb-2">Extraction Type</label>
-          <select
-            v-model="editedField.type"
-            @change="handleFieldUpdate"
-            class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      <!-- Key-Value Pairs Configuration -->
+      <div v-if="props.field.mode === 'key-value-pairs' && editedField.attributes?.extractions" class="space-y-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-semibold text-purple-900">Extraction Pairs ({{ editedField.attributes.extractions.length }})</span>
+          <button
+            v-if="props.editMode"
+            @click="addNewExtractionPair"
+            class="px-3 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
           >
-            <option value="text">Text Content</option>
-            <option value="attribute">Attribute</option>
-            <option value="html">HTML</option>
-          </select>
+            + Add Pair
+          </button>
         </div>
+        
+        <div
+          v-for="(extraction, idx) in editedField.attributes.extractions"
+          :key="idx"
+          class="bg-white rounded-lg border-2 border-purple-200 p-4 space-y-3"
+        >
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-gray-800">Extraction Pair {{ idx + 1 }}</span>
+            <button
+              v-if="props.editMode && editedField.attributes.extractions.length > 1"
+              @click="removeExtractionPair(idx)"
+              class="text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-red-50 hover:bg-red-100 rounded"
+            >
+              Remove
+            </button>
+          </div>
+          
+          <!-- Key Selector -->
+          <div class="bg-green-50 border border-green-200 rounded p-3 space-y-2">
+            <div class="text-xs font-semibold text-green-800 mb-1">🔑 Key Selector</div>
+            <textarea
+              v-if="props.editMode"
+              v-model="extraction.key_selector"
+              rows="2"
+              class="w-full text-xs font-mono border border-green-300 rounded p-2 focus:ring-2 focus:ring-green-500"
+            />
+            <code v-else class="text-xs text-gray-800 break-all">{{ extraction.key_selector }}</code>
+            
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-gray-600">Type:</label>
+                <select
+                  v-if="props.editMode"
+                  v-model="extraction.key_type"
+                  class="w-full text-xs border border-green-300 rounded p-1"
+                >
+                  <option value="text">Text</option>
+                  <option value="attribute">Attribute</option>
+                  <option value="html">HTML</option>
+                </select>
+                <span v-else class="text-xs text-gray-700 ml-1">{{ extraction.key_type }}</span>
+              </div>
+              <div v-if="extraction.key_type === 'attribute'">
+                <label class="text-xs text-gray-600">Attribute:</label>
+                <input
+                  v-if="props.editMode"
+                  v-model="extraction.key_attribute"
+                  type="text"
+                  class="w-full text-xs border border-green-300 rounded p-1"
+                  placeholder="e.g., href"
+                />
+                <span v-else class="text-xs text-gray-700 ml-1">{{ extraction.key_attribute }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Value Selector -->
+          <div class="bg-blue-50 border border-blue-200 rounded p-3 space-y-2">
+            <div class="text-xs font-semibold text-blue-800 mb-1">💎 Value Selector</div>
+            <textarea
+              v-if="props.editMode"
+              v-model="extraction.value_selector"
+              rows="2"
+              class="w-full text-xs font-mono border border-blue-300 rounded p-2 focus:ring-2 focus:ring-blue-500"
+            />
+            <code v-else class="text-xs text-gray-800 break-all">{{ extraction.value_selector }}</code>
+            
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-gray-600">Type:</label>
+                <select
+                  v-if="props.editMode"
+                  v-model="extraction.value_type"
+                  class="w-full text-xs border border-blue-300 rounded p-1"
+                >
+                  <option value="text">Text</option>
+                  <option value="attribute">Attribute</option>
+                  <option value="html">HTML</option>
+                </select>
+                <span v-else class="text-xs text-gray-700 ml-1">{{ extraction.value_type }}</span>
+              </div>
+              <div v-if="extraction.value_type === 'attribute'">
+                <label class="text-xs text-gray-600">Attribute:</label>
+                <input
+                  v-if="props.editMode"
+                  v-model="extraction.value_attribute"
+                  type="text"
+                  class="w-full text-xs border border-blue-300 rounded p-1"
+                  placeholder="e.g., href"
+                />
+                <span v-else class="text-xs text-gray-700 ml-1">{{ extraction.value_attribute }}</span>
+              </div>
+            </div>
+          </div>
 
-        <div v-if="editedField.type === 'attribute'">
-          <label class="block text-base font-medium text-gray-700 mb-2">Attribute Name</label>
-          <input
-            v-model="editedField.attribute"
+          <!-- Transform -->
+          <div class="bg-gray-50 border border-gray-200 rounded p-2">
+            <label class="text-xs font-semibold text-gray-700">Transform:</label>
+            <input
+              v-if="props.editMode"
+              v-model="extraction.transform"
+              type="text"
+              class="w-full text-xs border border-gray-300 rounded p-1 mt-1"
+              placeholder="e.g., trim"
+            />
+            <span v-else class="text-xs text-gray-700 ml-1">{{ extraction.transform || 'none' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Regular Mode Selector (Single/List) -->
+      <div v-if="props.field.mode !== 'key-value-pairs'" class="space-y-3">
+        <!-- CSS Selector with Test Button -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-base font-medium text-gray-700">
+              CSS Selector
+              <button
+                type="button"
+                class="ml-1 text-gray-400 hover:text-gray-600 text-sm"
+                title="Enter a valid CSS selector to target elements on the page"
+              >
+                ⓘ
+              </button>
+            </label>
+            <button
+              @click="testCurrentSelector"
+              class="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium shadow-sm flex items-center gap-1"
+            >
+              <span>🔍</span>
+              <span>Test Selector</span>
+              <span v-if="props.testResults.length > 0" class="ml-1 px-2 py-0.5 bg-white text-blue-600 rounded-full text-xs font-bold">
+                {{ props.testResults.length }}
+              </span>
+            </button>
+          </div>
+          <textarea
+            v-model="editedField.selector"
             @change="handleFieldUpdate"
-            type="text"
-            placeholder="e.g., href, src"
-            class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            rows="2"
+            class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono transition-all"
+            placeholder="e.g., .product-title, #main > div:first-child"
           />
         </div>
+
+        <!-- Extraction Type -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-base font-medium text-gray-700 mb-2">Extraction Type</label>
+            <select
+              v-model="editedField.type"
+              @change="handleFieldUpdate"
+              class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="text">Text Content</option>
+              <option value="attribute">Attribute</option>
+              <option value="html">HTML</option>
+            </select>
+          </div>
+
+          <div v-if="editedField.type === 'attribute'">
+            <label class="block text-base font-medium text-gray-700 mb-2">Attribute Name</label>
+            <input
+              v-model="editedField.attribute"
+              @change="handleFieldUpdate"
+              type="text"
+              placeholder="e.g., href, src"
+              class="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Info Note based on mode -->
+      <div 
+        :class="[
+          'text-sm rounded p-3',
+          props.field.mode === 'key-value-pairs' 
+            ? 'text-purple-700 bg-purple-100 border border-purple-300'
+            : props.field.mode === 'list'
+              ? 'text-blue-700 bg-blue-100 border border-blue-300'
+              : 'text-gray-700 bg-gray-100 border border-gray-300'
+        ]"
+      >
+        <span v-if="props.field.mode === 'key-value-pairs'">
+          💡 <strong>Key-Value Pairs:</strong> Extracts data from separate lists and pairs them by index position.
+          Output: <code class="bg-white px-1 rounded">[{"key": "...", "value": "..."}]</code>
+        </span>
+        <span v-else-if="props.field.mode === 'list'">
+          💡 <strong>Multiple Values:</strong> Extracts an array of values from all matching elements.
+          Output: <code class="bg-white px-1 rounded">["value1", "value2", "value3"]</code>
+        </span>
+        <span v-else>
+          💡 <strong>Single Value:</strong> Extracts one value from the first matching element.
+          Output: <code class="bg-white px-1 rounded">"single value"</code>
+        </span>
       </div>
     </div>
 
-    <!-- Section 2: Transformations (Collapsible) -->
+    <!-- Section 2: Transformations (Collapsible) - Now available for all modes -->
     <div class="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border-2 border-purple-200">
       <button
         @click="showTransformations = !showTransformations"
@@ -264,7 +463,7 @@
       </div>
     </div>
 
-    <!-- Section 3: Live Preview (Always visible, directly after transformations) -->
+    <!-- Section 3: Live Preview (Always visible, directly after transformations) - Now for all modes -->
     <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border-2 border-green-300 p-5 shadow-md">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -328,7 +527,7 @@
       </div>
     </div>
 
-    <!-- Section 4: Test Results (Collapsible) -->
+    <!-- Section 4: Test Results (Collapsible) - Now for all modes -->
     <div class="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border-2 border-blue-200">
       <button
         @click="showTestResults = !showTestResults"
@@ -509,7 +708,8 @@ const editedField = ref({
   name: props.field.name,
   selector: props.field.selector,
   type: props.field.type,
-  attribute: props.field.attribute
+  attribute: props.field.attribute,
+  attributes: props.field.attributes
 })
 
 const activeTransformations = ref<string[]>([])
@@ -528,7 +728,8 @@ watch(() => props.field, (newField) => {
     name: newField.name,
     selector: newField.selector,
     type: newField.type,
-    attribute: newField.attribute
+    attribute: newField.attribute,
+    attributes: newField.attributes
   }
   activeTransformations.value = []
   customRegexPattern.value = ''
@@ -545,6 +746,52 @@ watch(() => props.field, (newField) => {
 // Original extracted value (before transformations)
 const livePreviewOriginal = computed(() => {
   try {
+    // Handle key-value pairs mode
+    if (props.field.mode === 'key-value-pairs' && editedField.value.attributes?.extractions) {
+      const pairs = []
+      for (const extraction of editedField.value.attributes.extractions) {
+        // Skip if selectors are empty
+        if (!extraction.key_selector || !extraction.value_selector) continue
+        
+        const keyElements = document.querySelectorAll(extraction.key_selector)
+        const valueElements = document.querySelectorAll(extraction.value_selector)
+        
+        const minLength = Math.min(keyElements.length, valueElements.length)
+        for (let i = 0; i < Math.min(minLength, 3); i++) { // Show first 3 pairs
+          const keyEl = keyElements[i]
+          const valueEl = valueElements[i]
+          
+          let key = ''
+          let value = ''
+          
+          // Extract key
+          if (extraction.key_type === 'text') {
+            key = keyEl.textContent?.trim() || ''
+          } else if (extraction.key_type === 'attribute' && extraction.key_attribute) {
+            key = keyEl.getAttribute(extraction.key_attribute) || ''
+          } else if (extraction.key_type === 'html') {
+            key = keyEl.innerHTML
+          }
+          
+          // Extract value
+          if (extraction.value_type === 'text') {
+            value = valueEl.textContent?.trim() || ''
+          } else if (extraction.value_type === 'attribute' && extraction.value_attribute) {
+            value = valueEl.getAttribute(extraction.value_attribute) || ''
+          } else if (extraction.value_type === 'html') {
+            value = valueEl.innerHTML
+          }
+          
+          pairs.push({ key, value })
+        }
+      }
+      
+      return JSON.stringify(pairs, null, 2)
+    }
+    
+    // Handle regular mode (single/list)
+    if (!editedField.value.selector) return ''
+    
     const elements = document.querySelectorAll(editedField.value.selector)
     if (elements.length === 0) return ''
     
@@ -566,6 +813,7 @@ const livePreviewOriginal = computed(() => {
     
     return value
   } catch (error) {
+    console.error('Error in livePreviewOriginal:', error)
     return ''
   }
 })
@@ -776,4 +1024,47 @@ const handleFieldUpdate = () => {
     emit('saveEdit', editedField.value)
   }
 }
+
+const addNewExtractionPair = () => {
+  if (!editedField.value.attributes) {
+    editedField.value.attributes = { extractions: [] }
+  }
+  editedField.value.attributes.extractions.push({
+    key_selector: '',
+    value_selector: '',
+    key_type: 'text',
+    value_type: 'text',
+    transform: 'trim'
+  })
+}
+
+const removeExtractionPair = (index: number) => {
+  if (editedField.value.attributes?.extractions) {
+    editedField.value.attributes.extractions.splice(index, 1)
+  }
+}
+
+const handleSaveEdit = () => {
+  if (props.field.mode === 'key-value-pairs') {
+    emit('saveEdit', {
+      name: editedField.value.name,
+      attributes: editedField.value.attributes
+    })
+  } else {
+    handleFieldUpdate()
+  }
+}
+
+const getModeTitle = (mode?: string) => {
+  switch (mode) {
+    case 'key-value-pairs':
+      return 'Key-Value Pair Extraction'
+    case 'list':
+      return 'Multiple Values (Array)'
+    case 'single':
+    default:
+      return 'Single Value Extraction'
+  }
+}
+
 </script>

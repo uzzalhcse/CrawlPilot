@@ -85,6 +85,33 @@
       </div>
     </div>
 
+    <!-- Key-Value Selection Highlights -->
+    <template v-if="kvSelection">
+      <!-- Key elements -->
+      <div
+        v-for="(element, index) in kvSelection.keyElements.value"
+        :key="`key-${index}`"
+        class="absolute pointer-events-none border-3 border-green-500 bg-green-500/15 z-[999997] shadow-lg"
+        :style="highlightStyle(element.getBoundingClientRect())"
+      >
+        <div class="absolute -top-7 left-0 bg-green-600 text-white text-xs px-2 py-1 rounded shadow-md font-bold">
+          🔑 Key {{ index + 1 }}
+        </div>
+      </div>
+
+      <!-- Value elements -->
+      <div
+        v-for="(element, index) in kvSelection.valueElements.value"
+        :key="`value-${index}`"
+        class="absolute pointer-events-none border-3 border-blue-500 bg-blue-500/15 z-[999997] shadow-lg"
+        :style="highlightStyle(element.getBoundingClientRect())"
+      >
+        <div class="absolute -top-7 left-0 bg-blue-600 text-white text-xs px-2 py-1 rounded shadow-md font-bold">
+          💎 Value {{ index + 1 }}
+        </div>
+      </div>
+    </template>
+
     <!-- Element tag label -->
     <div
       v-if="tagLabelStyle"
@@ -97,10 +124,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, inject } from 'vue'
 import type { SelectedField, TestResult, FieldType } from '../types'
 import { getElementColor } from '../utils/elementColors'
 import { generateSelector } from '../utils/selectorGenerator'
+
+// Inject key-value selection state
+const kvSelection = inject<any>('kvSelection', null)
 
 interface Props {
   hoveredElement: Element | null
@@ -256,6 +286,16 @@ const getElementType = (element: Element | null): string => {
 }
 
 const getHoverHighlightClass = () => {
+  // Special styling for key-value selection mode
+  if (kvSelection) {
+    if (kvSelection.isSelectingKeys.value) {
+      return 'border-green-400 bg-green-400/20'
+    }
+    if (kvSelection.isSelectingValues.value) {
+      return 'border-blue-400 bg-blue-400/20'
+    }
+  }
+  
   const type = getElementType(props.hoveredElement)
   const colors = getElementColor(type)
   return `border-${colors.border} bg-${colors.bg}`

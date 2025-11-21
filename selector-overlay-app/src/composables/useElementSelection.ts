@@ -1,5 +1,5 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import type { SelectedField, FieldType, ElementInfo, TestResult } from '../types'
+import type { SelectedField, FieldType, ElementInfo, TestResult, SelectionMode } from '../types'
 import { generateSelector } from '../utils/selectorGenerator'
 
 export function useElementSelection() {
@@ -10,6 +10,7 @@ export function useElementSelection() {
   const currentFieldName = ref('')
   const currentFieldType = ref<FieldType>('text')
   const currentFieldAttribute = ref('')
+  const currentMode = ref<SelectionMode>('single')
   const detailedViewField = ref<SelectedField | null>(null)
   const detailedViewTab = ref<'preview' | 'edit'>('preview')
   const editMode = ref(false)
@@ -62,6 +63,12 @@ export function useElementSelection() {
     if (target && !target.closest('#crawlify-selector-overlay') && !detailedViewField.value) {
       e.preventDefault()
       e.stopPropagation()
+      
+      // Skip if in key-value mode (handled by KeyValuePairSelector)
+      if (currentMode.value === 'key-value-pairs') {
+        return
+      }
+      
       lockedElement.value = target
       // Update hoveredElement to match the locked element to ensure selector consistency
       hoveredElement.value = target
@@ -91,7 +98,8 @@ export function useElementSelection() {
       attribute: currentFieldType.value === 'attribute' ? currentFieldAttribute.value : undefined,
       timestamp: Date.now(),
       sampleValue,
-      matchCount
+      matchCount,
+      mode: currentMode.value
     }
 
     selectedFields.value.push(field)
@@ -101,6 +109,36 @@ export function useElementSelection() {
     currentFieldAttribute.value = ''
     lockedElement.value = null
     hoveredElement.value = null
+  }
+
+  const addKeyValueField = (data: {
+    fieldName: string
+    extractions: any[]
+  }) => {
+    const field: SelectedField = {
+      id: `field-${Date.now()}`,
+      name: data.fieldName,
+      selector: '', // Not used for key-value pairs
+      type: 'text', // Default, not really used
+      timestamp: Date.now(),
+      mode: 'key-value-pairs',
+      attributes: {
+        extractions: data.extractions.map(ext => ({
+          key_selector: ext.key_selector,
+          value_selector: ext.value_selector,
+          key_type: ext.key_type as FieldType,
+          value_type: ext.value_type as FieldType,
+          key_attribute: ext.key_attribute,
+          value_attribute: ext.value_attribute,
+          transform: ext.transform
+        }))
+      }
+    }
+
+    selectedFields.value.push(field)
+    
+    // Reset form
+    currentFieldName.value = ''
   }
 
   const removeField = (fieldId: string) => {
@@ -257,11 +295,13 @@ export function useElementSelection() {
     currentFieldName,
     currentFieldType,
     currentFieldAttribute,
+    currentMode,
     detailedViewField,
     detailedViewTab,
     editMode,
     testResults,
     addField,
+    addKeyValueField,
     removeField,
     openDetailedView,
     closeDetailedView,

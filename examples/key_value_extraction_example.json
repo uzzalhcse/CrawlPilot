@@ -1,0 +1,86 @@
+{
+  "_comment": "This example demonstrates the new Key-Value Pair extraction feature. Use the visual selector overlay to easily create these configurations by selecting 'Key-Value Pairs' mode.",
+  "name": "Product Specifications Extractor with Key-Value Pairs",
+  "description": "Extract product specifications using the new key-value pair feature - supports single and multiple extraction pairs",
+  "config": {
+    "start_urls": [
+      "https://example.com/product"
+    ],
+    "data_extraction": [
+      {
+        "id": "extract-product-data",
+        "type": "extract",
+        "name": "Extract Product Information",
+        "params": {
+          "fields": {
+            "title": {
+              "selector": "h1.product-title",
+              "type": "text"
+            },
+            "price": {
+              "selector": ".product-price",
+              "type": "text",
+              "transform": "extract_price"
+            },
+            "specifications": {
+              "extractions": [
+                {
+                  "key_selector": ".spec-label",
+                  "value_selector": ".spec-value",
+                  "key_type": "text",
+                  "value_type": "text",
+                  "transform": "trim"
+                }
+              ]
+            },
+            "features": {
+              "extractions": [
+                {
+                  "key_selector": "dt",
+                  "value_selector": "dd",
+                  "key_type": "text",
+                  "value_type": "text",
+                  "transform": "trim"
+                }
+              ]
+            },
+            "connectivity": {
+              "extractions": [
+                {
+                  "key_selector": "table.connectivity th",
+                  "value_selector": "table.connectivity td",
+                  "key_type": "text",
+                  "value_type": "text",
+                  "transform": "trim"
+                }
+              ]
+            },
+            "multi_source_attributes": {
+              "extractions": [
+                {
+                  "key_selector": ".basic-spec .label",
+                  "value_selector": ".basic-spec .value",
+                  "key_type": "text",
+                  "value_type": "text",
+                  "transform": "trim"
+                },
+                {
+                  "key_selector": ".advanced-spec .label",
+                  "value_selector": ".advanced-spec .value",
+                  "key_type": "text",
+                  "value_type": "text",
+                  "transform": "trim"
+                }
+              ]
+            }
+          }
+        },
+        "output_key": "product_data"
+      }
+    ],
+    "storage": {
+      "type": "database",
+      "table_name": "products"
+    }
+  }
+}

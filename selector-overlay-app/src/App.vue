@@ -13,9 +13,11 @@
     
     <!-- Control Panel -->
     <ControlPanel
+      ref="controlPanelRef"
       v-model:field-name="currentFieldName"
       v-model:field-type="currentFieldType"
       v-model:field-attribute="currentFieldAttribute"
+      v-model:mode="currentMode"
       :selected-fields="selectedFields"
       :hovered-element-count="hoveredElementCount"
       :hovered-element-validation="hoveredElementValidation"
@@ -24,6 +26,7 @@
       :edit-mode="editMode"
       :test-results="testResults"
       @add-field="addField"
+      @add-key-value-field="addKeyValueField"
       @remove-field="removeField"
       @open-detailed-view="openDetailedView"
       @close-detailed-view="closeDetailedView"
@@ -38,11 +41,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch, provide } from 'vue'
 import ControlPanel from './components/ControlPanel.vue'
 import HighlightOverlay from './components/HighlightOverlay.vue'
 import { useElementSelection } from './composables/useElementSelection'
 import { useNavigationPrevention } from './composables/useNavigationPrevention'
+import { useKeyValueSelection } from './composables/useKeyValueSelection'
+
+const controlPanelRef = ref<InstanceType<typeof ControlPanel> | null>(null)
 
 const {
   hoveredElement,
@@ -53,11 +59,13 @@ const {
   currentFieldName,
   currentFieldType,
   currentFieldAttribute,
+  currentMode,
   detailedViewField,
   detailedViewTab,
   editMode,
   testResults,
   addField,
+  addKeyValueField,
   removeField,
   openDetailedView,
   closeDetailedView,
@@ -71,6 +79,37 @@ const {
   getSelections
 } = useElementSelection()
 
+const kvSelection = useKeyValueSelection()
+
+// Provide kvSelection to child components
+provide('kvSelection', kvSelection)
+
+// Handle key-value mode clicks
+watch(currentMode, (newMode) => {
+  if (newMode !== 'key-value-pairs') {
+    kvSelection.reset()
+  }
+})
+
+// Handle clicks for key-value selection
+const handleKeyValueClick = (e: MouseEvent) => {
+  if (currentMode.value !== 'key-value-pairs') return
+  
+  const target = e.target as Element
+  if (target && !target.closest('.fixed.top-5.right-5')) {
+    // Check if we're in selecting mode
+    if (kvSelection.isSelectingKeys.value) {
+      e.preventDefault()
+      e.stopPropagation()
+      kvSelection.selectKeyElement(target)
+    } else if (kvSelection.isSelectingValues.value) {
+      e.preventDefault()
+      e.stopPropagation()
+      kvSelection.selectValueElement(target)
+    }
+  }
+}
+
 const handleNavigate = (element: Element) => {
   navigateToElement(element)
 }
@@ -80,11 +119,13 @@ const { initNavigationPrevention, cleanupNavigationPrevention } = useNavigationP
 // Initialize on mount
 onMounted(() => {
   initNavigationPrevention()
+  document.addEventListener('click', handleKeyValueClick, true)
 })
 
 // Cleanup on unmount
 onBeforeUnmount(() => {
   cleanupNavigationPrevention()
+  document.removeEventListener('click', handleKeyValueClick, true)
 })
 
 // Expose getSelections to parent
