@@ -293,8 +293,11 @@ async function openVisualSelector(key: string) {
   visualSelectorError.value = null
   
   try {
-    // Create a new selector session
-    const session = await selectorApi.createSession(url)
+    // Convert existing node fields to SelectedField format
+    const existingFields = convertNodeFieldsToSelectedFields(localNode.value.data.params[key] || {})
+    
+    // Create a new selector session with existing fields
+    const session = await selectorApi.createSession(url, existingFields)
     visualSelectorSessionId.value = session.session_id
     isVisualSelectorOpen.value = true
     
@@ -321,6 +324,60 @@ async function openVisualSelector(key: string) {
     visualSelectorError.value = error.response?.data?.error || 'Failed to open visual selector'
     visualSelectorLoading.value = false
   }
+}
+
+// Convert node fields to SelectedField format for visual selector
+function convertNodeFieldsToSelectedFields(nodeFields: any): SelectedField[] {
+  const selectedFields: SelectedField[] = []
+  
+  for (const [fieldName, fieldConfig] of Object.entries(nodeFields)) {
+    const config = fieldConfig as any
+    
+    // Check if it's a key-value pair extraction (has extractions array)
+    if (config.extractions) {
+      try {
+        const extractions = typeof config.extractions === 'string' 
+          ? JSON.parse(config.extractions) 
+          : config.extractions
+        
+        if (Array.isArray(extractions) && extractions.length > 0) {
+          selectedFields.push({
+            name: fieldName,
+            selector: '',
+            type: 'text',
+            mode: 'key-value-pairs',
+            attributes: {
+              extractions: extractions.map((ext: any) => ({
+                key_selector: ext.key_selector || ext.keySelector || '',
+                value_selector: ext.value_selector || ext.valueSelector || '',
+                key_type: ext.key_type || ext.keyType || 'text',
+                value_type: ext.value_type || ext.valueType || 'text',
+                key_attribute: ext.key_attribute || ext.keyAttribute || '',
+                value_attribute: ext.value_attribute || ext.valueAttribute || '',
+                transform: ext.transform || 'trim'
+              }))
+            }
+          })
+          continue
+        }
+      } catch (e) {
+        console.error('Error parsing extractions:', e)
+      }
+    }
+    
+    // Regular field (single or list)
+    const mode = config.multiple ? 'list' : 'single'
+    selectedFields.push({
+      name: fieldName,
+      selector: config.selector || '',
+      type: config.type === 'attr' ? 'attribute' : config.type || 'text',
+      attribute: config.attribute || '',
+      multiple: config.multiple || false,
+      mode: mode
+    })
+  }
+  
+  return selectedFields
 }
 
 function importFieldsFromVisualSelector(key: string, selectedFields: SelectedField[]) {

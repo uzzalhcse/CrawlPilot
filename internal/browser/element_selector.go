@@ -26,13 +26,31 @@ type SelectorSession struct {
 
 // SelectedField represents a field selected by the user
 type SelectedField struct {
-	Name      string `json:"name"`
-	Selector  string `json:"selector"`
-	Type      string `json:"type"` // text, attribute, html
-	Attribute string `json:"attribute,omitempty"`
-	Multiple  bool   `json:"multiple"`
-	XPath     string `json:"xpath,omitempty"`
-	Preview   string `json:"preview"`
+	Name       string                 `json:"name"`
+	Selector   string                 `json:"selector"`
+	Type       string                 `json:"type"` // text, attribute, html
+	Attribute  string                 `json:"attribute,omitempty"`
+	Multiple   bool                   `json:"multiple"`
+	XPath      string                 `json:"xpath,omitempty"`
+	Preview    string                 `json:"preview"`
+	Mode       string                 `json:"mode,omitempty"`       // single, list, key-value-pairs
+	Attributes *FieldAttributesConfig `json:"attributes,omitempty"` // For key-value pairs
+}
+
+// FieldAttributesConfig contains key-value pair extraction configuration
+type FieldAttributesConfig struct {
+	Extractions []ExtractionPairConfig `json:"extractions"`
+}
+
+// ExtractionPairConfig defines a key-value extraction pair
+type ExtractionPairConfig struct {
+	KeySelector    string `json:"key_selector"`
+	ValueSelector  string `json:"value_selector"`
+	KeyType        string `json:"key_type"`
+	ValueType      string `json:"value_type"`
+	KeyAttribute   string `json:"key_attribute,omitempty"`
+	ValueAttribute string `json:"value_attribute,omitempty"`
+	Transform      string `json:"transform,omitempty"`
 }
 
 // ElementSelectorManager manages selector sessions
@@ -57,11 +75,17 @@ func NewElementSelectorManager(pool *BrowserPool) *ElementSelectorManager {
 
 // CreateSession creates a new selector session and launches a browser
 func (m *ElementSelectorManager) CreateSession(ctx context.Context, url string) (*SelectorSession, error) {
+	return m.CreateSessionWithFields(ctx, url, nil)
+}
+
+// CreateSessionWithFields creates a new selector session with pre-populated fields
+func (m *ElementSelectorManager) CreateSessionWithFields(ctx context.Context, url string, existingFields []SelectedField) (*SelectorSession, error) {
 	sessionID := uuid.New().String()
 
 	logger.Info("Creating selector session",
 		zap.String("session_id", sessionID),
 		zap.String("url", url),
+		zap.Int("existing_fields", len(existingFields)),
 	)
 
 	// Acquire browser context with headed mode
@@ -90,11 +114,17 @@ func (m *ElementSelectorManager) CreateSession(ctx context.Context, url string) 
 		return nil, fmt.Errorf("failed to inject selector overlay: %w", err)
 	}
 
+	// Initialize selected fields
+	selectedFields := make([]SelectedField, 0)
+	if existingFields != nil {
+		selectedFields = existingFields
+	}
+
 	session := &SelectorSession{
 		ID:             sessionID,
 		URL:            url,
 		BrowserContext: browserCtx,
-		SelectedFields: make([]SelectedField, 0),
+		SelectedFields: selectedFields,
 		CreatedAt:      time.Now(),
 		LastActivity:   time.Now(),
 	}
@@ -103,10 +133,38 @@ func (m *ElementSelectorManager) CreateSession(ctx context.Context, url string) 
 	m.sessions[sessionID] = session
 	m.mu.Unlock()
 
+	// Populate existing fields into the overlay UI
+	if len(existingFields) > 0 {
+		if err := m.populateExistingFields(browserCtx, existingFields); err != nil {
+			logger.Warn("Failed to populate existing fields", zap.Error(err))
+		}
+	}
+
 	// Start listening for selection events
 	go m.listenForSelections(session)
 
 	return session, nil
+}
+
+// populateExistingFields sends existing fields to the overlay UI
+func (m *ElementSelectorManager) populateExistingFields(browserCtx *BrowserContext, fields []SelectedField) error {
+	fieldsJSON, err := json.Marshal(fields)
+	if err != nil {
+		return fmt.Errorf("failed to marshal fields: %w", err)
+	}
+
+	script := fmt.Sprintf(`
+		if (window.__crawlifySetFields) {
+			window.__crawlifySetFields(%s);
+		}
+	`, string(fieldsJSON))
+
+	_, err = browserCtx.Page.Evaluate(script)
+	if err != nil {
+		return fmt.Errorf("failed to populate fields: %w", err)
+	}
+
+	return nil
 }
 
 // GetSession retrieves a session by ID

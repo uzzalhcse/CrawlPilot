@@ -284,6 +284,16 @@ export function useElementSelection() {
     document.removeEventListener('keydown', handleKeyDown)
   })
 
+  // Function to set fields from external source (for editing existing workflows)
+  const setFields = (fields: SelectedField[]) => {
+    selectedFields.value = fields
+  }
+
+  // Expose to window for backend to call
+  if (typeof window !== 'undefined') {
+    (window as any).__crawlifySetFields = setFields
+  }
+
   return {
     hoveredElement,
     hoveredElementSelector,
@@ -312,6 +322,7 @@ export function useElementSelection() {
     testSelectorInline,
     scrollToTestResult,
     navigateToElement,
-    getSelections
+    getSelections,
+    setFields
   }
 }

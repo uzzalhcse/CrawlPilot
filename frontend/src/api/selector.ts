@@ -7,7 +7,19 @@ export interface SelectedField {
   attribute?: string;
   multiple: boolean;
   xpath?: string;
-  preview: string;
+  preview?: string;
+  mode?: 'single' | 'list' | 'key-value-pairs';
+  attributes?: {
+    extractions: Array<{
+      key_selector: string;
+      value_selector: string;
+      key_type: string;
+      value_type: string;
+      key_attribute?: string;
+      value_attribute?: string;
+      transform?: string;
+    }>;
+  };
 }
 
 export interface SelectorSession {
@@ -33,8 +45,11 @@ export interface SelectorFieldsResponse {
 
 export const selectorApi = {
   // Create a new selector session
-  async createSession(url: string): Promise<SelectorSession> {
-    const response = await apiClient.post('/selector/sessions', { url });
+  async createSession(url: string, existingFields?: SelectedField[]): Promise<SelectorSession> {
+    const response = await apiClient.post('/selector/sessions', { 
+      url,
+      existing_fields: existingFields && existingFields.length > 0 ? existingFields : undefined
+    });
     return response.data;
   },
 

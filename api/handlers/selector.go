@@ -23,7 +23,8 @@ func NewSelectorHandler(browserPool *browser.BrowserPool) *SelectorHandler {
 // CreateSelectorSession creates a new visual selector session
 func (h *SelectorHandler) CreateSelectorSession(c *fiber.Ctx) error {
 	var req struct {
-		URL string `json:"url"`
+		URL            string                  `json:"url"`
+		ExistingFields []browser.SelectedField `json:"existing_fields,omitempty"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -41,7 +42,20 @@ func (h *SelectorHandler) CreateSelectorSession(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	session, err := h.selectorManager.CreateSession(ctx, req.URL)
+	var session *browser.SelectorSession
+	var err error
+
+	// Create session with existing fields if provided
+	if len(req.ExistingFields) > 0 {
+		logger.Info("Creating selector session with existing fields",
+			zap.String("url", req.URL),
+			zap.Int("existing_fields_count", len(req.ExistingFields)),
+		)
+		session, err = h.selectorManager.CreateSessionWithFields(ctx, req.URL, req.ExistingFields)
+	} else {
+		session, err = h.selectorManager.CreateSession(ctx, req.URL)
+	}
+
 	if err != nil {
 		logger.Error("Failed to create selector session", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -52,12 +66,14 @@ func (h *SelectorHandler) CreateSelectorSession(c *fiber.Ctx) error {
 	logger.Info("Selector session created",
 		zap.String("session_id", session.ID),
 		zap.String("url", req.URL),
+		zap.Int("pre_populated_fields", len(session.SelectedFields)),
 	)
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"session_id": session.ID,
-		"url":        session.URL,
-		"message":    "Browser window opened. Select elements in the browser window, then close it when done.",
+		"session_id":      session.ID,
+		"url":             session.URL,
+		"existing_fields": len(session.SelectedFields),
+		"message":         "Browser window opened. Select elements in the browser window, then close it when done.",
 	})
 }
 
