@@ -10,7 +10,11 @@
     "type-check": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "radix-vue": "^1.5.3",
+    "class-variance-authority": "^0.7.1",
+    "lucide-vue-next": "^0.554.0",
+    "radix-vue": "^1.9.17",
+    "reka-ui": "^2.6.0",
+    "tailwind-merge": "^3.4.0",
     "vue": "^3.4.21"
   },
   "devDependencies": {

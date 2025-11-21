@@ -509,9 +509,26 @@ function handleAdd() {
 }
 
 // Expose methods for parent component
+function initializeWithData(data: {
+  key_selector: string
+  value_selector: string
+  key_type: any
+  value_type: any
+  key_attribute?: string
+  value_attribute?: string
+}) {
+  console.log('KeyValuePairSelector.initializeWithData called with:', data)
+  // Reset first to clear any previous state
+  kvSelection.reset()
+  // Then initialize with the provided data
+  kvSelection.initialize(data)
+  console.log('After initialize - keySelector:', kvSelection.keySelector.value)
+}
+
 defineExpose({
   isSelectingKeys,
-  isSelectingValues
+  isSelectingValues,
+  initializeWithData
 })
 </script>
 

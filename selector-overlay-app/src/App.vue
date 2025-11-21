@@ -93,19 +93,22 @@ watch(currentMode, (newMode) => {
 
 // Handle clicks for key-value selection
 const handleKeyValueClick = (e: MouseEvent) => {
-  if (currentMode.value !== 'key-value-pairs') return
-  
   const target = e.target as Element
-  if (target && !target.closest('.fixed.top-5.right-5')) {
-    // Check if we're in selecting mode
-    if (kvSelection.isSelectingKeys.value) {
+  
+  // Check if the KeyValuePairSelector is in selection mode (works for both add and edit modes)
+  if (kvSelection.isSelectingKeys.value || kvSelection.isSelectingValues.value) {
+    // Don't handle clicks inside the control panel itself
+    if (target && !target.closest('.fixed.top-5.right-5')) {
       e.preventDefault()
       e.stopPropagation()
-      kvSelection.selectKeyElement(target)
-    } else if (kvSelection.isSelectingValues.value) {
-      e.preventDefault()
-      e.stopPropagation()
-      kvSelection.selectValueElement(target)
+      
+      if (kvSelection.isSelectingKeys.value) {
+        console.log('Selecting key element:', target)
+        kvSelection.selectKeyElement(target)
+      } else if (kvSelection.isSelectingValues.value) {
+        console.log('Selecting value element:', target)
+        kvSelection.selectValueElement(target)
+      }
     }
   }
 }
