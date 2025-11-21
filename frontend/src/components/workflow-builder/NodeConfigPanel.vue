@@ -14,8 +14,10 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { X, Settings, Plus, Trash2, Copy, GripVertical, ChevronDown, ChevronUp, MousePointerClick } from 'lucide-vue-next'
+import { X, Settings, Plus, Trash2, Copy, ChevronDown, ChevronUp, MousePointerClick } from 'lucide-vue-next'
 import { selectorApi, type SelectedField } from '@/api/selector'
+import IndependentArrayManager from './IndependentArrayManager.vue'
+import type { ExtractionPair } from '@/types'
 
 interface Props {
   node: WorkflowNode | null
@@ -33,7 +35,6 @@ const emit = defineEmits<Emits>()
 const localNode = ref<WorkflowNode | null>(null)
 const collapsedFields = ref<Set<string>>(new Set())
 const fieldSearchQuery = ref('')
-const fieldContainerRef = ref<HTMLElement | null>(null)
 let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
 const hasUnsavedChanges = ref(false)
 const isVisualSelectorOpen = ref(false)
@@ -365,6 +366,26 @@ async function closeVisualSelector() {
   isVisualSelectorOpen.value = false
   visualSelectorError.value = null
 }
+
+function parseExtractionsValue(value: any): ExtractionPair[] {
+  if (!value) return []
+  
+  // If it's already an array, return it
+  if (Array.isArray(value)) return value
+  
+  // If it's a string, try to parse it as JSON
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch (e) {
+      console.error('Failed to parse extractions value:', e)
+      return []
+    }
+  }
+  
+  return []
+}
 </script>
 
 <template>
@@ -388,7 +409,7 @@ async function closeVisualSelector() {
         <Input
           id="node-label"
           :model-value="localNode.data.label"
-          @update:model-value="updateLabel"
+          @update:model-value="(val) => updateLabel(String(val))"
           placeholder="Enter node label"
         />
       </div>
@@ -423,7 +444,7 @@ async function closeVisualSelector() {
             v-if="field.type === 'text'"
             :id="`param-${field.key}`"
             :model-value="localNode.data.params[field.key] || ''"
-            @update:model-value="(val: string) => updateParam(field.key, val)"
+            @update:model-value="(val) => updateParam(field.key, String(val))"
             :placeholder="field.placeholder"
           />
 
@@ -579,21 +600,21 @@ async function closeVisualSelector() {
             
             <div
               v-for="(fieldData, fieldName) in (localNode.data.params[field.key] || {})"
-              :key="fieldName"
-              v-show="isFieldVisible(fieldName as string)"
+              :key="String(fieldName)"
+              v-show="isFieldVisible(String(fieldName))"
               data-field-card
               class="relative border-2 rounded-lg bg-card shadow-sm hover:shadow-md transition-all"
-              :class="collapsedFields.has(fieldName as string) ? 'border-border' : 'border-primary/20'"
+              :class="collapsedFields.has(String(fieldName)) ? 'border-border' : 'border-primary/20'"
             >
               <div 
                 class="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                @click="toggleFieldCollapse(fieldName as string)"
+                @click="toggleFieldCollapse(String(fieldName))"
               >
                 <div class="flex items-center gap-2 flex-1 min-w-0">
                   <div class="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
-                    {{ Object.keys(localNode.data.params[field.key] || {}).indexOf(fieldName as string) + 1 }}
+                    {{ Object.keys(localNode.data.params[field.key] || {}).indexOf(String(fieldName)) + 1 }}
                   </div>
-                  <h4 class="font-semibold text-sm truncate" :title="fieldName as string">{{ fieldName }}</h4>
+                  <h4 class="font-semibold text-sm truncate" :title="String(fieldName)">{{ fieldName }}</h4>
                   <span v-if="(fieldData as any).multiple" class="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-medium border border-purple-300 shrink-0">
                     📋 Array
                   </span>
@@ -605,7 +626,7 @@ async function closeVisualSelector() {
                   </span>
                   <div class="text-xs text-muted-foreground">
                     <span v-if="(fieldData as any).selector" class="font-mono bg-muted px-1.5 py-0.5 rounded">
-                      {{ (fieldData as any).selector }}
+                      {{ String((fieldData as any).selector) }}
                     </span>
                   </div>
                 </div>
@@ -615,7 +636,7 @@ async function closeVisualSelector() {
                     size="sm"
                     variant="ghost"
                     class="h-8 w-8 p-0 hover:bg-primary/10"
-                    @click.stop="duplicateFieldArrayItem(field.key, fieldName as string)"
+                    @click.stop="duplicateFieldArrayItem(field.key, String(fieldName))"
                     title="Duplicate field"
                   >
                     <Copy class="h-3.5 w-3.5" />
@@ -625,14 +646,14 @@ async function closeVisualSelector() {
                     size="sm"
                     variant="ghost"
                     class="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
-                    @click.stop="removeFieldArrayItem(field.key, fieldName as string)"
+                    @click.stop="removeFieldArrayItem(field.key, String(fieldName))"
                     title="Delete field"
                   >
                     <Trash2 class="h-3.5 w-3.5" />
                   </Button>
                   <div class="h-4 w-4 text-muted-foreground shrink-0">
                     <ChevronDown 
-                      v-if="!collapsedFields.has(fieldName as string)" 
+                      v-if="!collapsedFields.has(String(fieldName))" 
                       class="h-4 w-4 transition-transform"
                     />
                     <ChevronUp 
@@ -645,7 +666,7 @@ async function closeVisualSelector() {
               
               <!-- Collapsible Content -->
               <div 
-                v-show="!collapsedFields.has(fieldName as string)"
+                v-show="!collapsedFields.has(String(fieldName))"
                 class="p-4 pt-3 border-t border-border"
               >
                 <div class="grid gap-3">
@@ -663,8 +684,8 @@ async function closeVisualSelector() {
                     </Label>
                     <Input
                       :id="`${field.key}_${fieldName}_${itemField.key}`"
-                      :model-value="fieldName"
-                      @blur="(e: Event) => renameFieldArrayItem(field.key, fieldName as string, (e.target as HTMLInputElement).value)"
+                      :model-value="String(fieldName)"
+                      @blur="(e: Event) => renameFieldArrayItem(field.key, String(fieldName), (e.target as HTMLInputElement).value)"
                       :placeholder="itemField.placeholder"
                       class="mt-1.5"
                     />
@@ -679,7 +700,7 @@ async function closeVisualSelector() {
                     <Input
                       :id="`${field.key}_${fieldName}_${itemField.key}`"
                       :model-value="(fieldData as any)[itemField.key] || ''"
-                      @update:model-value="(val: string) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
+                      @update:model-value="(val) => updateFieldArrayItem(field.key, String(fieldName), itemField.key, String(val))"
                       :placeholder="itemField.placeholder"
                       :class="[
                         'mt-1.5',
@@ -699,7 +720,7 @@ async function closeVisualSelector() {
                     </Label>
                     <Select
                       :model-value="(fieldData as any)[itemField.key] || itemField.defaultValue"
-                      @update:model-value="(val) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
+                      @update:model-value="(val) => updateFieldArrayItem(field.key, String(fieldName), itemField.key, val)"
                     >
                       <SelectTrigger class="mt-1.5">
                         <SelectValue :placeholder="itemField.placeholder || 'Select option'" />
@@ -729,7 +750,7 @@ async function closeVisualSelector() {
                       :id="`${field.key}_${fieldName}_${itemField.key}`"
                       type="number"
                       :model-value="(fieldData as any)[itemField.key] || itemField.defaultValue || 0"
-                      @update:model-value="(val) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, Number(val))"
+                      @update:model-value="(val) => updateFieldArrayItem(field.key, String(fieldName), itemField.key, Number(val))"
                       :placeholder="itemField.placeholder"
                       class="mt-1.5"
                     />
@@ -760,31 +781,45 @@ async function closeVisualSelector() {
                     <Switch
                       :id="`${field.key}_${fieldName}_${itemField.key}`"
                       :checked="(fieldData as any)[itemField.key] ?? itemField.defaultValue ?? false"
-                      @update:checked="(val: boolean) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
+                      @update:checked="(val: boolean) => updateFieldArrayItem(field.key, String(fieldName), itemField.key, val)"
                     />
                   </div>
 
                   <!-- Textarea Input -->
                   <div v-else-if="itemField.type === 'textarea'">
-                    <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
-                      {{ itemField.label }}
-                      <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
-                    </Label>
-                    <Textarea
-                      :id="`${field.key}_${fieldName}_${itemField.key}`"
-                      :model-value="(fieldData as any)[itemField.key] || ''"
-                      @update:model-value="(val: string) => updateFieldArrayItem(field.key, fieldName as string, itemField.key, val)"
-                      :placeholder="itemField.placeholder"
-                      rows="4"
-                      class="mt-1.5 font-mono text-xs"
-                    />
-                    <p v-if="itemField.description" class="text-xs text-muted-foreground mt-1">
-                      {{ itemField.description }}
-                    </p>
-                    <!-- Nested fields example -->
-                    <div v-if="itemField.key === 'fields' && !(fieldData as any)[itemField.key]" class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
-                      <div class="text-xs text-blue-900 font-semibold mb-2">📘 Example: Nested Object Arrays</div>
-                      <pre class="text-xs bg-white p-2 rounded border border-blue-300 overflow-x-auto text-blue-800">{{
+                    <!-- Use IndependentArrayManager for extractions field -->
+                    <div v-if="itemField.key === 'extractions'">
+                      <Label class="text-xs font-medium mb-3 block">
+                        {{ itemField.label }}
+                        <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                      </Label>
+                      <IndependentArrayManager
+                        :model-value="parseExtractionsValue((fieldData as any)[itemField.key])"
+                        @update:model-value="(val: ExtractionPair[]) => updateFieldArrayItem(field.key, String(fieldName), itemField.key, val.length > 0 ? JSON.stringify(val, null, 2) : '')"
+                      />
+                    </div>
+                    
+                    <!-- Regular textarea for other fields -->
+                    <div v-else>
+                      <Label :for="`${field.key}_${fieldName}_${itemField.key}`" class="text-xs font-medium">
+                        {{ itemField.label }}
+                        <span v-if="itemField.required" class="text-red-500 ml-1">*</span>
+                      </Label>
+                      <Textarea
+                        :id="`${field.key}_${fieldName}_${itemField.key}`"
+                        :model-value="(fieldData as any)[itemField.key] || ''"
+                        @update:model-value="(val) => updateFieldArrayItem(field.key, String(fieldName), itemField.key, String(val))"
+                        :placeholder="itemField.placeholder"
+                        rows="4"
+                        class="mt-1.5 font-mono text-xs"
+                      />
+                      <p v-if="itemField.description" class="text-xs text-muted-foreground mt-1">
+                        {{ itemField.description }}
+                      </p>
+                      <!-- Nested fields example -->
+                      <div v-if="itemField.key === 'fields' && !(fieldData as any)[itemField.key]" class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                        <div class="text-xs text-blue-900 font-semibold mb-2">📘 Example: Nested Object Arrays</div>
+                        <pre class="text-xs bg-white p-2 rounded border border-blue-300 overflow-x-auto text-blue-800">{{
 `{
   "key": {
     "selector": "th",
@@ -795,31 +830,10 @@ async function closeVisualSelector() {
     "type": "text"
   }
 }`
-                      }}</pre>
-                      <div class="text-xs text-blue-700 mt-2">
-                        👆 This extracts an array like: <code class="bg-white px-1 py-0.5 rounded">[{"key": "color", "value": "black"}, ...]</code>
-                      </div>
-                    </div>
-                    
-                    <!-- Independent extractions example -->
-                    <div v-if="itemField.key === 'extractions' && !(fieldData as any)[itemField.key]" class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
-                      <div class="text-xs text-purple-900 font-semibold mb-2">🔗 Example: Independent Array Extractions</div>
-                      <pre class="text-xs bg-white p-2 rounded border border-purple-300 overflow-x-auto text-purple-800">{{
-`[
-  {
-    "key_selector": ".spec-label",
-    "value_selector": ".spec-value",
-    "key_type": "text",
-    "value_type": "text",
-    "transform": "trim"
-  }
-]`
-                      }}</pre>
-                      <div class="text-xs text-purple-700 mt-2">
-                        ⚡ <strong>Use this when:</strong> Keys and values are in <strong>separate independent lists</strong> (not nested within parent containers). They will be paired by index position.
-                      </div>
-                      <div class="text-xs text-purple-600 bg-purple-100 p-2 rounded border border-purple-200 mt-2">
-                        💡 Perfect for: Specification tables where <code class="bg-white px-1 py-0.5 rounded">&lt;th&gt;</code> and <code class="bg-white px-1 py-0.5 rounded">&lt;td&gt;</code> are separate lists
+                        }}</pre>
+                        <div class="text-xs text-blue-700 mt-2">
+                          👆 This extracts an array like: <code class="bg-white px-1 py-0.5 rounded">[{"key": "color", "value": "black"}, ...]</code>
+                        </div>
                       </div>
                     </div>
                   </div>
