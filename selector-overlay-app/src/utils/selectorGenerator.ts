@@ -45,24 +45,38 @@ export function generateSelector(element: Element): string {
       .join('')
     
     if (classes) {
-      const selector = `${tagName}${classes}`
-      if (isUnique(selector)) {
-        return selector
-      }
-
-      // Try with direct parent context
+      // ALWAYS try with parent context first for better specificity
       if (element.parentElement) {
         const parentSelector = getSimpleParentSelector(element.parentElement)
-        const contextSelector = `${parentSelector} > ${selector}`
-        if (isUnique(contextSelector)) {
-          return contextSelector
+        const contextSelector = `${parentSelector} > ${tagName}${classes}`
+        
+        // Return parent context selector even if not unique (better clarity)
+        // unless it's too generic (matches >1000 elements)
+        try {
+          const count = document.querySelectorAll(contextSelector).length
+          if (count > 0 && count <= 1000) {
+            return contextSelector
+          }
+        } catch {
+          // If selector fails, continue to other strategies
         }
         
         // Try with ancestor context (descendant combinator)
-        const ancestorSelector = `${parentSelector} ${selector}`
-        if (isUnique(ancestorSelector)) {
-          return ancestorSelector
+        const ancestorSelector = `${parentSelector} ${tagName}${classes}`
+        try {
+          const count = document.querySelectorAll(ancestorSelector).length
+          if (count > 0 && count <= 1000) {
+            return ancestorSelector
+          }
+        } catch {
+          // Continue
         }
+      }
+      
+      // Fallback to selector without parent if parent context is too broad
+      const selector = `${tagName}${classes}`
+      if (isUnique(selector)) {
+        return selector
       }
       
       // Try with fewer classes (most meaningful ones first)

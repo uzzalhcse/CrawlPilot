@@ -8,7 +8,7 @@
       :style="highlightStyle(hoveredRect)"
     />
     
-    <!-- Locked element highlight -->
+    <!-- Locked element highlight with navigation buttons -->
     <div
       v-if="lockedRect"
       class="absolute pointer-events-none border-2 z-[999998] shadow-lg"
@@ -18,6 +18,42 @@
       <div class="absolute -top-7 left-0 text-white text-xs px-2 py-1 rounded shadow-md"
            :class="getLockedBadgeClass()">
         Selected ✓
+      </div>
+      
+      <!-- Navigation Buttons -->
+      <div class="absolute -right-2 top-1/2 transform -translate-y-1/2 flex flex-col gap-1 pointer-events-auto">
+        <button
+          v-if="canNavigateToParent"
+          @click.stop="navigateToParent"
+          class="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          title="Select Parent Element (Alt+↑)"
+        >
+          ↑ Parent
+        </button>
+        <button
+          v-if="canNavigateToChild"
+          @click.stop="navigateToFirstChild"
+          class="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          title="Select First Child (Alt+↓)"
+        >
+          ↓ Child
+        </button>
+        <button
+          v-if="canNavigateToPrevSibling"
+          @click.stop="navigateToPrevSibling"
+          class="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          title="Select Previous Sibling (Alt+←)"
+        >
+          ← Prev
+        </button>
+        <button
+          v-if="canNavigateToNextSibling"
+          @click.stop="navigateToNextSibling"
+          class="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          title="Select Next Sibling (Alt+→)"
+        >
+          → Next
+        </button>
       </div>
     </div>
 
@@ -30,9 +66,9 @@
         :class="getFieldHighlightClass(field)"
         :style="highlightStyle(rect)"
       >
-        <div class="absolute -top-7 left-0 text-white text-xs px-2 py-1 rounded shadow-md font-medium"
+        <div class="absolute -top-7 left-0 text-white text-xs px-2 py-1 rounded shadow-md font-medium whitespace-nowrap"
              :class="getFieldBadgeClass(field)">
-          {{ field.name }} <span v-if="getFieldRects(field).length > 1" class="opacity-75">#{{ index + 1 }}</span>
+          {{ field.name }}<span v-if="field.type === 'attribute' && field.attribute" class="opacity-90 ml-1">@{{ field.attribute }}</span><span v-if="getFieldRects(field).length > 1" class="opacity-75 ml-1">#{{ index + 1 }}</span>
         </div>
       </div>
     </template>
@@ -71,9 +107,15 @@ interface Props {
   lockedElement: Element | null
   selectedFields: SelectedField[]
   testResults: TestResult[]
+  currentFieldType: FieldType
+  currentFieldAttribute?: string
 }
 
 const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  'navigate': [element: Element]
+}>()
 
 // Store rects for selected fields (all matching elements, not just first)
 const fieldRects = ref<Map<string, DOMRect[]>>(new Map())
@@ -173,7 +215,19 @@ const tagLabel = computed(() => {
   if (!element) return ''
   
   // Show the actual generated selector that will be used
-  return generateSelector(element)
+  const selector = generateSelector(element)
+  
+  // Add extraction type and attribute information
+  let extractionInfo = ''
+  if (props.currentFieldType === 'text') {
+    extractionInfo = ' → text'
+  } else if (props.currentFieldType === 'attribute' && props.currentFieldAttribute) {
+    extractionInfo = ` → @${props.currentFieldAttribute}`
+  } else if (props.currentFieldType === 'html') {
+    extractionInfo = ' → html'
+  }
+  
+  return `${selector}${extractionInfo}`
 })
 
 const tagLabelStyle = computed(() => {
@@ -232,4 +286,87 @@ const getFieldBadgeClass = (field: SelectedField) => {
 const getFieldRects = (field: SelectedField): DOMRect[] => {
   return fieldRects.value.get(field.id) || []
 }
+
+// Navigation helpers
+const canNavigateToParent = computed(() => {
+  if (!props.lockedElement) return false
+  const parent = props.lockedElement.parentElement
+  return parent && parent !== document.body && parent !== document.documentElement
+})
+
+const canNavigateToChild = computed(() => {
+  if (!props.lockedElement) return false
+  return props.lockedElement.children.length > 0
+})
+
+const canNavigateToPrevSibling = computed(() => {
+  if (!props.lockedElement) return false
+  return props.lockedElement.previousElementSibling !== null
+})
+
+const canNavigateToNextSibling = computed(() => {
+  if (!props.lockedElement) return false
+  return props.lockedElement.nextElementSibling !== null
+})
+
+// Navigation functions
+const navigateToParent = () => {
+  if (props.lockedElement?.parentElement) {
+    const parent = props.lockedElement.parentElement
+    if (parent !== document.body && parent !== document.documentElement) {
+      emit('navigate', parent)
+    }
+  }
+}
+
+const navigateToFirstChild = () => {
+  if (props.lockedElement?.children[0]) {
+    emit('navigate', props.lockedElement.children[0])
+  }
+}
+
+const navigateToPrevSibling = () => {
+  if (props.lockedElement?.previousElementSibling) {
+    emit('navigate', props.lockedElement.previousElementSibling)
+  }
+}
+
+const navigateToNextSibling = () => {
+  if (props.lockedElement?.nextElementSibling) {
+    emit('navigate', props.lockedElement.nextElementSibling)
+  }
+}
+
+// Keyboard shortcuts
+onMounted(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (!props.lockedElement || !e.altKey) return
+    
+    switch(e.key) {
+      case 'ArrowUp':
+        e.preventDefault()
+        navigateToParent()
+        break
+      case 'ArrowDown':
+        e.preventDefault()
+        navigateToFirstChild()
+        break
+      case 'ArrowLeft':
+        e.preventDefault()
+        navigateToPrevSibling()
+        break
+      case 'ArrowRight':
+        e.preventDefault()
+        navigateToNextSibling()
+        break
+    }
+  }
+  
+  window.addEventListener('keydown', handleKeyDown)
+  
+  // Cleanup added in existing onBeforeUnmount
+  const originalUnmount = onBeforeUnmount(() => {
+    window.removeEventListener('keydown', handleKeyDown)
+  })
+})
 </script>

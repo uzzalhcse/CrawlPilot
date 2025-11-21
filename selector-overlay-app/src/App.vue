@@ -6,6 +6,9 @@
       :locked-element="lockedElement"
       :selected-fields="selectedFields"
       :test-results="testResults"
+      :current-field-type="currentFieldType"
+      :current-field-attribute="currentFieldAttribute"
+      @navigate="handleNavigate"
     />
     
     <!-- Control Panel -->
@@ -66,8 +69,13 @@ const {
   cancelEdit,
   testSelectorInline,
   scrollToTestResult,
+  navigateToElement,
   getSelections
 } = useElementSelection()
+
+const handleNavigate = (element: Element) => {
+  navigateToElement(element)
+}
 
 const { initNavigationPrevention, cleanupNavigationPrevention } = useNavigationPrevention()
 

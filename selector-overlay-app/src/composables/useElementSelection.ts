@@ -213,6 +213,12 @@ export function useElementSelection() {
     return selectedFields.value
   }
 
+  const navigateToElement = (element: Element) => {
+    // Update locked element to the navigated element
+    lockedElement.value = element
+    hoveredElement.value = element
+  }
+
   // Keyboard handler
   const handleKeyDown = (e: KeyboardEvent) => {
     // ESC to unlock element or close detailed view
@@ -270,6 +276,7 @@ export function useElementSelection() {
     cancelEdit,
     testSelectorInline,
     scrollToTestResult,
+    navigateToElement,
     getSelections
   }
 }
