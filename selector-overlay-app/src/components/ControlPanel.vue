@@ -1,11 +1,11 @@
 <template>
-  <div class="fixed top-5 right-5 bg-white rounded-xl shadow-2xl p-5 min-w-[360px] max-w-[420px] max-h-[85vh] overflow-y-auto pointer-events-auto z-[1000000] border border-gray-200 crawlify-scrollbar" @click.stop>
+  <div class="fixed top-5 right-5 bg-white rounded-xl shadow-2xl p-6 min-w-[400px] max-w-[480px] max-h-[90vh] overflow-y-auto pointer-events-auto z-[1000000] border border-gray-200 crawlify-scrollbar" @click.stop>
     <!-- Header -->
     <div class="mb-4">
       <div class="flex items-start justify-between">
         <div>
-          <h2 class="text-xl font-bold text-gray-900">Element Selector</h2>
-          <p class="text-sm text-gray-500 mt-1">
+          <h2 class="text-2xl font-bold text-gray-900">Element Selector</h2>
+          <p class="text-base text-gray-600 mt-1">
             {{ props.detailedViewField ? 'Field Details' : 'Click elements to select them' }}
           </p>
         </div>
@@ -20,17 +20,17 @@
       </div>
       
       <!-- Keyboard hints -->
-      <div v-if="!props.detailedViewField" class="mt-3 text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-200">
-        <div><kbd class="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-700 font-mono">ESC</kbd> Clear selection</div>
-        <div class="mt-1"><kbd class="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-700 font-mono">Enter</kbd> Add field</div>
+      <div v-if="!props.detailedViewField" class="mt-3 text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200">
+        <div><kbd class="px-2 py-1 bg-white border border-gray-300 rounded text-gray-700 font-mono text-sm">ESC</kbd> Clear selection</div>
+        <div class="mt-1"><kbd class="px-2 py-1 bg-white border border-gray-300 rounded text-gray-700 font-mono text-sm">Enter</kbd> Add field</div>
       </div>
 
       <!-- Color Legend -->
       <details v-if="!props.detailedViewField && props.selectedFields.length > 0" class="mt-3">
-        <summary class="text-xs font-medium text-gray-700 cursor-pointer hover:text-gray-900">
+        <summary class="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
           Color Legend
         </summary>
-        <div class="mt-2 space-y-1.5 text-xs">
+        <div class="mt-2 space-y-2 text-sm">
           <div class="flex items-center gap-2">
             <div class="w-4 h-4 border-2 border-blue-500 bg-blue-500/15 rounded"></div>
             <span>Text content</span>

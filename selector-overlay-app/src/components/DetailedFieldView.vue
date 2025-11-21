@@ -85,20 +85,21 @@
               🔍 Run Test
             </button>
 
-            <div v-if="props.testResults.length > 0" class="mt-3 relative">
-              <!-- Scrollable Results Container -->
-              <div class="max-h-96 overflow-y-auto border-2 border-gray-300 rounded-lg bg-gray-50 shadow-inner">
-                <!-- Sticky Header -->
-                <div class="sticky top-0 z-10 bg-gradient-to-b from-blue-50 to-blue-100 px-3 py-2 border-b-2 border-blue-200">
-                  <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-blue-900">
-                      📊 {{ props.testResults.length }} matching element(s)
-                    </span>
-                    <span class="text-xs text-blue-700">
-                      ⬇️ Scroll to view all
-                    </span>
-                  </div>
+            <div v-if="props.testResults.length > 0" class="mt-3">
+              <!-- Results Header -->
+              <div class="bg-gradient-to-b from-blue-50 to-blue-100 px-3 py-2 border-2 border-blue-200 rounded-t-lg">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-blue-900">
+                    📊 {{ props.testResults.length }} matching element(s)
+                  </span>
+                  <span class="text-xs text-blue-700">
+                    {{ props.testResults.length > 5 ? '⬇️ Scroll modal to view all' : 'All results visible' }}
+                  </span>
                 </div>
+              </div>
+              
+              <!-- Results Container (no fixed height, flows naturally) -->
+              <div class="border-x-2 border-b-2 border-gray-300 rounded-b-lg bg-gray-50 shadow-inner">
                 
                 <!-- Results List -->
                 <div class="p-3 space-y-2">
@@ -119,13 +120,6 @@
                       {{ result.value || '(empty content)' }}
                     </div>
                   </div>
-                </div>
-                
-                <!-- Bottom Indicator -->
-                <div class="sticky bottom-0 bg-gradient-to-t from-gray-100 to-transparent px-3 py-2 text-center">
-                  <span class="text-xs text-gray-600 font-medium">
-                    End of results
-                  </span>
                 </div>
               </div>
             </div>
