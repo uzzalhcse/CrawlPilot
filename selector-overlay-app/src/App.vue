@@ -29,7 +29,7 @@
       @enable-edit-mode="enableEditMode"
       @save-edit="saveEdit"
       @cancel-edit="cancelEdit"
-      @test-selector="testSelectorInline"
+      @test-selector="(field) => testSelectorInline(field.selector, field)"
       @scroll-to-result="scrollToTestResult"
     />
   </div>

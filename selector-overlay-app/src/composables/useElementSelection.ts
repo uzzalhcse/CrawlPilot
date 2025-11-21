@@ -155,14 +155,15 @@ export function useElementSelection() {
     detailedViewTab.value = 'preview'
   }
 
-  const testSelectorInline = (selector: string) => {
+  const testSelectorInline = (selector: string, field?: SelectedField) => {
     try {
       const elements = document.querySelectorAll(selector)
       // Show all matching elements, not just 10
+      // Extract value based on field type if provided
       testResults.value = Array.from(elements).map((el, index) => ({
         element: el as Element,
         index,
-        value: el.textContent?.trim() || ''
+        value: field ? getSampleValue(el, field.type, field.attribute) : (el.textContent?.trim() || '')
       }))
     } catch (error) {
       testResults.value = []

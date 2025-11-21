@@ -501,7 +501,7 @@ const emit = defineEmits<{
   'enableEdit': []
   'saveEdit': [field: Partial<SelectedField>]
   'cancelEdit': []
-  'testSelector': [selector: string]
+  'testSelector': [field: SelectedField]
   'scrollToResult': [result: TestResult]
 }>()
 
@@ -725,7 +725,18 @@ const clearJsCode = () => {
 }
 
 const testCurrentSelector = () => {
-  emit('testSelector', editedField.value.selector)
+  // Pass the complete field object so test results can extract based on type/attribute
+  const fieldToTest: SelectedField = {
+    id: props.field.id,
+    name: editedField.value.name,
+    selector: editedField.value.selector,
+    type: editedField.value.type,
+    attribute: editedField.value.attribute,
+    timestamp: props.field.timestamp,
+    sampleValue: props.field.sampleValue,
+    matchCount: props.field.matchCount
+  }
+  emit('testSelector', fieldToTest)
 }
 
 const handleFieldUpdate = () => {

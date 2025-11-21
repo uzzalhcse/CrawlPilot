@@ -21,19 +21,21 @@
       </div>
     </div>
 
-    <!-- Selected fields highlights -->
-    <div
-      v-for="field in props.selectedFields"
-      :key="field.id"
-      class="absolute pointer-events-none border-2 z-[999996]"
-      :class="getFieldHighlightClass(field)"
-      :style="getFieldHighlightStyle(field)"
-    >
-      <div class="absolute -top-7 left-0 text-white text-xs px-2 py-1 rounded shadow-md font-medium"
-           :class="getFieldBadgeClass(field)">
-        {{ field.name }}
+    <!-- Selected fields highlights (show all matching elements) -->
+    <template v-for="field in props.selectedFields" :key="field.id">
+      <div
+        v-for="(rect, index) in getFieldRects(field)"
+        :key="`${field.id}-${index}`"
+        class="absolute pointer-events-none border-2 z-[999996]"
+        :class="getFieldHighlightClass(field)"
+        :style="highlightStyle(rect)"
+      >
+        <div class="absolute -top-7 left-0 text-white text-xs px-2 py-1 rounded shadow-md font-medium"
+             :class="getFieldBadgeClass(field)">
+          {{ field.name }} <span v-if="getFieldRects(field).length > 1" class="opacity-75">#{{ index + 1 }}</span>
+        </div>
       </div>
-    </div>
+    </template>
 
     <!-- Test results highlights -->
     <div
@@ -73,8 +75,8 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// Store rects for selected fields
-const fieldRects = ref<Map<string, DOMRect>>(new Map())
+// Store rects for selected fields (all matching elements, not just first)
+const fieldRects = ref<Map<string, DOMRect[]>>(new Map())
 
 const hoveredRect = ref<DOMRect | null>(null)
 const lockedRect = ref<DOMRect | null>(null)
@@ -92,13 +94,14 @@ const updateRects = () => {
     lockedRect.value = null
   }
 
-  // Update rects for all selected fields
+  // Update rects for all selected fields (store all matching elements)
   fieldRects.value.clear()
   props.selectedFields.forEach(field => {
     try {
       const elements = document.querySelectorAll(field.selector)
       if (elements.length > 0) {
-        fieldRects.value.set(field.id, elements[0].getBoundingClientRect())
+        const rects = Array.from(elements).map(el => el.getBoundingClientRect())
+        fieldRects.value.set(field.id, rects)
       }
     } catch (error) {
       console.warn('Invalid selector:', field.selector)
@@ -226,9 +229,7 @@ const getFieldBadgeClass = (field: SelectedField) => {
   return `bg-${colors.badge}`
 }
 
-const getFieldHighlightStyle = (field: SelectedField) => {
-  const rect = fieldRects.value.get(field.id)
-  if (!rect) return { display: 'none' }
-  return highlightStyle(rect)
+const getFieldRects = (field: SelectedField): DOMRect[] => {
+  return fieldRects.value.get(field.id) || []
 }
 </script>

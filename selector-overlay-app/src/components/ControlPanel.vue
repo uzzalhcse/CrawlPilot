@@ -244,7 +244,7 @@ const emit = defineEmits<{
   'enableEditMode': []
   'saveEdit': [field: Partial<SelectedField>]
   'cancelEdit': []
-  'testSelector': [selector: string]
+  'testSelector': [field: SelectedField]
   'scrollToResult': [result: TestResult]
 }>()
 
