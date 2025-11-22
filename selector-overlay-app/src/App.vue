@@ -170,13 +170,7 @@ const handleNavigate = (element: Element) => {
   navigateToElement(element)
 }
 
-// Handler for clicking on highlighted field badges
-const handleEditField = (field: SelectedField) => {
-  // Trigger edit mode in control panel
-  if (controlPanelRef.value) {
-    (controlPanelRef.value as any).openEditFieldForm?.(field)
-  }
-}
+
 
 // Handler for quick-add from floating tooltip
 const handleQuickAdd = (editedName: string, editedSelector: string) => {
@@ -239,6 +233,17 @@ const handleCustomize = (editedName: string, editedSelector: string) => {
 // Handler to dismiss tooltip
 const handleDismissTooltip = () => {
   tooltipState.value = null
+}
+
+// Handle edit field from highlight overlay
+const handleEditField = (field: SelectedField) => {
+  // Load field data
+  loadFieldForEdit(field)
+  
+  // Open edit form in control panel
+  if (controlPanelRef.value) {
+    controlPanelRef.value.openEditFieldForm(field)
+  }
 }
 
 // Update existing field

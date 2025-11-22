@@ -974,6 +974,7 @@ function openAddForm(data?: { fieldName?: string }) {
 // Expose methods to parent
 defineExpose({
   kvSelectorRef,
-  openAddForm
+  openAddForm,
+  openEditFieldForm
 })
 </script>
