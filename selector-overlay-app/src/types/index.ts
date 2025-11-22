@@ -17,16 +17,36 @@ export interface KeyValueAttributes {
 }
 
 export interface SelectedField {
-  id: string
+  id?: string // Optional: auto-generated if not provided (e.g., from database)
   name: string
   selector: string
   type: FieldType
   attribute?: string
-  timestamp: number
+  timestamp?: number
   sampleValue?: string
   matchCount?: number
   mode?: SelectionMode
   attributes?: KeyValueAttributes
+  transformations?: FieldTransformations
+}
+
+export interface FieldTransformations {
+  trim?: boolean
+  lowercase?: boolean
+  uppercase?: boolean
+  regex_enabled?: boolean
+  regex?: string
+  replace_enabled?: boolean
+  replace_find?: string
+  replace_with?: string
+  prefix_enabled?: boolean
+  prefix?: string
+  suffix_enabled?: boolean
+  suffix?: string
+  parse_number?: boolean
+  parse_date?: boolean
+  js_enabled?: boolean
+  js_code?: string
 }
 
 export interface KeyValuePair {

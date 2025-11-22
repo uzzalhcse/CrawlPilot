@@ -186,10 +186,30 @@ function updateFieldArrayItem(key: string, fieldName: string, itemKey: string, v
 
 function renameFieldArrayItem(key: string, oldName: string, newName: string) {
   if (!localNode.value || !newName || oldName === newName) return
+  
   const fields = localNode.value.data.params[key]
-  if (fields && fields[oldName]) {
-    fields[newName] = fields[oldName]
-    delete fields[oldName]
+  if (!fields || !fields[oldName]) return
+  
+  // Trim whitespace from the new name
+  newName = newName.trim()
+  
+  // Check again after trimming
+  if (oldName === newName || !newName) return
+  
+  // Check if the new name already exists (to prevent duplicates)
+  if (fields[newName]) {
+    console.warn(`Field name "${newName}" already exists. Rename cancelled.`)
+    return
+  }
+  
+  // Create new field with new name and delete old one
+  fields[newName] = fields[oldName]
+  delete fields[oldName]
+  
+  // Update collapsed state if the field was collapsed
+  if (collapsedFields.value.has(oldName)) {
+    collapsedFields.value.delete(oldName)
+    collapsedFields.value.add(newName)
   }
 }
 

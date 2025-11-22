@@ -1,44 +1,47 @@
 <template>
-  <div class="fixed top-5 right-5 bg-white rounded-xl shadow-2xl w-[420px] lg:w-[460px] max-h-[90vh] flex flex-col pointer-events-auto z-[1000000] border border-gray-200 overflow-hidden" @click.stop>
-    <!-- Header (Fixed) -->
-    <div class="flex-shrink-0 px-5 pt-5 pb-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+  <div class="fixed top-4 right-4 bg-white rounded-2xl shadow-2xl w-[440px] lg:w-[480px] max-h-[92vh] flex flex-col pointer-events-auto z-[1000000] border-2 border-gray-100 overflow-hidden backdrop-blur-sm" @click.stop>
+    <!-- Header (Fixed) with better gradient -->
+    <div class="flex-shrink-0 px-6 pt-5 pb-4 border-b-2 border-gray-100 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       <div class="flex items-start justify-between">
         <div class="flex-1">
-          <div class="flex items-center gap-2">
-            <h2 class="text-xl font-bold text-gray-900">Element Selector</h2>
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2">
+              <span class="text-2xl">🎯</span>
+              <h2 class="text-xl font-bold text-gray-900 tracking-tight">Element Selector</h2>
+            </div>
             <Button
               v-if="props.detailedViewField"
               @click="emit('closeDetailedView')"
               variant="ghost"
               size="sm"
-              class="h-7 w-7 p-0"
+              class="h-8 w-8 p-0 hover:bg-white/80 transition-all"
               title="Back to list (ESC)"
             >
-              <span class="text-lg">←</span>
+              <span class="text-xl">←</span>
             </Button>
           </div>
-          <p class="text-sm text-gray-600 mt-1">
-            {{ props.detailedViewField ? 'Configure field details' : 'Click elements to select them' }}
+          <p class="text-sm text-gray-600 mt-1.5 font-medium">
+            {{ props.detailedViewField ? '✨ Configure field details' : '👆 Click elements on the page to select' }}
           </p>
         </div>
       </div>
       
-      <!-- Keyboard hints - Compact -->
-      <div v-if="!props.detailedViewField" class="mt-3 flex items-center gap-3 text-xs text-gray-600">
-        <div class="flex items-center gap-1">
-          <kbd class="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-700 font-mono">ESC</kbd>
-          <span>Clear</span>
+      <!-- Keyboard hints - More visible and attractive -->
+      <div v-if="!props.detailedViewField" class="mt-3 flex items-center gap-4 text-xs">
+        <div class="flex items-center gap-1.5 text-gray-700">
+          <kbd class="px-2 py-1 bg-white border-2 border-gray-300 rounded-md text-gray-800 font-mono font-bold shadow-sm">ESC</kbd>
+          <span class="font-medium">Clear</span>
         </div>
-        <div class="flex items-center gap-1">
-          <kbd class="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-700 font-mono">Enter</kbd>
-          <span>Add</span>
+        <div class="flex items-center gap-1.5 text-gray-700">
+          <kbd class="px-2 py-1 bg-white border-2 border-gray-300 rounded-md text-gray-800 font-mono font-bold shadow-sm">↵</kbd>
+          <span class="font-medium">Add Field</span>
         </div>
       </div>
     </div>
 
-    <!-- Scrollable Content Area -->
+    <!-- Scrollable Content Area with better styling -->
     <ScrollArea class="flex-1">
-      <div class="px-5 pb-5">
+      <div class="px-6 pb-6">
         <!-- Tab Navigation -->
         <Tabs v-if="!props.detailedViewField" v-model="activeTab" class="w-full mt-4">
           <TabsList class="grid w-full grid-cols-2">
@@ -52,10 +55,13 @@
             </TabsTrigger>
           </TabsList>
 
-          <!-- Tab Content - Regular Mode -->
-          <TabsContent value="regular" class="space-y-3 mt-4">
+          <!-- Tab Content - Regular Mode with improved design -->
+          <TabsContent value="regular" class="space-y-4 mt-4">
             <div>
-              <Label for="field-name" class="text-sm font-medium mb-1.5">Field Name</Label>
+              <Label for="field-name" class="text-sm font-semibold mb-2 flex items-center gap-2">
+                <span>📝</span>
+                <span>Field Name</span>
+              </Label>
               <Input
                 id="field-name"
                 :model-value="props.fieldName"
@@ -63,35 +69,38 @@
                 @keydown.enter="canAddField && emit('addField')"
                 type="text"
                 placeholder="e.g., title, price, description"
-                class="mt-1"
+                class="mt-1.5 h-11 text-base"
                 autofocus
               />
             </div>
 
-            <!-- Multiple Value Option -->
-            <Card class="bg-blue-50 border-blue-200">
-              <CardContent class="p-3">
-                <label class="flex items-start gap-2.5 cursor-pointer">
+            <!-- Multiple Value Option with better styling -->
+            <Card class="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 shadow-sm hover:shadow-md transition-shadow">
+              <CardContent class="p-4">
+                <label class="flex items-start gap-3 cursor-pointer group">
                   <input
                     type="checkbox"
                     v-model="extractMultiple"
-                    class="mt-0.5 w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+                    class="mt-0.5 w-5 h-5 text-blue-600 rounded-md border-gray-300 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   />
                   <div class="flex-1">
-                    <span class="text-sm font-medium text-gray-900">Extract Multiple Values</span>
-                    <p class="text-xs text-gray-600 mt-0.5">Extract an array of values from all matching elements</p>
+                    <span class="text-sm font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">📋 Extract Multiple Values</span>
+                    <p class="text-xs text-gray-600 mt-1 leading-relaxed">Extract an array of values from all matching elements on the page</p>
                   </div>
                 </label>
               </CardContent>
             </Card>
 
             <div>
-              <Label for="extract-type" class="text-sm font-medium mb-1.5">Extract Type</Label>
+              <Label for="extract-type" class="text-sm font-semibold mb-2 flex items-center gap-2">
+                <span>🎨</span>
+                <span>Extract Type</span>
+              </Label>
               <Select
                 :model-value="props.fieldType"
                 @update:model-value="emit('update:fieldType', $event)"
               >
-                <SelectTrigger id="extract-type" class="mt-1">
+                <SelectTrigger id="extract-type" class="mt-1.5 h-11">
                   <SelectValue placeholder="Select extraction type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -102,26 +111,29 @@
               </Select>
             </div>
 
-            <div v-if="props.fieldType === 'attribute'">
-              <Label for="attribute-name" class="text-sm font-medium mb-1.5">Attribute Name</Label>
+            <div v-if="props.fieldType === 'attribute'" class="animate-in slide-in-from-top-2 duration-300">
+              <Label for="attribute-name" class="text-sm font-semibold mb-2 flex items-center gap-2">
+                <span>🏷️</span>
+                <span>Attribute Name</span>
+              </Label>
               <Input
                 id="attribute-name"
                 :model-value="props.fieldAttribute"
                 @update:model-value="emit('update:fieldAttribute', $event)"
                 type="text"
                 placeholder="e.g., href, src, data-id"
-                class="mt-1"
+                class="mt-1.5 h-11 text-base font-mono"
               />
             </div>
 
-            <!-- Validation Message -->
-            <div v-if="props.hoveredElementValidation" class="text-sm">
+            <!-- Validation Message with better styling -->
+            <div v-if="props.hoveredElementValidation" class="text-sm animate-in fade-in duration-200">
               <Alert
                 :variant="props.hoveredElementValidation.isValid ? 'default' : 'destructive'"
-                class="py-2"
+                class="py-3 shadow-sm"
               >
-                <span class="text-base mr-2">{{ props.hoveredElementValidation.isValid ? '✓' : '✗' }}</span>
-                <AlertDescription class="font-medium">
+                <span class="text-lg mr-2">{{ props.hoveredElementValidation.isValid ? '✅' : '❌' }}</span>
+                <AlertDescription class="font-semibold">
                   {{ props.hoveredElementValidation.message }}
                 </AlertDescription>
               </Alert>
@@ -130,11 +142,14 @@
             <Button
               @click="emit('addField')"
               :disabled="!canAddField"
-              class="w-full"
+              class="w-full h-12 text-base font-semibold shadow-md hover:shadow-lg transition-all"
               size="lg"
             >
-              <span v-if="canAddField">✓ Add Field</span>
-              <span v-else>Add Field</span>
+              <span v-if="canAddField" class="flex items-center gap-2">
+                <span class="text-lg">✓</span>
+                <span>Add Field</span>
+              </span>
+              <span v-else class="text-gray-400">Select an element to continue</span>
             </Button>
           </TabsContent>
 
@@ -148,87 +163,88 @@
           </TabsContent>
         </Tabs>
 
-        <!-- Selected Fields List -->
+        <!-- Selected Fields List with improved design -->
         <div v-if="!props.detailedViewField" class="mt-6">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-gray-900">
-              Selected Fields
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-bold text-gray-900 flex items-center gap-2">
+              <span>📦</span>
+              <span>Selected Fields</span>
             </h3>
-            <Badge variant="secondary" class="text-xs">
+            <Badge variant="secondary" class="text-sm px-3 py-1 font-bold bg-blue-100 text-blue-700 border border-blue-300">
               {{ props.selectedFields.length }}
             </Badge>
           </div>
           
-          <div v-if="props.selectedFields.length === 0" class="text-sm text-gray-500 text-center py-8 border-2 border-dashed border-gray-200 rounded-lg">
-            <div class="text-3xl mb-2">📋</div>
-            <div>No fields selected yet</div>
-            <div class="text-xs mt-1">Click on page elements to start</div>
+          <div v-if="props.selectedFields.length === 0" class="text-sm text-gray-500 text-center py-10 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
+            <div class="text-5xl mb-3 animate-bounce">📋</div>
+            <div class="font-semibold text-gray-700 text-base">No fields selected yet</div>
+            <div class="text-xs mt-2 text-gray-600">Click on elements in the page to start selecting</div>
           </div>
 
-          <div v-else class="space-y-2">
+          <div v-else class="space-y-3">
             <Card
               v-for="field in props.selectedFields"
               :key="field.id"
-              class="cursor-pointer hover:shadow-md transition-all border-l-4"
+              class="cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-l-4 bg-gradient-to-r from-white to-gray-50"
               :class="getFieldBorderClass(field)"
               @click="emit('openDetailedView', field)"
             >
-              <CardContent class="p-3">
-                <div class="flex items-start justify-between">
+              <CardContent class="p-4">
+                <div class="flex items-start justify-between gap-3">
                   <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1">
-                      <div class="font-medium text-gray-900 truncate">{{ field.name }}</div>
-                      <!-- Mode Badge -->
+                    <div class="flex items-center gap-2 mb-2">
+                      <div class="font-bold text-gray-900 truncate text-base">{{ field.name }}</div>
+                      <!-- Mode Badge with improved styling -->
                       <Badge
                         v-if="field.mode === 'key-value-pairs'"
                         variant="secondary"
-                        class="bg-purple-100 text-purple-700 border-purple-300 text-xs"
+                        class="bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 border-purple-300 text-xs font-bold"
                       >
                         🔗 K-V
                       </Badge>
                       <Badge
                         v-else-if="field.matchCount && field.matchCount > 1"
                         variant="secondary"
-                        class="bg-purple-100 text-purple-700 border-purple-300 text-xs"
+                        class="bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-800 border-purple-300 text-xs font-bold"
                       >
-                        📋 Array
+                        📋 {{ field.matchCount }}
                       </Badge>
                       <Badge
                         v-else
                         variant="outline"
-                        class="text-xs"
+                        class="text-xs font-semibold"
                         :class="getFieldTypeBadgeClass(field)"
                       >
                         {{ field.type }}
                       </Badge>
                     </div>
                     
-                    <!-- Selector Display -->
-                    <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-xs text-gray-500 font-mono mt-1 space-y-0.5">
-                      <div class="text-green-700 truncate">🔑 {{ field.attributes.extractions[0].key_selector }}</div>
-                      <div class="text-blue-700 truncate">💎 {{ field.attributes.extractions[0].value_selector }}</div>
+                    <!-- Selector Display with better contrast -->
+                    <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-xs font-mono mt-2 space-y-1 bg-gray-100 p-2 rounded border border-gray-200">
+                      <div class="text-green-700 truncate font-semibold">🔑 {{ field.attributes.extractions[0].key_selector }}</div>
+                      <div class="text-blue-700 truncate font-semibold">💎 {{ field.attributes.extractions[0].value_selector }}</div>
                     </div>
-                    <div v-else class="text-xs text-gray-500 font-mono truncate mt-1">
+                    <div v-else class="text-xs text-gray-600 font-mono truncate mt-2 bg-gray-100 px-2 py-1.5 rounded border border-gray-200">
                       {{ field.selector }}
                     </div>
                     
-                    <div v-if="field.matchCount && field.mode !== 'key-value-pairs'" class="flex items-center gap-1 mt-1">
-                      <Badge variant="outline" class="text-xs" :class="field.matchCount > 1 ? 'border-purple-400 text-purple-700' : 'border-blue-400 text-blue-700'">
+                    <div v-if="field.matchCount && field.mode !== 'key-value-pairs'" class="flex items-center gap-2 mt-2">
+                      <Badge variant="outline" class="text-xs font-semibold" :class="field.matchCount > 1 ? 'border-purple-400 text-purple-700 bg-purple-50' : 'border-blue-400 text-blue-700 bg-blue-50'">
                         {{ field.matchCount }} {{ field.matchCount === 1 ? 'match' : 'matches' }}
                       </Badge>
                     </div>
-                    <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-xs text-gray-600 truncate mt-1 italic">
-                      "{{ field.sampleValue }}"
+                    <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-xs text-gray-700 truncate mt-2 italic bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                      💬 "{{ field.sampleValue }}"
                     </div>
                   </div>
                   <Button
                     @click.stop="emit('removeField', field.id)"
                     variant="ghost"
                     size="sm"
-                    class="h-7 w-7 p-0 ml-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                    class="h-8 w-8 p-0 ml-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-lg transition-all hover:scale-110"
                     title="Remove field"
                   >
-                    ✕
+                    <span class="text-lg">✕</span>
                   </Button>
                 </div>
               </CardContent>

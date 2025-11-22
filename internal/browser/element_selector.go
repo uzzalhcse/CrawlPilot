@@ -26,6 +26,7 @@ type SelectorSession struct {
 
 // SelectedField represents a field selected by the user
 type SelectedField struct {
+	ID         string                 `json:"id,omitempty"` // Unique identifier for the field
 	Name       string                 `json:"name"`
 	Selector   string                 `json:"selector"`
 	Type       string                 `json:"type"` // text, attribute, html
@@ -148,6 +149,17 @@ func (m *ElementSelectorManager) CreateSessionWithFields(ctx context.Context, ur
 
 // populateExistingFields sends existing fields to the overlay UI
 func (m *ElementSelectorManager) populateExistingFields(browserCtx *BrowserContext, fields []SelectedField) error {
+	// Ensure all fields have IDs (important for database-loaded fields)
+	for i := range fields {
+		if fields[i].ID == "" {
+			// Generate a unique ID if missing
+			fields[i].ID = fmt.Sprintf("field-%d-%d", time.Now().UnixNano(), i)
+			logger.Debug("Generated ID for field without one",
+				zap.String("field_name", fields[i].Name),
+				zap.String("generated_id", fields[i].ID))
+		}
+	}
+
 	fieldsJSON, err := json.Marshal(fields)
 	if err != nil {
 		return fmt.Errorf("failed to marshal fields: %w", err)

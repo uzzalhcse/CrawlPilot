@@ -59,53 +59,71 @@
   }
 }
 
-/* Custom scrollbar for control panel */
+/* Custom scrollbar for control panel - improved design */
 .crawlify-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 .crawlify-scrollbar::-webkit-scrollbar-track {
   background: hsl(var(--muted));
-  border-radius: 3px;
+  border-radius: 4px;
+  margin: 4px 0;
 }
 
 .crawlify-scrollbar::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 3px;
+  background: linear-gradient(180deg, hsl(var(--primary) / 0.6), hsl(var(--primary) / 0.8));
+  border-radius: 4px;
+  border: 2px solid hsl(var(--muted));
 }
 
 .crawlify-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  background: linear-gradient(180deg, hsl(var(--primary) / 0.8), hsl(var(--primary) / 1));
 }
 
-/* Professional highlight animation for clicked test results */
+/* Enhanced highlight animation for clicked test results */
 @keyframes crawlify-highlight-fade {
   0% {
-    outline: 3px solid rgba(59, 130, 246, 1);
+    outline: 4px solid rgba(59, 130, 246, 1);
     outline-offset: 2px;
-    background-color: rgba(59, 130, 246, 0.15);
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4),
-                inset 0 0 0 2px rgba(59, 130, 246, 0.3);
+    background-color: rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5),
+                inset 0 0 0 3px rgba(59, 130, 246, 0.4),
+                0 8px 16px rgba(59, 130, 246, 0.3);
   }
   50% {
-    outline: 3px solid rgba(59, 130, 246, 0.8);
-    outline-offset: 3px;
-    background-color: rgba(59, 130, 246, 0.08);
-    box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.15),
-                inset 0 0 0 2px rgba(59, 130, 246, 0.2);
+    outline: 4px solid rgba(59, 130, 246, 0.8);
+    outline-offset: 4px;
+    background-color: rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.2),
+                inset 0 0 0 3px rgba(59, 130, 246, 0.25),
+                0 12px 24px rgba(59, 130, 246, 0.2);
   }
   100% {
-    outline: 3px solid rgba(59, 130, 246, 0);
-    outline-offset: 4px;
+    outline: 4px solid rgba(59, 130, 246, 0);
+    outline-offset: 6px;
     background-color: rgba(59, 130, 246, 0);
-    box-shadow: 0 0 0 12px rgba(59, 130, 246, 0),
-                inset 0 0 0 2px rgba(59, 130, 246, 0);
+    box-shadow: 0 0 0 16px rgba(59, 130, 246, 0),
+                inset 0 0 0 3px rgba(59, 130, 246, 0),
+                0 16px 32px rgba(59, 130, 246, 0);
   }
 }
 
 .crawlify-pulse-highlight {
-  animation: crawlify-highlight-fade 2s ease-out;
+  animation: crawlify-highlight-fade 2.5s ease-out;
   position: relative;
   z-index: 999998 !important;
-  transition: all 0.3s ease-out;
+  transition: all 0.4s ease-out;
+  transform: scale(1.02);
+}
+
+/* Smooth transitions for all interactive elements */
+@layer utilities {
+  .transition-smooth {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  }
 }

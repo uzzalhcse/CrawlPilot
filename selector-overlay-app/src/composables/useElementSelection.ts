@@ -173,11 +173,13 @@ export function useElementSelection() {
     if (!detailedViewField.value) return
     
     const index = selectedFields.value.findIndex(f => f.id === detailedViewField.value!.id)
+    
     if (index !== -1) {
       selectedFields.value[index] = {
         ...selectedFields.value[index],
         ...updatedField
       }
+      
       detailedViewField.value = selectedFields.value[index]
     }
     editMode.value = false
@@ -201,7 +203,6 @@ export function useElementSelection() {
       }))
     } catch (error) {
       testResults.value = []
-      console.error('Invalid selector:', error)
     }
   }
 
@@ -286,7 +287,16 @@ export function useElementSelection() {
 
   // Function to set fields from external source (for editing existing workflows)
   const setFields = (fields: SelectedField[]) => {
-    selectedFields.value = fields
+    // Ensure all fields have IDs (important for database-loaded fields)
+    selectedFields.value = fields.map((field, index) => {
+      if (!field.id) {
+        return {
+          ...field,
+          id: `field-${Date.now()}-${index}`
+        }
+      }
+      return field
+    })
   }
 
   // Expose to window for backend to call

@@ -20,12 +20,12 @@
         Selected ✓
       </div>
       
-      <!-- Navigation Buttons -->
-      <div class="absolute -right-2 top-1/2 transform -translate-y-1/2 flex flex-col gap-1 pointer-events-auto">
+      <!-- Navigation Buttons with improved design -->
+      <div class="absolute -right-2 top-1/2 transform -translate-y-1/2 flex flex-col gap-2 pointer-events-auto">
         <button
           v-if="canNavigateToParent"
           @click.stop="navigateToParent"
-          class="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          class="bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs px-3 py-2 rounded-lg shadow-xl transition-all hover:scale-110 font-bold border-2 border-blue-400"
           title="Select Parent Element (Alt+↑)"
         >
           ↑ Parent
@@ -33,7 +33,7 @@
         <button
           v-if="canNavigateToChild"
           @click.stop="navigateToFirstChild"
-          class="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          class="bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-xs px-3 py-2 rounded-lg shadow-xl transition-all hover:scale-110 font-bold border-2 border-green-400"
           title="Select First Child (Alt+↓)"
         >
           ↓ Child
@@ -41,7 +41,7 @@
         <button
           v-if="canNavigateToPrevSibling"
           @click.stop="navigateToPrevSibling"
-          class="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          class="bg-gradient-to-br from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-xs px-3 py-2 rounded-lg shadow-xl transition-all hover:scale-110 font-bold border-2 border-purple-400"
           title="Select Previous Sibling (Alt+←)"
         >
           ← Prev
@@ -49,7 +49,7 @@
         <button
           v-if="canNavigateToNextSibling"
           @click.stop="navigateToNextSibling"
-          class="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-1.5 rounded shadow-lg transition-all hover:scale-110 font-bold"
+          class="bg-gradient-to-br from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-xs px-3 py-2 rounded-lg shadow-xl transition-all hover:scale-110 font-bold border-2 border-purple-400"
           title="Select Next Sibling (Alt+→)"
         >
           → Next
@@ -112,13 +112,13 @@
       </div>
     </template>
 
-    <!-- Element tag label -->
+    <!-- Element tag label with improved design -->
     <div
       v-if="tagLabelStyle"
-      class="absolute bg-slate-800 text-slate-100 px-2 py-1 rounded text-xs font-mono z-[1000001] pointer-events-none shadow-lg max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap"
+      class="absolute bg-gradient-to-r from-slate-800 to-slate-900 text-slate-100 px-3 py-2 rounded-lg text-xs font-mono z-[1000001] pointer-events-none shadow-2xl max-w-[400px] overflow-hidden text-ellipsis whitespace-nowrap border-2 border-slate-600"
       :style="tagLabelStyle"
     >
-      {{ tagLabel }}
+      <span class="font-bold">{{ tagLabel }}</span>
     </div>
   </div>
 </template>
@@ -169,6 +169,9 @@ const updateRects = () => {
   // Update rects for all selected fields (store all matching elements)
   fieldRects.value.clear()
   props.selectedFields.forEach(field => {
+    // Skip fields without selectors (e.g., key-value-pairs mode)
+    if (!field.selector) return
+    
     try {
       const elements = document.querySelectorAll(field.selector)
       if (elements.length > 0) {
@@ -176,7 +179,7 @@ const updateRects = () => {
         fieldRects.value.set(field.id, rects)
       }
     } catch (error) {
-      console.warn('Invalid selector:', field.selector)
+      // Silently skip invalid selectors
     }
   })
 }

@@ -14,22 +14,22 @@
       />
     </div>
 
-    <!-- Key Selector Section -->
+    <!-- Key Selector Section with improved design -->
     <div 
-      class="selector-section key-section rounded-lg border-2 transition-all"
+      class="selector-section key-section rounded-xl border-2 transition-all duration-300 shadow-sm hover:shadow-md"
       :class="keySectionClass"
     >
-      <div class="section-header bg-green-50 px-4 py-3 rounded-t-lg border-b-2 border-green-200">
+      <div class="section-header bg-gradient-to-br from-green-50 to-emerald-50 px-5 py-4 rounded-t-xl border-b-2 border-green-200">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-2xl">🔑</span>
-            <span class="font-semibold text-gray-900">KEY SELECTOR</span>
-            <span v-if="keyCount > 0" class="px-2 py-0.5 bg-green-500 text-white text-xs font-bold rounded-full">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">🔑</span>
+            <span class="font-bold text-gray-900 text-base tracking-tight">KEY SELECTOR</span>
+            <span v-if="keyCount > 0" class="px-2.5 py-1 bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-bold rounded-full shadow-sm">
               {{ keyCount }}
             </span>
           </div>
         </div>
-        <p class="text-xs text-gray-600 mt-1">Select the labels/names (e.g., "Color", "Size")</p>
+        <p class="text-xs text-gray-700 mt-2 font-medium">Select the labels/names (e.g., "Color", "Size")</p>
       </div>
       
       <div class="p-4 space-y-3">
@@ -118,22 +118,22 @@
       </div>
     </div>
 
-    <!-- Value Selector Section -->
+    <!-- Value Selector Section with improved design -->
     <div 
-      class="selector-section value-section rounded-lg border-2 transition-all"
+      class="selector-section value-section rounded-xl border-2 transition-all duration-300 shadow-sm hover:shadow-md"
       :class="valueSectionClass"
     >
-      <div class="section-header bg-blue-50 px-4 py-3 rounded-t-lg border-b-2 border-blue-200">
+      <div class="section-header bg-gradient-to-br from-blue-50 to-indigo-50 px-5 py-4 rounded-t-xl border-b-2 border-blue-200">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-2xl">💎</span>
-            <span class="font-semibold text-gray-900">VALUE SELECTOR</span>
-            <span v-if="valueCount > 0" class="px-2 py-0.5 bg-blue-500 text-white text-xs font-bold rounded-full">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">💎</span>
+            <span class="font-bold text-gray-900 text-base tracking-tight">VALUE SELECTOR</span>
+            <span v-if="valueCount > 0" class="px-2.5 py-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-bold rounded-full shadow-sm">
               {{ valueCount }}
             </span>
           </div>
         </div>
-        <p class="text-xs text-gray-600 mt-1">Select the data/values (e.g., "Black", "Large")</p>
+        <p class="text-xs text-gray-700 mt-2 font-medium">Select the data/values (e.g., "Black", "Large")</p>
       </div>
       
       <div class="p-4 space-y-3">
@@ -222,17 +222,17 @@
       </div>
     </div>
 
-    <!-- Pairing Preview -->
-    <div v-if="pairs.length > 0" class="pairing-preview bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2">
-          <span class="text-xl">🔗</span>
-          <span class="font-semibold text-gray-900">PAIRING PREVIEW</span>
-          <span class="text-xs text-gray-600">({{ pairs.length }} pairs)</span>
+    <!-- Pairing Preview with enhanced design -->
+    <div v-if="pairs.length > 0" class="pairing-preview bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-xl p-5 shadow-md">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">🔗</span>
+          <span class="font-bold text-gray-900 text-base tracking-tight">PAIRING PREVIEW</span>
+          <span class="text-xs text-gray-700 font-semibold bg-purple-200 px-2 py-1 rounded-full">({{ pairs.length }} pairs)</span>
         </div>
-        <div v-if="hasCountMismatch" class="flex items-center gap-1 text-orange-600 text-xs font-medium">
+        <div v-if="hasCountMismatch" class="flex items-center gap-1.5 text-orange-600 text-xs font-bold bg-orange-100 px-2 py-1 rounded-full">
           <span>⚠️</span>
-          <span>Count mismatch</span>
+          <span>Mismatch</span>
         </div>
       </div>
 
@@ -347,29 +347,38 @@
       </ul>
     </details>
 
-    <!-- Add Buttons -->
-    <div class="flex gap-2">
+    <!-- Add Buttons with improved styling -->
+    <div class="flex gap-3">
       <button
         v-if="canAdd"
         @click="handleAddAnotherPair"
-        class="flex-1 px-4 py-3 rounded-lg font-medium transition-colors text-base bg-purple-500 text-white hover:bg-purple-600"
+        class="flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700 shadow-md hover:shadow-lg hover:scale-105"
       >
-        + Add Another Pair
+        <span class="flex items-center justify-center gap-2">
+          <span class="text-lg">➕</span>
+          <span>Add Another Pair</span>
+        </span>
       </button>
       <button
         @click="handleAdd"
         :disabled="!canAddToField"
         :class="[
-          'flex-1 px-4 py-3 rounded-lg font-medium transition-colors text-base',
+          'flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base shadow-md',
           canAddToField
             ? props.editMode
-              ? 'bg-green-500 text-white hover:bg-green-600 active:bg-green-700'
-              : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
-            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 hover:shadow-lg hover:scale-105'
+              : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-lg hover:scale-105'
+            : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
         ]"
       >
-        <span v-if="props.editMode">✓ Update Extraction Pair</span>
-        <span v-else>✓ Add to Field List</span>
+        <span v-if="props.editMode" class="flex items-center justify-center gap-2">
+          <span class="text-lg">✓</span>
+          <span>Update Pair</span>
+        </span>
+        <span v-else class="flex items-center justify-center gap-2">
+          <span class="text-lg">✓</span>
+          <span>Add to Field List</span>
+        </span>
       </button>
     </div>
   </div>
@@ -498,6 +507,24 @@ function removeExtractionPair(index: number) {
 }
 
 function handleAdd() {
+  // In edit mode, emit only the current selection (single pair)
+  if (props.editMode) {
+    if (!canAdd.value) return
+    
+    const data = getExtractionData()
+    emit('add', {
+      fieldName: fieldName.value,
+      extractions: [data] // Single pair for edit mode
+    })
+    
+    // Reset everything
+    fieldName.value = ''
+    extractionPairs.value = []
+    reset()
+    return
+  }
+  
+  // In add mode, collect all pairs
   // If current selection is valid, add it first
   if (canAdd.value) {
     const data = getExtractionData()
@@ -528,6 +555,8 @@ function initializeWithData(data: {
 }) {
   // Reset first to clear any previous state
   kvSelection.reset()
+  // Clear extraction pairs array (important for edit mode)
+  extractionPairs.value = []
   // Then initialize with the provided data
   kvSelection.initialize(data)
 }

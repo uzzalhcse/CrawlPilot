@@ -754,6 +754,7 @@ async function startEditPair(index: number) {
   
   // Initialize the KeyValuePairSelector with existing data
   const pair = editableField.value.attributes?.extractions?.[index]
+  
   if (pair) {
     // Use a longer timeout to ensure component is fully mounted
     setTimeout(() => {
