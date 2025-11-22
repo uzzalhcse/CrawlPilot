@@ -207,11 +207,22 @@ const handleCustomize = (editedName: string, editedSelector: string) => {
   
   // Lock element first
   lockedElement.value = element
-  updateLivePreview()
-  updateSelectorAnalysis()
+  
+  // Use the edited selector if provided
+  if (editedSelector) {
+    useAlternativeSelector(editedSelector)
+  } else {
+    updateLivePreview()
+    updateSelectorAnalysis()
+  }
   
   // Dismiss tooltip
   tooltipState.value = null
+  
+  // Open Add Form in ControlPanel
+  if (controlPanelRef.value) {
+    controlPanelRef.value.openAddForm({ fieldName: editedName })
+  }
   
   // Trigger the add field form, then set the field name
   nextTick(() => {

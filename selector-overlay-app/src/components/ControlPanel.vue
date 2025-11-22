@@ -960,8 +960,20 @@ const getFieldTypeBadgeClass = (field: SelectedField) => {
   return 'border-gray-300 text-gray-700'
 }
 
-// Expose kvSelectorRef to parent
+// Open add form (can be called from parent)
+function openAddForm(data?: { fieldName?: string }) {
+  showFieldForm.value = true
+  editingFieldId.value = null
+  activeTab.value = 'regular'
+  
+  if (data?.fieldName) {
+    emit('update:fieldName', data.fieldName)
+  }
+}
+
+// Expose methods to parent
 defineExpose({
-  kvSelectorRef
+  kvSelectorRef,
+  openAddForm
 })
 </script>

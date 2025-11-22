@@ -308,14 +308,15 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
   }
 
   // Analyze selector quality and generate alternatives
-  const updateSelectorAnalysis = () => {
-    if (!lockedElement.value || !hoveredElementSelector.value) {
+  const updateSelectorAnalysis = (overrideSelector?: string) => {
+    const selector = overrideSelector || hoveredElementSelector.value
+    if (!lockedElement.value || !selector) {
       selectorAnalysis.value = null
       return
     }
 
     try {
-      const analysis = analyzeSelectorQuality(lockedElement.value, hoveredElementSelector.value)
+      const analysis = analyzeSelectorQuality(lockedElement.value, selector)
       selectorAnalysis.value = analysis
     } catch (error) {
       selectorAnalysis.value = null
@@ -330,7 +331,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
       const elements = document.querySelectorAll(alternativeSelector)
       if (elements.length > 0) {
         lockedElement.value = elements[0] as Element
-        updateSelectorAnalysis()
+        updateSelectorAnalysis(alternativeSelector)
         updateLivePreview()
       }
     } catch (error) {
