@@ -1,58 +1,203 @@
 <template>
-  <div class="fixed top-4 right-4 bg-white rounded-lg shadow-sm w-[440px] lg:w-[480px] max-h-[92vh] flex flex-col pointer-events-auto z-[1000000] border border-gray-200 overflow-hidden" @click.stop>
+  <div class="fixed top-4 right-4 bg-white rounded-lg shadow-sm w-[440px] lg:w-[480px] max-h-[92vh] flex flex-col pointer-events-auto z-[1000000] border border-gray-200" @click.stop>
     <!-- Header (Fixed) -->
-    <div class="flex-shrink-0 px-5 pt-4 pb-3 border-b border-gray-200 bg-white">
-      <div class="flex items-start justify-between">
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            <div class="flex items-center gap-2">
-              <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
-              </svg>
-              <h2 class="text-base font-semibold text-gray-900">Element Selector</h2>
-            </div>
+    <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
+          </svg>
+          <h2 class="text-sm font-semibold text-gray-900">Element Selector</h2>
+        </div>
+        <Button
+          v-if="showFieldForm"
+          @click="closeFieldForm"
+          variant="ghost"
+          size="sm"
+          class="h-7 w-7 p-0 hover:bg-gray-100"
+          title="Close form"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </Button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col min-h-0">
+      <!-- Selected Fields Section (Always Visible) -->
+      <div v-if="!showFieldForm" class="flex-1 flex flex-col min-h-0">
+        <!-- Selected Fields Header -->
+        <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-900">
+              Selected Fields ({{ props.selectedFields.length }})
+            </h3>
             <Button
-              v-if="props.detailedViewField"
-              @click="emit('closeDetailedView')"
+              @click="openAddFieldForm"
+              size="sm"
+              class="h-7 px-3 text-xs font-medium"
+            >
+              <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              Add Field
+            </Button>
+          </div>
+        </div>
+
+        <!-- Selected Fields List (Scrollable) -->
+        <ScrollArea class="flex-1">
+          <div class="px-4 py-3">
+            <!-- Empty State -->
+            <div v-if="props.selectedFields.length === 0" class="text-center py-12">
+              <div class="text-gray-400 mb-3">
+                <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+              </div>
+              <div class="font-medium text-gray-700 text-sm">No fields selected yet</div>
+              <div class="text-xs mt-1 text-gray-500">Click "Add Field" to get started</div>
+            </div>
+
+            <!-- Field Cards -->
+            <div v-else class="space-y-2">
+              <Card
+                v-for="field in props.selectedFields"
+                :key="field.id"
+                class="cursor-pointer hover:border-gray-400 transition-colors border-l-[3px] bg-white group"
+                :class="getFieldBorderClass(field)"
+                @click="openEditFieldForm(field)"
+              >
+                <CardContent class="p-3">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="flex-1 min-w-0">
+                      <!-- Field Name & Badges -->
+                      <div class="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                        <div class="font-semibold text-gray-900 text-sm">{{ field.name }}</div>
+                        
+                        <!-- Mode Badge -->
+                        <Badge
+                          v-if="field.mode === 'key-value-pairs'"
+                          variant="secondary"
+                          class="bg-gray-100 text-gray-700 text-[10px] font-medium h-4 px-1.5"
+                        >
+                          K-V
+                        </Badge>
+                        <Badge
+                          v-else-if="field.matchCount && field.matchCount > 1"
+                          variant="secondary"
+                          class="bg-gray-100 text-gray-700 text-[10px] font-medium h-4 px-1.5"
+                        >
+                          {{ field.matchCount }}
+                        </Badge>
+                        <Badge
+                          v-else
+                          variant="outline"
+                          class="text-[10px] font-medium h-4 px-1.5"
+                          :class="getFieldTypeBadgeClass(field)"
+                        >
+                          {{ field.type }}
+                        </Badge>
+                        
+                        <!-- Transform indicator -->
+                        <Badge
+                          v-if="field.transforms && Object.keys(field.transforms).length > 0"
+                          variant="secondary"
+                          class="bg-gray-900 text-white text-[10px] font-medium h-4 px-1.5"
+                        >
+                          {{ Object.keys(field.transforms).length }}
+                        </Badge>
+                      </div>
+                      
+                      <!-- Selector Display -->
+                      <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-[11px] font-mono mt-1.5 space-y-0.5 bg-gray-50 p-1.5 rounded border border-gray-200">
+                        <div class="text-gray-700 truncate">K: {{ field.attributes.extractions[0].key_selector }}</div>
+                        <div class="text-gray-700 truncate">V: {{ field.attributes.extractions[0].value_selector }}</div>
+                      </div>
+                      <div v-else class="text-[11px] text-gray-600 font-mono truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                        {{ field.selector }}
+                      </div>
+                      
+                      <!-- Match Count -->
+                      <div v-if="field.matchCount && field.mode !== 'key-value-pairs'" class="flex items-center gap-1.5 mt-1.5">
+                        <Badge variant="outline" class="text-[10px] font-medium h-4 px-1.5" :class="field.matchCount > 1 ? 'border-gray-400 text-gray-700' : 'border-gray-300 text-gray-600'">
+                          {{ field.matchCount }} {{ field.matchCount === 1 ? 'match' : 'matches' }}
+                        </Badge>
+                      </div>
+                      
+                      <!-- Sample Value -->
+                      <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-[11px] text-gray-600 truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                        "{{ field.sampleValue }}"
+                      </div>
+                    </div>
+                    
+                    <!-- Action Icons -->
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        @click.stop="openEditFieldForm(field)"
+                        variant="ghost"
+                        size="sm"
+                        class="h-7 w-7 p-0 hover:bg-gray-100"
+                        title="Edit field"
+                      >
+                        <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        </svg>
+                      </Button>
+                      <Button
+                        @click.stop="deleteConfirmField = field"
+                        variant="ghost"
+                        size="sm"
+                        class="h-7 w-7 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                        title="Delete field"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </ScrollArea>
+      </div>
+
+      <!-- Add/Edit Field Form (Slide-out Panel) -->
+      <div v-else class="flex-1 flex flex-col min-h-0">
+        <!-- Form Header -->
+        <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div class="flex items-center gap-2">
+            <Button
+              @click="closeFieldForm"
               variant="ghost"
               size="sm"
-              class="h-7 w-7 p-0 hover:bg-gray-100"
-              title="Back to list (ESC)"
+              class="h-7 w-7 p-0 hover:bg-gray-100 -ml-1"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
               </svg>
             </Button>
+            <h3 class="text-sm font-semibold text-gray-900">
+              {{ editingFieldId ? 'Edit Field' : 'Add Field' }}
+            </h3>
           </div>
-          <p class="text-xs text-gray-500 mt-1">
-            <span v-if="editingFieldId">Editing field</span>
-            <span v-else-if="props.detailedViewField">Configure field details</span>
-            <span v-else>Click elements on the page to select</span>
-          </p>
-          <div v-if="editingFieldId" class="mt-2 px-2.5 py-1 bg-gray-100 border border-gray-300 rounded text-xs text-gray-700">
-            Editing mode - Update field or cancel to create new
+          <div v-if="editingFieldId" class="mt-2 px-2 py-1 bg-gray-100 border border-gray-300 rounded text-[11px] text-gray-700">
+            Click elements on the page to update selector
+          </div>
+          <div v-else class="mt-2 text-xs text-gray-500">
+            Click elements on the page to select
           </div>
         </div>
-      </div>
-      
-      <!-- Keyboard hints -->
-      <div v-if="!props.detailedViewField" class="mt-2.5 flex items-center gap-3 text-xs">
-        <div class="flex items-center gap-1 text-gray-600">
-          <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-[10px] font-mono text-gray-700">ESC</kbd>
-          <span class="text-[11px]">Clear</span>
-        </div>
-        <div class="flex items-center gap-1 text-gray-600">
-          <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-[10px] font-mono text-gray-700">↵</kbd>
-          <span class="text-[11px]">Add Field</span>
-        </div>
-      </div>
-    </div>
 
-    <!-- Scrollable Content Area -->
-    <ScrollArea class="flex-1">
-      <div class="px-5 pb-5">
-        <!-- Tab Navigation -->
-        <Tabs v-if="!props.detailedViewField" v-model="activeTab" class="w-full mt-3">
+        <!-- Form Content (Scrollable) -->
+        <ScrollArea class="flex-1">
+          <div class="px-4 py-3">
+            <!-- Tab Navigation -->
+            <Tabs v-model="activeTab" class="w-full">
           <TabsList class="grid w-full grid-cols-2 bg-gray-50 p-0.5">
             <TabsTrigger value="regular" class="text-xs data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm">
               Single/Multiple
@@ -386,150 +531,6 @@
           </TabsContent>
         </Tabs>
 
-        <!-- Selected Fields List -->
-        <div v-if="!props.detailedViewField" class="mt-4">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-gray-900">
-              Selected Fields
-            </h3>
-            <Badge variant="secondary" class="text-[10px] px-2 py-0.5 font-semibold bg-gray-100 text-gray-700">
-              {{ props.selectedFields.length }}
-            </Badge>
-          </div>
-          
-          <div v-if="props.selectedFields.length === 0" class="text-sm text-gray-500 text-center py-8 border border-dashed border-gray-300 rounded bg-gray-50">
-            <div class="text-gray-400 mb-2">
-              <svg class="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-              </svg>
-            </div>
-            <div class="font-medium text-gray-700">No fields selected yet</div>
-            <div class="text-xs mt-1 text-gray-500">Click elements on the page to start</div>
-          </div>
-
-          <div v-else class="space-y-2">
-            <Card
-              v-for="field in props.selectedFields"
-              :key="field.id"
-              class="cursor-pointer hover:border-gray-400 transition-colors border-l-[3px] bg-white"
-              :class="[getFieldBorderClass(field), editingFieldId === field.id ? 'ring-2 ring-gray-400 ring-offset-1' : '']"
-              @click="startEditField(field)"
-            >
-              <CardContent class="p-3">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                      <div class="font-semibold text-gray-900 truncate text-sm">{{ field.name }}</div>
-                      <!-- Mode Badge -->
-                      <Badge
-                        v-if="field.mode === 'key-value-pairs'"
-                        variant="secondary"
-                        class="bg-gray-100 text-gray-700 text-[10px] font-medium h-4 px-1.5"
-                      >
-                        K-V
-                      </Badge>
-                      <Badge
-                        v-else-if="field.matchCount && field.matchCount > 1"
-                        variant="secondary"
-                        class="bg-gray-100 text-gray-700 text-[10px] font-medium h-4 px-1.5"
-                      >
-                        {{ field.matchCount }}
-                      </Badge>
-                      <Badge
-                        v-else
-                        variant="outline"
-                        class="text-[10px] font-medium h-4 px-1.5"
-                        :class="getFieldTypeBadgeClass(field)"
-                      >
-                        {{ field.type }}
-                      </Badge>
-                      <!-- Transform indicator -->
-                      <Badge
-                        v-if="field.transforms && Object.keys(field.transforms).length > 0"
-                        variant="secondary"
-                        class="bg-gray-900 text-white text-[10px] font-medium h-4 px-1.5"
-                      >
-                        {{ Object.keys(field.transforms).length }}
-                      </Badge>
-                    </div>
-                    
-                    <!-- Selector Display -->
-                    <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-[11px] font-mono mt-1.5 space-y-0.5 bg-gray-50 p-1.5 rounded border border-gray-200">
-                      <div class="text-gray-700 truncate">K: {{ field.attributes.extractions[0].key_selector }}</div>
-                      <div class="text-gray-700 truncate">V: {{ field.attributes.extractions[0].value_selector }}</div>
-                    </div>
-                    <div v-else class="text-[11px] text-gray-600 font-mono truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
-                      {{ field.selector }}
-                    </div>
-                    
-                    <div v-if="field.matchCount && field.mode !== 'key-value-pairs'" class="flex items-center gap-1.5 mt-1.5">
-                      <Badge variant="outline" class="text-[10px] font-medium h-4 px-1.5" :class="field.matchCount > 1 ? 'border-gray-400 text-gray-700' : 'border-gray-300 text-gray-600'">
-                        {{ field.matchCount }} {{ field.matchCount === 1 ? 'match' : 'matches' }}
-                      </Badge>
-                    </div>
-                    <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-[11px] text-gray-600 truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
-                      "{{ field.sampleValue }}"
-                    </div>
-                  </div>
-                  <Button
-                    @click.stop="deleteConfirmField = field"
-                    variant="ghost"
-                    size="sm"
-                    class="h-7 w-7 p-0 ml-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    title="Remove field"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <!-- Color Legend (Collapsible) -->
-          <div class="mt-3 border-t border-gray-200 pt-3">
-            <button
-              @click="showLegend = !showLegend"
-              class="flex items-center justify-between w-full text-xs font-medium text-gray-700 hover:text-gray-900"
-            >
-              <span>Color Legend</span>
-              <svg class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-90': showLegend }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-              </svg>
-            </button>
-            
-            <div v-if="showLegend" class="mt-2.5 space-y-2 animate-in slide-in-from-top-2 duration-200">
-              <div class="text-[11px] text-gray-600 mb-1.5 font-medium">Field Types:</div>
-              <div class="flex items-center gap-2 text-[11px]">
-                <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-                <span class="text-gray-700">Text Content</span>
-              </div>
-              <div class="flex items-center gap-2 text-[11px]">
-                <div class="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
-                <span class="text-gray-700">Attribute</span>
-              </div>
-              <div class="flex items-center gap-2 text-[11px]">
-                <div class="w-2.5 h-2.5 rounded-full bg-pink-500"></div>
-                <span class="text-gray-700">HTML</span>
-              </div>
-              
-              <div class="text-[11px] text-gray-600 mt-2 mb-1.5 font-medium">Match Count:</div>
-              <div class="flex items-center gap-2 text-[11px]">
-                <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
-                <span class="text-gray-700">1 match (unique)</span>
-              </div>
-              <div class="flex items-center gap-2 text-[11px]">
-                <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-                <span class="text-gray-700">2-10 matches</span>
-              </div>
-              <div class="flex items-center gap-2 text-[11px]">
-                <div class="w-2.5 h-2.5 rounded-full bg-orange-500"></div>
-                <span class="text-gray-700">11+ matches</span>
-              </div>
-            </div>
-          </div>
-        </div>
 
         <!-- Detailed View Content (inside panel) -->
         <DetailedFieldContent
@@ -545,8 +546,10 @@
           @test-selector="emit('testSelector', $event)"
           @scroll-to-result="emit('scrollToResult', $event)"
         />
+          </div>
+        </ScrollArea>
       </div>
-    </ScrollArea>
+    </div>
 
     <!-- Delete Confirmation Dialog -->
     <Dialog :open="deleteConfirmField !== null" @update:open="(open) => !open && (deleteConfirmField = null)">
@@ -687,6 +690,7 @@ const showLegend = ref(false)
 const showTransforms = ref(false)
 const editingFieldId = ref<string | null>(null)
 const deleteConfirmField = ref<SelectedField | null>(null)
+const showFieldForm = ref(false)
 
 // Transform options
 const transforms = ref({
@@ -810,21 +814,34 @@ function handleAddField() {
       id: editingFieldId.value,
       transforms: enabledTransforms
     })
-    cancelEdit()
   } else {
     // Add new field
     emit('addField', enabledTransforms)
   }
   
-  // Reset transforms after adding/updating
+  // Close form and reset
+  closeFieldForm()
+}
+
+function openAddFieldForm() {
+  showFieldForm.value = true
+  editingFieldId.value = null
+  activeTab.value = 'regular'
+  
+  // Reset form
+  emit('update:fieldName', '')
+  emit('update:fieldAttribute', '')
+  extractMultiple.value = false
+  
+  // Reset transforms
   Object.keys(transforms.value).forEach(key => {
     transforms.value[key as keyof typeof transforms.value] = false
   })
   showTransforms.value = false
 }
 
-function startEditField(field: SelectedField) {
-  // Set editing mode
+function openEditFieldForm(field: SelectedField) {
+  showFieldForm.value = true
   editingFieldId.value = field.id
   
   if (field.mode === 'key-value-pairs') {
@@ -836,12 +853,6 @@ function startEditField(field: SelectedField) {
     
     // Load the K-V field data into the selector
     emit('loadKVFieldForEdit', field)
-    
-    // Scroll to top to show the form
-    const scrollArea = document.querySelector('.scrollable-content')
-    if (scrollArea) {
-      scrollArea.scrollTo({ top: 0, behavior: 'smooth' })
-    }
     return
   }
   
@@ -872,12 +883,16 @@ function startEditField(field: SelectedField) {
   
   // Load the element selector for this field
   emit('loadFieldForEdit', field)
-  
-  // Scroll to top to show the form
-  const scrollArea = document.querySelector('.scrollable-content')
-  if (scrollArea) {
-    scrollArea.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+}
+
+function closeFieldForm() {
+  showFieldForm.value = false
+  cancelEdit()
+}
+
+function startEditField(field: SelectedField) {
+  // This function is kept for backwards compatibility but now calls openEditFieldForm
+  openEditFieldForm(field)
 }
 
 function cancelEdit() {
@@ -913,12 +928,14 @@ function handleAddKeyValueField(data: { fieldName: string; extractions: any[] })
       fieldName: data.fieldName,
       extractions: data.extractions
     })
-    cancelEdit()
   } else {
     // Add new K-V field
     emit('addKeyValueField', data)
   }
+  
+  // Close form and reset
   kvFieldName.value = ''
+  closeFieldForm()
 }
 
 const getFieldBorderClass = (field: SelectedField) => {
