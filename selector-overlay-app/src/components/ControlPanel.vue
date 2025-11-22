@@ -230,13 +230,13 @@
             <!-- Multiple Value Option -->
             <Card class="bg-gray-50 border border-gray-200">
               <CardContent class="p-3">
-                <label class="flex items-start gap-2.5 cursor-pointer group">
+                <label class="flex items-center gap-2.5 cursor-pointer group">
                   <input
                     type="checkbox"
                     v-model="extractMultiple"
-                    class="mt-0.5 w-4 h-4 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400 cursor-pointer"
+                    class="w-4 h-4 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400 cursor-pointer flex-shrink-0"
                   />
-                  <div class="flex-1">
+                  <div class="flex-1 ml-1">
                     <span class="text-sm font-medium text-gray-900">Extract Multiple Values</span>
                     <p class="text-xs text-gray-500 mt-0.5 leading-relaxed">Extract an array of values from all matching elements</p>
                   </div>
