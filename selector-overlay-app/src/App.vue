@@ -29,7 +29,7 @@
         :detailed-view-tab="detailedViewTab"
         :edit-mode="editMode"
         :test-results="testResults"
-        @add-field="addField"
+        @add-field="(transforms) => addField(transforms)"
         @add-key-value-field="addKeyValueField"
         @remove-field="removeField"
         @open-detailed-view="openDetailedView"

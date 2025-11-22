@@ -126,6 +126,99 @@
               />
             </div>
 
+            <!-- Transforms Section -->
+            <Card class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 shadow-sm">
+              <CardContent class="p-4">
+                <button
+                  @click="showTransforms = !showTransforms"
+                  class="flex items-center justify-between w-full text-sm font-bold text-gray-900 hover:text-amber-700 transition-colors"
+                >
+                  <div class="flex items-center gap-2">
+                    <span>✨</span>
+                    <span>Transforms</span>
+                    <Badge v-if="activeTransforms.length > 0" variant="secondary" class="bg-amber-600 text-white text-xs">
+                      {{ activeTransforms.length }}
+                    </Badge>
+                  </div>
+                  <span class="text-xs">{{ showTransforms ? '▼' : '▶' }}</span>
+                </button>
+
+                <div v-if="showTransforms" class="mt-4 space-y-3 animate-in slide-in-from-top-2 duration-300">
+                  <!-- Text Transforms -->
+                  <div>
+                    <div class="text-xs font-bold text-gray-700 mb-2">Text Operations</div>
+                    <div class="space-y-2">
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.trim" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>✂️ Trim whitespace</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.lowercase" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>🔡 Lowercase</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.uppercase" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>🔠 Uppercase</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.capitalize" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>Ⓐ Capitalize first letter</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- String Transforms -->
+                  <div>
+                    <div class="text-xs font-bold text-gray-700 mb-2">String Operations</div>
+                    <div class="space-y-2">
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.removeSpaces" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>🚫 Remove all spaces</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.removeSpecialChars" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>🔧 Remove special characters</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.removeNumbers" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>🔢 Remove numbers</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.extractNumbers" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>🎯 Extract numbers only</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Type Transforms -->
+                  <div>
+                    <div class="text-xs font-bold text-gray-700 mb-2">Type Conversion</div>
+                    <div class="space-y-2">
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.toNumber" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>💯 Convert to number</span>
+                      </label>
+                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
+                        <input type="checkbox" v-model="transforms.toBoolean" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
+                        <span>✔️ Convert to boolean</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Transform Preview -->
+                  <div v-if="transformedPreviewSamples.length > 0" class="border-t border-amber-300 pt-3 mt-3">
+                    <div class="text-xs font-bold text-gray-700 mb-2">👁️ Preview with Transforms</div>
+                    <div class="space-y-2">
+                      <div v-for="(sample, idx) in transformedPreviewSamples" :key="idx" class="bg-white rounded p-2 border border-amber-300 text-xs">
+                        <div class="text-gray-500 mb-1">Before: <span class="font-mono">{{ props.livePreviewSamples[idx] }}</span></div>
+                        <div class="text-amber-700 font-semibold">After: <span class="font-mono">{{ sample }}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <!-- Validation Message with better styling -->
             <div v-if="props.hoveredElementValidation" class="text-sm animate-in fade-in duration-200">
               <Alert
@@ -260,7 +353,7 @@
             </div>
 
             <Button
-              @click="emit('addField')"
+              @click="handleAddField"
               :disabled="!canAddField"
               class="w-full h-12 text-base font-semibold shadow-md hover:shadow-lg transition-all"
               size="lg"
@@ -336,6 +429,14 @@
                         :class="getFieldTypeBadgeClass(field)"
                       >
                         {{ field.type }}
+                      </Badge>
+                      <!-- Transform indicator -->
+                      <Badge
+                        v-if="field.transforms && Object.keys(field.transforms).length > 0"
+                        variant="secondary"
+                        class="bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 border-amber-300 text-xs font-bold"
+                      >
+                        ✨ {{ Object.keys(field.transforms).length }}
                       </Badge>
                     </div>
                     
@@ -480,7 +581,7 @@ const emit = defineEmits<{
   'update:fieldType': [type: FieldType]
   'update:fieldAttribute': [attr: string]
   'update:mode': [mode: SelectionMode]
-  'addField': []
+  'addField': [transforms: any]
   'addKeyValueField': [data: any]
   'removeField': [id: string]
   'openDetailedView': [field: SelectedField]
@@ -499,6 +600,24 @@ const extractMultiple = ref(false)
 const kvFieldName = ref('')
 const kvSelectorRef = ref<InstanceType<typeof KeyValuePairSelector> | null>(null)
 const showLegend = ref(false)
+const showTransforms = ref(false)
+
+// Transform options
+const transforms = ref({
+  // Text transforms
+  trim: false,
+  lowercase: false,
+  uppercase: false,
+  capitalize: false,
+  // String transforms
+  removeSpaces: false,
+  removeSpecialChars: false,
+  removeNumbers: false,
+  extractNumbers: false,
+  // Type transforms
+  toNumber: false,
+  toBoolean: false
+})
 
 // Update mode based on active tab
 watch(activeTab, (tab) => {
@@ -520,6 +639,88 @@ const canAddField = computed(() => {
   if (props.fieldType === 'attribute' && !props.fieldAttribute.trim()) return false
   return true
 })
+
+// Get list of active transforms
+const activeTransforms = computed(() => {
+  return Object.entries(transforms.value)
+    .filter(([_, enabled]) => enabled)
+    .map(([name]) => name)
+})
+
+// Apply transforms to a value
+const applyTransforms = (value: string): string => {
+  let result = value
+
+  // Text transforms
+  if (transforms.value.trim) {
+    result = result.trim()
+  }
+  if (transforms.value.lowercase) {
+    result = result.toLowerCase()
+  }
+  if (transforms.value.uppercase) {
+    result = result.toUpperCase()
+  }
+  if (transforms.value.capitalize) {
+    result = result.charAt(0).toUpperCase() + result.slice(1).toLowerCase()
+  }
+
+  // String transforms
+  if (transforms.value.removeSpaces) {
+    result = result.replace(/\s+/g, '')
+  }
+  if (transforms.value.removeSpecialChars) {
+    result = result.replace(/[^a-zA-Z0-9\s]/g, '')
+  }
+  if (transforms.value.removeNumbers) {
+    result = result.replace(/\d+/g, '')
+  }
+  if (transforms.value.extractNumbers) {
+    const numbers = result.match(/\d+/g)
+    result = numbers ? numbers.join('') : ''
+  }
+
+  // Type transforms
+  if (transforms.value.toNumber) {
+    const num = parseFloat(result.replace(/[^0-9.-]/g, ''))
+    result = isNaN(num) ? '0' : num.toString()
+  }
+  if (transforms.value.toBoolean) {
+    const truthyValues = ['true', 'yes', '1', 'on']
+    result = truthyValues.includes(result.toLowerCase()) ? 'true' : 'false'
+  }
+
+  return result
+}
+
+// Get transformed preview samples
+const transformedPreviewSamples = computed(() => {
+  if (!props.livePreviewSamples || props.livePreviewSamples.length === 0) {
+    return []
+  }
+  if (activeTransforms.value.length === 0) {
+    return []
+  }
+  return props.livePreviewSamples.map(sample => applyTransforms(sample))
+})
+
+function handleAddField() {
+  // Collect enabled transforms
+  const enabledTransforms = Object.entries(transforms.value)
+    .filter(([_, enabled]) => enabled)
+    .reduce((acc, [key, _]) => {
+      acc[key] = true
+      return acc
+    }, {} as Record<string, boolean>)
+  
+  emit('addField', enabledTransforms)
+  
+  // Reset transforms after adding
+  Object.keys(transforms.value).forEach(key => {
+    transforms.value[key as keyof typeof transforms.value] = false
+  })
+  showTransforms.value = false
+}
 
 function handleAddKeyValueField(data: { fieldName: string; extractions: any[] }) {
   emit('addKeyValueField', data)

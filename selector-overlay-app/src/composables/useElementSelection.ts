@@ -80,7 +80,7 @@ export function useElementSelection() {
     }
   }
 
-  const addField = () => {
+  const addField = (transforms?: Record<string, boolean>) => {
     if (!lockedElement.value || !currentFieldName.value.trim()) return
 
     // Generate selector from the locked element (this is the source of truth)
@@ -104,7 +104,8 @@ export function useElementSelection() {
       timestamp: Date.now(),
       sampleValue,
       matchCount,
-      mode: currentMode.value
+      mode: currentMode.value,
+      transforms: transforms && Object.keys(transforms).length > 0 ? transforms : undefined
     }
 
     selectedFields.value.push(field)
