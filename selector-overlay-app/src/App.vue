@@ -193,43 +193,24 @@ const loadFieldForEdit = (field: any) => {
 
 // Load K-V field for editing
 const loadKVFieldForEdit = async (field: any) => {
-  console.log('🔧 loadKVFieldForEdit called with field:', field)
-  console.log('  - field.attributes:', field.attributes)
-  console.log('  - field.attributes?.extractions:', field.attributes?.extractions)
-  console.log('  - controlPanelRef.value:', controlPanelRef.value)
-  
   // Load the extraction pairs into the K-V selector
   if (field.attributes?.extractions && controlPanelRef.value) {
-    console.log('✅ Conditions met, waiting for tab to render...')
-    
     // Wait for the tab to switch and K-V selector to be mounted
     // Sometimes need multiple ticks for component to fully mount
     await nextTick()
     await nextTick()
-    console.log('⏰ After nextTick (x2)')
     
     // Try accessing with a slight delay if still not available
     let kvSelector = (controlPanelRef.value as any).kvSelectorRef
-    console.log('  - kvSelector (attempt 1):', kvSelector)
     
     if (!kvSelector) {
-      console.log('⏰ Waiting 50ms for component to mount...')
       await new Promise(resolve => setTimeout(resolve, 50))
       kvSelector = (controlPanelRef.value as any).kvSelectorRef
-      console.log('  - kvSelector (attempt 2 after delay):', kvSelector)
     }
-    
-    console.log('  - kvSelector?.loadFieldData:', kvSelector?.loadFieldData)
     
     if (kvSelector && kvSelector.loadFieldData) {
-      console.log('🚀 Calling kvSelector.loadFieldData')
       kvSelector.loadFieldData(field.attributes.extractions)
-    } else {
-      console.log('❌ kvSelector or loadFieldData still not available')
-      console.log('  - Full controlPanelRef:', controlPanelRef.value)
     }
-  } else {
-    console.log('❌ Conditions not met for loading K-V field')
   }
 }
 

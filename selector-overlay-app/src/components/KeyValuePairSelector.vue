@@ -301,33 +301,146 @@
       </label>
     </div>
 
-    <!-- Multiple Extraction Pairs Section -->
-    <div v-if="extractionPairs.length > 0" class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4">
+    <!-- All Extraction Pairs Section (Shows Current + Saved) -->
+    <div v-if="extractionPairs.length > 0 || (keySelector && valueSelector)" class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4">
       <div class="flex items-center justify-between mb-3">
-        <span class="font-semibold text-purple-900">📦 Extraction Pairs ({{ extractionPairs.length }})</span>
+        <span class="font-semibold text-purple-900">📦 All Extraction Pairs ({{ totalPairsCount }})</span>
+        <span class="text-xs text-purple-700">{{ editingPairIndex !== null ? '✏️ Editing in form above' : '➕ Configure new pair above' }}</span>
       </div>
       
       <div class="space-y-3">
+        <!-- Current pair being configured (if exists and not editing a saved pair) -->
+        <div
+          v-if="keySelector && valueSelector && editingPairIndex === null"
+          class="bg-white border-2 border-amber-400 rounded-lg overflow-hidden shadow-md"
+        >
+          <!-- Pair Header -->
+          <div class="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-amber-100 to-amber-50">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold text-amber-900">Pair {{ extractionPairs.length + 1 }}</span>
+              <span class="text-xs px-2 py-0.5 bg-amber-500 text-white rounded-full font-bold">⚡ CURRENT</span>
+            </div>
+            <span class="text-xs text-amber-700 italic">Unsaved - click button below to save</span>
+          </div>
+          
+          <!-- Pair Details -->
+          <div class="p-3 space-y-2 text-xs">
+            <!-- Key Info -->
+            <div class="bg-green-50 border border-green-200 rounded p-2">
+              <div class="font-semibold text-green-800 mb-1 flex items-center gap-1">
+                <span>🔑</span>
+                <span>Key Selector</span>
+              </div>
+              <div class="font-mono text-green-900 break-all">{{ keySelector }}</div>
+              <div class="mt-1 text-green-700">
+                <span class="font-semibold">Type:</span> {{ keyType }}
+                <span v-if="keyType === 'attribute' && keyAttribute" class="ml-2">
+                  <span class="font-semibold">Attr:</span> {{ keyAttribute }}
+                </span>
+              </div>
+            </div>
+            
+            <!-- Value Info -->
+            <div class="bg-blue-50 border border-blue-200 rounded p-2">
+              <div class="font-semibold text-blue-800 mb-1 flex items-center gap-1">
+                <span>💎</span>
+                <span>Value Selector</span>
+              </div>
+              <div class="font-mono text-blue-900 break-all">{{ valueSelector }}</div>
+              <div class="mt-1 text-blue-700">
+                <span class="font-semibold">Type:</span> {{ valueType }}
+                <span v-if="valueType === 'attribute' && valueAttribute" class="ml-2">
+                  <span class="font-semibold">Attr:</span> {{ valueAttribute }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Saved pairs -->
         <div
           v-for="(pair, idx) in extractionPairs"
           :key="idx"
-          class="bg-white border border-purple-200 rounded-lg p-3"
+          :class="[
+            'bg-white border-2 rounded-lg overflow-hidden transition-all',
+            editingPairIndex === idx 
+              ? 'border-blue-400 shadow-md ring-2 ring-blue-200' 
+              : 'border-purple-200 hover:border-purple-400'
+          ]"
         >
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-semibold text-gray-800">Pair {{ idx + 1 }}</span>
-            <button
-              @click="removeExtractionPair(idx)"
-              class="text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-red-50 hover:bg-red-100 rounded"
-            >
-              Remove
-            </button>
-          </div>
-          <div class="text-xs space-y-1">
-            <div class="flex gap-2">
-              <span class="text-green-700 font-mono">🔑 {{ pair.key_selector }}</span>
+          <!-- Pair Header -->
+          <div :class="[
+            'flex items-center justify-between px-3 py-2',
+            editingPairIndex === idx
+              ? 'bg-gradient-to-r from-blue-100 to-blue-50'
+              : 'bg-gradient-to-r from-purple-100 to-purple-50'
+          ]">
+            <div class="flex items-center gap-2">
+              <span :class="[
+                'text-sm font-bold',
+                editingPairIndex === idx ? 'text-blue-900' : 'text-purple-900'
+              ]">Pair {{ idx + 1 }}</span>
+              <span v-if="editingPairIndex === idx" class="text-xs px-2 py-0.5 bg-blue-500 text-white rounded-full font-bold">
+                ✏️ EDITING
+              </span>
             </div>
             <div class="flex gap-2">
-              <span class="text-blue-700 font-mono">💎 {{ pair.value_selector }}</span>
+              <button
+                v-if="editingPairIndex !== idx"
+                @click="editExtractionPair(idx)"
+                class="text-xs px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded font-medium transition-colors"
+                title="Edit this pair"
+              >
+                ✏️ Edit
+              </button>
+              <button
+                v-else
+                @click="cancelEditPair"
+                class="text-xs px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded font-medium transition-colors"
+                title="Cancel editing"
+              >
+                ✕ Cancel
+              </button>
+              <button
+                @click="removeExtractionPair(idx)"
+                class="text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded font-medium transition-colors"
+                title="Delete this pair"
+              >
+                🗑️ Delete
+              </button>
+            </div>
+          </div>
+          
+          <!-- Pair Details -->
+          <div class="p-3 space-y-2 text-xs">
+            <!-- Key Info -->
+            <div class="bg-green-50 border border-green-200 rounded p-2">
+              <div class="font-semibold text-green-800 mb-1 flex items-center gap-1">
+                <span>🔑</span>
+                <span>Key Selector</span>
+              </div>
+              <div class="font-mono text-green-900 break-all">{{ pair.key_selector }}</div>
+              <div class="mt-1 text-green-700">
+                <span class="font-semibold">Type:</span> {{ pair.key_type }}
+                <span v-if="pair.key_attribute" class="ml-2">
+                  <span class="font-semibold">Attr:</span> {{ pair.key_attribute }}
+                </span>
+              </div>
+            </div>
+            
+            <!-- Value Info -->
+            <div class="bg-blue-50 border border-blue-200 rounded p-2">
+              <div class="font-semibold text-blue-800 mb-1 flex items-center gap-1">
+                <span>💎</span>
+                <span>Value Selector</span>
+              </div>
+              <div class="font-mono text-blue-900 break-all">{{ pair.value_selector }}</div>
+              <div class="mt-1 text-blue-700">
+                <span class="font-semibold">Type:</span> {{ pair.value_type }}
+                <span v-if="pair.value_attribute" class="ml-2">
+                  <span class="font-semibold">Attr:</span> {{ pair.value_attribute }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -349,12 +462,37 @@
 
     <!-- Add Buttons with improved styling -->
     <div class="flex gap-3">
+      <!-- Cancel button when editing -->
       <button
-        v-if="canAdd"
-        @click="handleAddAnotherPair"
-        class="flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700 shadow-md hover:shadow-lg hover:scale-105"
+        v-if="editingPairIndex !== null && !canAdd"
+        @click="cancelEditPair"
+        class="flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base shadow-md hover:shadow-lg hover:scale-105 bg-gradient-to-r from-gray-400 to-gray-500 text-white hover:from-gray-500 hover:to-gray-600"
       >
         <span class="flex items-center justify-center gap-2">
+          <span class="text-lg">✕</span>
+          <span>Cancel Edit</span>
+        </span>
+      </button>
+      
+      <!-- Add/Save button -->
+      <button
+        v-if="canAdd || editingPairIndex !== null"
+        @click="handleAddAnotherPair"
+        :disabled="!canAdd"
+        :class="[
+          'flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base shadow-md',
+          canAdd
+            ? editingPairIndex !== null
+              ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 hover:shadow-lg hover:scale-105'
+              : 'bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700 hover:shadow-lg hover:scale-105'
+            : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+        ]"
+      >
+        <span v-if="editingPairIndex !== null" class="flex items-center justify-center gap-2">
+          <span class="text-lg">💾</span>
+          <span>Save Changes</span>
+        </span>
+        <span v-else class="flex items-center justify-center gap-2">
           <span class="text-lg">➕</span>
           <span>Add Another Pair</span>
         </span>
@@ -439,8 +577,9 @@ const emit = defineEmits<{
 
 const fieldName = defineModel<string>('fieldName', { default: '' })
 
-// Store multiple extraction pairs
+// Store ALL extraction pairs (including the one being edited)
 const extractionPairs = ref<ExtractionPair[]>([])
+const editingPairIndex = ref<number | null>(null) // Track which pair index is being edited (-1 = new pair)
 
 const keySectionClass = computed(() => {
   if (isSelectingKeys.value) return 'border-green-500 shadow-lg'
@@ -469,6 +608,15 @@ const canAddToField = computed(() => {
   const hasSavedPairs = extractionPairs.value.length > 0
   
   return fieldName.value.trim() !== '' && (hasCurrentPair || hasSavedPairs)
+})
+
+const totalPairsCount = computed(() => {
+  let count = extractionPairs.value.length
+  // Add 1 if there's a current pair being configured (and not editing an existing one)
+  if (keySelector.value && valueSelector.value && editingPairIndex.value === null) {
+    count += 1
+  }
+  return count
 })
 
 function handleStartKeySelection() {
@@ -503,7 +651,15 @@ function handleAddAnotherPair() {
   if (!canAdd.value) return
   
   const data = getExtractionData()
-  extractionPairs.value.push(data)
+  
+  if (editingPairIndex.value !== null) {
+    // Update the existing pair
+    extractionPairs.value[editingPairIndex.value] = data
+    editingPairIndex.value = null
+  } else {
+    // Add as a new pair
+    extractionPairs.value.push(data)
+  }
   
   // Reset the selection for next pair
   reset()
@@ -511,6 +667,38 @@ function handleAddAnotherPair() {
 
 function removeExtractionPair(index: number) {
   extractionPairs.value.splice(index, 1)
+}
+
+function editExtractionPair(index: number) {
+  // Get the pair to edit
+  const pairToEdit = extractionPairs.value[index]
+  
+  // Set editing index
+  editingPairIndex.value = index
+  
+  // Load it into the form
+  kvSelection.initialize({
+    key_selector: pairToEdit.key_selector,
+    value_selector: pairToEdit.value_selector,
+    key_type: pairToEdit.key_type,
+    value_type: pairToEdit.value_type,
+    key_attribute: pairToEdit.key_attribute,
+    value_attribute: pairToEdit.value_attribute
+  })
+  
+  // Scroll to top to show the form
+  const container = document.querySelector('.kv-selector')
+  if (container) {
+    container.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+function cancelEditPair() {
+  // Reset editing index
+  editingPairIndex.value = null
+  
+  // Clear the form
+  reset()
 }
 
 function handleAdd() {
@@ -570,58 +758,34 @@ function initializeWithData(data: {
 
 // Load existing field data for editing
 function loadFieldData(extractions: any[]) {
-  console.log('🔍 loadFieldData called with:', extractions)
-  
   if (!extractions || extractions.length === 0) {
-    console.log('❌ No extractions provided')
     return
   }
   
-  // Load the first pair to get started
-  const firstPair = extractions[0]
-  console.log('📝 First pair:', firstPair)
+  // Load ALL pairs into the array
+  extractionPairs.value = extractions.map(ext => ({
+    key_selector: ext.key_selector,
+    value_selector: ext.value_selector,
+    key_type: ext.key_type,
+    value_type: ext.value_type,
+    key_attribute: ext.key_attribute,
+    value_attribute: ext.value_attribute,
+    transform: ext.transform
+  }))
   
-  // Initialize with the first pair - this will set selectors and load elements
-  const initData = {
+  // Set the first pair as being edited
+  editingPairIndex.value = 0
+  
+  // Load the first pair into the form
+  const firstPair = extractions[0]
+  kvSelection.initialize({
     key_selector: firstPair.key_selector,
     value_selector: firstPair.value_selector,
     key_type: firstPair.key_type,
     value_type: firstPair.value_type,
     key_attribute: firstPair.key_attribute,
     value_attribute: firstPair.value_attribute
-  }
-  console.log('🚀 Calling initialize with:', initData)
-  kvSelection.initialize(initData)
-  
-  // Log state after initialization
-  console.log('✅ After initialize:')
-  console.log('  - keySelector:', keySelector.value)
-  console.log('  - valueSelector:', valueSelector.value)
-  console.log('  - keyCount:', keyCount.value)
-  console.log('  - valueCount:', valueCount.value)
-  console.log('  - keyMatches:', keyMatches.value)
-  console.log('  - valueMatches:', valueMatches.value)
-  
-  // If there are multiple pairs, load them into extractionPairs
-  if (extractions.length > 1) {
-    console.log('📦 Loading additional pairs:', extractions.length - 1)
-    // Load remaining pairs (skip first one since we're showing it in the form)
-    extractionPairs.value = extractions.slice(1).map(ext => ({
-      key_selector: ext.key_selector,
-      value_selector: ext.value_selector,
-      key_type: ext.key_type,
-      value_type: ext.value_type,
-      key_attribute: ext.key_attribute,
-      value_attribute: ext.value_attribute,
-      transform: ext.transform
-    }))
-  } else {
-    console.log('📦 Only one pair, clearing extractionPairs')
-    // Only one pair, clear extraction pairs array
-    extractionPairs.value = []
-  }
-  
-  console.log('🎉 loadFieldData complete')
+  })
 }
 
 defineExpose({

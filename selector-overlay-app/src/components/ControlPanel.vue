@@ -840,25 +840,17 @@ function handleAddField() {
 }
 
 function startEditField(field: SelectedField) {
-  console.log('🎯 startEditField called with field:', field)
-  console.log('  - field.mode:', field.mode)
-  console.log('  - field.name:', field.name)
-  
   // Set editing mode
   editingFieldId.value = field.id
   
   if (field.mode === 'key-value-pairs') {
-    console.log('✅ K-V field detected')
     // Switch to Key-Value tab
     activeTab.value = 'key-value'
-    console.log('  - Switched to K-V tab')
     
     // Populate K-V field name
     kvFieldName.value = field.name
-    console.log('  - Set field name:', kvFieldName.value)
     
     // Load the K-V field data into the selector
-    console.log('  - Emitting loadKVFieldForEdit with field:', field)
     emit('loadKVFieldForEdit', field)
     
     // Scroll to top to show the form
