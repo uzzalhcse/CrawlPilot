@@ -411,16 +411,33 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
   
   // Add or update fields from the visual selector
   selectedFields.forEach((field: SelectedField) => {
-    fields[field.name] = {
-      selector: field.selector,
-      type: field.type === 'attribute' ? 'attr' : field.type,
-      attribute: field.attribute || '',
-      transform: 'none',
-      default_value: '',
-      multiple: false,
-      limit: 0,
-      fields: '',
-      extractions: ''
+    // Check if it's a key-value-pairs field
+    if (field.mode === 'key-value-pairs' && field.attributes?.extractions) {
+      // For key-value pairs, preserve the extractions array
+      fields[field.name] = {
+        selector: '',
+        type: 'text',
+        attribute: '',
+        transform: 'none',
+        default_value: '',
+        multiple: false,
+        limit: 0,
+        fields: '',
+        extractions: field.attributes.extractions
+      }
+    } else {
+      // For regular fields (single or list)
+      fields[field.name] = {
+        selector: field.selector,
+        type: field.type === 'attribute' ? 'attr' : field.type,
+        attribute: field.attribute || '',
+        transform: 'none',
+        default_value: '',
+        multiple: field.multiple || false,
+        limit: 0,
+        fields: '',
+        extractions: ''
+      }
     }
   })
 }
