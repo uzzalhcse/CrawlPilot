@@ -115,10 +115,17 @@
     <!-- Element tag label with improved design -->
     <div
       v-if="tagLabelStyle"
-      class="absolute bg-gradient-to-r from-slate-800 to-slate-900 text-slate-100 px-3 py-2 rounded-lg text-xs font-mono z-[1000001] pointer-events-none shadow-2xl max-w-[400px] overflow-hidden text-ellipsis whitespace-nowrap border-2 border-slate-600"
+      class="absolute bg-gradient-to-r from-slate-800 to-slate-900 text-slate-100 px-3 py-2 rounded-lg text-xs font-mono z-[1000001] pointer-events-none shadow-2xl max-w-[500px] overflow-hidden text-ellipsis whitespace-nowrap border-2 border-slate-600"
       :style="tagLabelStyle"
     >
       <span class="font-bold">{{ tagLabel }}</span>
+      <span 
+        v-if="props.hoveredElementCount && props.hoveredElementCount > 0"
+        class="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold"
+        :class="getCountBadgeClass()"
+      >
+        {{ props.hoveredElementCount }} {{ props.hoveredElementCount === 1 ? 'match' : 'matches' }}
+      </span>
     </div>
   </div>
 </template>
@@ -139,6 +146,7 @@ interface Props {
   testResults: TestResult[]
   currentFieldType: FieldType
   currentFieldAttribute?: string
+  hoveredElementCount?: number
 }
 
 const props = defineProps<Props>()
@@ -328,6 +336,14 @@ const getFieldBadgeClass = (field: SelectedField) => {
 
 const getFieldRects = (field: SelectedField): DOMRect[] => {
   return fieldRects.value.get(field.id) || []
+}
+
+// Count badge color based on match count
+const getCountBadgeClass = () => {
+  const count = props.hoveredElementCount || 0
+  if (count === 1) return 'bg-green-500 text-white'
+  if (count <= 10) return 'bg-blue-500 text-white'
+  return 'bg-orange-500 text-white'
 }
 
 // Navigation helpers

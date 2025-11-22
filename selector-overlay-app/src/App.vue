@@ -9,6 +9,7 @@
         :test-results="testResults"
         :current-field-type="currentFieldType"
         :current-field-attribute="currentFieldAttribute"
+        :hovered-element-count="hoveredElementCount"
         @navigate="handleNavigate"
     />
 
@@ -22,6 +23,8 @@
         :selected-fields="selectedFields"
         :hovered-element-count="hoveredElementCount"
         :hovered-element-validation="hoveredElementValidation"
+        :live-preview-samples="livePreviewSamples"
+        :selector-analysis="selectorAnalysis"
         :detailed-view-field="detailedViewField"
         :detailed-view-tab="detailedViewTab"
         :edit-mode="editMode"
@@ -37,6 +40,7 @@
         @cancel-edit="cancelEdit"
         @test-selector="(field) => testSelectorInline(field.selector, field)"
         @scroll-to-result="scrollToTestResult"
+        @use-alternative-selector="useAlternativeSelector"
     />
   </div>
 </template>
@@ -65,6 +69,8 @@ const {
   detailedViewTab,
   editMode,
   testResults,
+  livePreviewSamples,
+  selectorAnalysis,
   addField,
   addKeyValueField,
   removeField,
@@ -77,8 +83,17 @@ const {
   testSelectorInline,
   scrollToTestResult,
   navigateToElement,
-  getSelections
+  getSelections,
+  updateLivePreview,
+  updateSelectorAnalysis,
+  useAlternativeSelector
 } = useElementSelection()
+
+// Update live preview and selector analysis when field type, attribute, or locked element changes
+watch([currentFieldType, currentFieldAttribute, lockedElement], () => {
+  updateLivePreview()
+  updateSelectorAnalysis()
+}, { immediate: true })
 
 const kvSelection = useKeyValueSelection()
 

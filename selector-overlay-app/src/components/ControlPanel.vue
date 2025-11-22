@@ -139,6 +139,126 @@
               </Alert>
             </div>
 
+            <!-- Selector Quality & Alternatives -->
+            <div v-if="props.selectorAnalysis && props.hoveredElementCount > 0" 
+                 class="animate-in slide-in-from-top-2 duration-300">
+              <Card class="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 shadow-sm">
+                <CardContent class="p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="text-lg">⭐</span>
+                    <h3 class="text-sm font-bold text-gray-900">SELECTOR QUALITY</h3>
+                    <span class="ml-auto px-2 py-0.5 text-xs font-bold rounded-full"
+                          :class="{
+                            'bg-green-600 text-white': props.selectorAnalysis.current.rating === 'excellent',
+                            'bg-blue-600 text-white': props.selectorAnalysis.current.rating === 'good',
+                            'bg-yellow-600 text-white': props.selectorAnalysis.current.rating === 'fair',
+                            'bg-orange-600 text-white': props.selectorAnalysis.current.rating === 'poor',
+                            'bg-red-600 text-white': props.selectorAnalysis.current.rating === 'fragile'
+                          }">
+                      {{ props.selectorAnalysis.current.rating.toUpperCase() }}
+                    </span>
+                  </div>
+
+                  <!-- Current Selector Info -->
+                  <div class="text-xs space-y-1 mb-3">
+                    <div v-if="props.selectorAnalysis.current.reasons.length > 0" class="flex flex-wrap gap-1">
+                      <span 
+                        v-for="(reason, idx) in props.selectorAnalysis.current.reasons" 
+                        :key="idx"
+                        class="px-2 py-0.5 bg-green-100 text-green-800 rounded-full font-medium"
+                      >
+                        ✓ {{ reason }}
+                      </span>
+                    </div>
+                    <div v-if="props.selectorAnalysis.current.issues.length > 0" class="flex flex-wrap gap-1">
+                      <span 
+                        v-for="(issue, idx) in props.selectorAnalysis.current.issues" 
+                        :key="idx"
+                        class="px-2 py-0.5 bg-red-100 text-red-800 rounded-full font-medium"
+                      >
+                        ⚠ {{ issue }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Alternative Selectors -->
+                  <div v-if="props.selectorAnalysis.alternatives.length > 0" class="border-t border-purple-300 pt-3 mt-3">
+                    <div class="text-xs font-bold text-gray-700 mb-2">💡 Better Alternatives:</div>
+                    <div class="space-y-2">
+                      <button
+                        v-for="(alt, idx) in props.selectorAnalysis.alternatives"
+                        :key="idx"
+                        @click="emit('useAlternativeSelector', alt.selector)"
+                        class="w-full text-left p-2 bg-white rounded border border-purple-300 hover:border-purple-500 hover:bg-purple-50 transition-all text-xs group"
+                      >
+                        <div class="flex items-center justify-between mb-1">
+                          <div class="flex items-center gap-1">
+                            <span class="font-mono text-purple-700 truncate">{{ alt.selector }}</span>
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
+                                  :class="{
+                                    'bg-green-500 text-white': alt.quality.rating === 'excellent',
+                                    'bg-blue-500 text-white': alt.quality.rating === 'good',
+                                    'bg-yellow-500 text-white': alt.quality.rating === 'fair'
+                                  }">
+                              {{ '⭐'.repeat(alt.quality.score) }}
+                            </span>
+                          </div>
+                        </div>
+                        <div class="text-gray-600 italic">{{ alt.description }}</div>
+                        <div class="text-purple-600 font-semibold mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          → Click to use this selector
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                  <div v-else class="border-t border-purple-300 pt-3 mt-3 text-xs text-gray-600 italic text-center">
+                    No better alternatives found
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <!-- Live Preview Section -->
+            <div v-if="props.livePreviewSamples.length > 0 && props.hoveredElementCount > 0" 
+                 class="animate-in slide-in-from-top-2 duration-300">
+              <Card class="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 shadow-sm">
+                <CardContent class="p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="text-lg">👁️</span>
+                    <h3 class="text-sm font-bold text-gray-900">LIVE PREVIEW</h3>
+                    <span class="ml-auto px-2 py-0.5 bg-green-600 text-white text-xs font-bold rounded-full">
+                      {{ props.hoveredElementCount }} {{ props.hoveredElementCount === 1 ? 'match' : 'matches' }}
+                    </span>
+                  </div>
+                  <div class="space-y-2">
+                    <div 
+                      v-for="(sample, index) in props.livePreviewSamples" 
+                      :key="index"
+                      class="text-xs bg-white rounded-md p-2 border border-green-300 font-mono text-gray-700 truncate"
+                      :title="sample"
+                    >
+                      <span class="text-green-600 font-bold">{{ index + 1 }}.</span> {{ sample || '(empty)' }}
+                    </div>
+                    <div v-if="props.hoveredElementCount > props.livePreviewSamples.length" 
+                         class="text-xs text-gray-600 italic text-center">
+                      ... and {{ props.hoveredElementCount - props.livePreviewSamples.length }} more
+                    </div>
+                  </div>
+                  <div class="mt-3 text-xs text-gray-600 flex items-center gap-1">
+                    <span class="font-semibold">Output:</span>
+                    <span v-if="extractMultiple" class="font-mono bg-white px-2 py-0.5 rounded border border-green-300">
+                      Array[{{ props.hoveredElementCount }}]
+                    </span>
+                    <span v-else class="font-mono bg-white px-2 py-0.5 rounded border border-green-300">
+                      Single value
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
             <Button
               @click="emit('addField')"
               :disabled="!canAddField"
@@ -250,6 +370,50 @@
               </CardContent>
             </Card>
           </div>
+
+          <!-- Color Legend (Collapsible) -->
+          <div class="mt-4 border-t pt-4">
+            <button
+              @click="showLegend = !showLegend"
+              class="flex items-center justify-between w-full text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+            >
+              <div class="flex items-center gap-2">
+                <span>🎨</span>
+                <span>Color Legend</span>
+              </div>
+              <span class="text-xs">{{ showLegend ? '▼' : '▶' }}</span>
+            </button>
+            
+            <div v-if="showLegend" class="mt-3 space-y-2 animate-in slide-in-from-top-2 duration-300">
+              <div class="text-xs text-gray-600 mb-2 font-medium">Field Types:</div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                <span class="text-gray-700">Text Content</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-3 h-3 rounded-full bg-purple-500"></div>
+                <span class="text-gray-700">Attribute</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-3 h-3 rounded-full bg-pink-500"></div>
+                <span class="text-gray-700">HTML</span>
+              </div>
+              
+              <div class="text-xs text-gray-600 mt-3 mb-2 font-medium">Match Count:</div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                <span class="text-gray-700">1 match (unique)</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                <span class="text-gray-700">2-10 matches</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <div class="w-3 h-3 rounded-full bg-orange-500"></div>
+                <span class="text-gray-700">11+ matches</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Detailed View Content (inside panel) -->
@@ -274,6 +438,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { SelectedField, FieldType, ValidationResult, TestResult, SelectionMode } from '../types'
+import type { AlternativeSelector, SelectorQuality } from '../utils/selectorGenerator'
 import DetailedFieldContent from './DetailedFieldContent.vue'
 import KeyValuePairSelector from './KeyValuePairSelector.vue'
 import { getElementColor } from '../utils/elementColors'
@@ -297,6 +462,11 @@ interface Props {
   selectedFields: SelectedField[]
   hoveredElementCount: number
   hoveredElementValidation: ValidationResult | null
+  livePreviewSamples: string[]
+  selectorAnalysis: {
+    current: SelectorQuality & { matchCount: number }
+    alternatives: AlternativeSelector[]
+  } | null
   detailedViewField: SelectedField | null
   detailedViewTab: 'preview' | 'edit'
   editMode: boolean
@@ -321,12 +491,14 @@ const emit = defineEmits<{
   'cancelEdit': []
   'testSelector': [field: SelectedField]
   'scrollToResult': [result: TestResult]
+  'useAlternativeSelector': [selector: string]
 }>()
 
 const activeTab = ref<'regular' | 'key-value'>('regular')
 const extractMultiple = ref(false)
 const kvFieldName = ref('')
 const kvSelectorRef = ref<InstanceType<typeof KeyValuePairSelector> | null>(null)
+const showLegend = ref(false)
 
 // Update mode based on active tab
 watch(activeTab, (tab) => {

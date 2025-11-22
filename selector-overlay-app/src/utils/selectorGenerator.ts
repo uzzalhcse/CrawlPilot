@@ -253,3 +253,226 @@ export function getElementsForSelector(selector: string): Element[] {
     return []
   }
 }
+
+/**
+ * Selector quality rating (1-5 stars)
+ */
+export interface SelectorQuality {
+  score: number // 1-5
+  rating: 'excellent' | 'good' | 'fair' | 'poor' | 'fragile'
+  reasons: string[]
+  issues: string[]
+}
+
+/**
+ * Alternative selector suggestion
+ */
+export interface AlternativeSelector {
+  selector: string
+  quality: SelectorQuality
+  matchCount: number
+  description: string
+}
+
+/**
+ * Analyze selector quality and provide alternatives
+ */
+export function analyzeSelectorQuality(element: Element, currentSelector: string): {
+  current: SelectorQuality & { matchCount: number }
+  alternatives: AlternativeSelector[]
+} {
+  const currentMatchCount = validateSelector(currentSelector).count
+  const currentQuality = rateSelectorQuality(currentSelector, element)
+  
+  const alternatives = generateAlternativeSelectors(element, currentSelector)
+  
+  return {
+    current: {
+      ...currentQuality,
+      matchCount: currentMatchCount
+    },
+    alternatives
+  }
+}
+
+/**
+ * Rate the quality of a selector
+ */
+function rateSelectorQuality(selector: string, element: Element): SelectorQuality {
+  const reasons: string[] = []
+  const issues: string[] = []
+  let score = 5
+  
+  // Check for ID (excellent - most stable)
+  if (selector.startsWith('#') && !selector.includes(' ')) {
+    reasons.push('Uses unique ID')
+    return { score: 5, rating: 'excellent', reasons, issues }
+  }
+  
+  // Check for data attributes (excellent - semantic)
+  if (selector.includes('[data-')) {
+    reasons.push('Uses semantic data attribute')
+    score = 5
+  }
+  
+  // Check for nth-child/nth-of-type (fragile)
+  if (selector.includes(':nth-child') || selector.includes(':nth-of-type')) {
+    issues.push('Uses positional selector - breaks if order changes')
+    score = Math.min(score, 2)
+  }
+  
+  // Check for dynamic/generated classes
+  const dynamicClassPattern = /\.([\w-]*\d{3,}[\w-]*|\w*[A-Z]{2,}\w*)/
+  if (dynamicClassPattern.test(selector)) {
+    issues.push('Contains generated/dynamic class names')
+    score = Math.min(score, 2)
+  }
+  
+  // Check for overly specific selectors (too many combinators)
+  const combinatorCount = (selector.match(/>/g) || []).length
+  if (combinatorCount > 2) {
+    issues.push('Overly specific with many nested selectors')
+    score = Math.min(score, 3)
+  }
+  
+  // Check for class-based selectors (good)
+  if (selector.includes('.') && !selector.includes(':nth-')) {
+    reasons.push('Uses class-based selector')
+    if (score === 5) score = 4
+  }
+  
+  // Check for attribute selectors (good)
+  if (selector.includes('[') && !selector.includes('[data-')) {
+    reasons.push('Uses attribute selector')
+    if (score === 5) score = 4
+  }
+  
+  // Check for parent context
+  if (selector.includes('>') && combinatorCount <= 2) {
+    reasons.push('Has parent context for specificity')
+  }
+  
+  // Determine rating based on score
+  let rating: SelectorQuality['rating']
+  if (score === 5) rating = 'excellent'
+  else if (score === 4) rating = 'good'
+  else if (score === 3) rating = 'fair'
+  else if (score === 2) rating = 'poor'
+  else rating = 'fragile'
+  
+  return { score, rating, reasons, issues }
+}
+
+/**
+ * Generate alternative selectors for an element
+ */
+function generateAlternativeSelectors(element: Element, currentSelector: string): AlternativeSelector[] {
+  const alternatives: AlternativeSelector[] = []
+  const tagName = element.tagName.toLowerCase()
+  
+  // Try ID-based selector
+  if (element.id && !element.id.match(/^[0-9]/) && !element.id.includes(' ')) {
+    const selector = `#${CSS.escape(element.id)}`
+    if (selector !== currentSelector) {
+      const validation = validateSelector(selector)
+      if (validation.valid && validation.count > 0) {
+        alternatives.push({
+          selector,
+          quality: rateSelectorQuality(selector, element),
+          matchCount: validation.count,
+          description: 'ID-based selector (most reliable)'
+        })
+      }
+    }
+  }
+  
+  // Try data attribute selectors
+  const dataAttrs = Array.from(element.attributes).filter(attr => 
+    attr.name.startsWith('data-') && attr.value
+  )
+  for (const dataAttr of dataAttrs) {
+    const selector = `${tagName}[${dataAttr.name}="${CSS.escape(dataAttr.value)}"]`
+    if (selector !== currentSelector) {
+      const validation = validateSelector(selector)
+      if (validation.valid && validation.count > 0) {
+        alternatives.push({
+          selector,
+          quality: rateSelectorQuality(selector, element),
+          matchCount: validation.count,
+          description: `Uses ${dataAttr.name} attribute`
+        })
+      }
+    }
+  }
+  
+  // Try class-based selectors
+  if (element.classList.length > 0) {
+    const classes = Array.from(element.classList)
+      .filter(cls => !cls.startsWith('crawlify-') && !cls.match(/^[0-9]/))
+    
+    // Try with all classes
+    if (classes.length > 0) {
+      const allClasses = classes.map(cls => `.${CSS.escape(cls)}`).join('')
+      const selector = `${tagName}${allClasses}`
+      if (selector !== currentSelector) {
+        const validation = validateSelector(selector)
+        if (validation.valid && validation.count > 0) {
+          alternatives.push({
+            selector,
+            quality: rateSelectorQuality(selector, element),
+            matchCount: validation.count,
+            description: validation.count === 1 ? 'Class-based unique selector' : `Matches ${validation.count} elements (list pattern)`
+          })
+        }
+      }
+      
+      // Try with first class only
+      if (classes.length > 1) {
+        const firstClass = `.${CSS.escape(classes[0])}`
+        const selector = `${tagName}${firstClass}`
+        if (selector !== currentSelector && !alternatives.some(alt => alt.selector === selector)) {
+          const validation = validateSelector(selector)
+          if (validation.valid && validation.count > 0) {
+            alternatives.push({
+              selector,
+              quality: rateSelectorQuality(selector, element),
+              matchCount: validation.count,
+              description: `Simpler class selector (${validation.count} matches)`
+            })
+          }
+        }
+      }
+    }
+  }
+  
+  // Try meaningful attribute selectors
+  const meaningfulAttrs = ['name', 'type', 'rel', 'role', 'aria-label']
+  for (const attrName of meaningfulAttrs) {
+    const attrValue = element.getAttribute(attrName)
+    if (attrValue) {
+      const selector = `${tagName}[${attrName}="${CSS.escape(attrValue)}"]`
+      if (selector !== currentSelector && !alternatives.some(alt => alt.selector === selector)) {
+        const validation = validateSelector(selector)
+        if (validation.valid && validation.count > 0) {
+          alternatives.push({
+            selector,
+            quality: rateSelectorQuality(selector, element),
+            matchCount: validation.count,
+            description: `Uses ${attrName} attribute`
+          })
+        }
+      }
+    }
+  }
+  
+  // Sort by quality score (descending), then by match count (ascending for uniqueness)
+  alternatives.sort((a, b) => {
+    if (b.quality.score !== a.quality.score) {
+      return b.quality.score - a.quality.score
+    }
+    return a.matchCount - b.matchCount
+  })
+  
+  // Return top 3 alternatives
+  return alternatives.slice(0, 3)
+}

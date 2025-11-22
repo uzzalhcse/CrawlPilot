@@ -1,6 +1,6 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import type { SelectedField, FieldType, ElementInfo, TestResult, SelectionMode } from '../types'
-import { generateSelector } from '../utils/selectorGenerator'
+import { generateSelector, analyzeSelectorQuality, type AlternativeSelector, type SelectorQuality } from '../utils/selectorGenerator'
 
 export function useElementSelection() {
   // State
@@ -15,6 +15,11 @@ export function useElementSelection() {
   const detailedViewTab = ref<'preview' | 'edit'>('preview')
   const editMode = ref(false)
   const testResults = ref<TestResult[]>([])
+  const livePreviewSamples = ref<string[]>([])
+  const selectorAnalysis = ref<{
+    current: SelectorQuality & { matchCount: number }
+    alternatives: AlternativeSelector[]
+  } | null>(null)
 
   // Computed
   const hoveredElementSelector = computed(() => {
@@ -244,6 +249,62 @@ export function useElementSelection() {
     }
   }
 
+  // Generate live preview samples for the current selection
+  const updateLivePreview = () => {
+    if (!hoveredElementSelector.value) {
+      livePreviewSamples.value = []
+      return
+    }
+    
+    try {
+      const elements = document.querySelectorAll(hoveredElementSelector.value)
+      const samples: string[] = []
+      const maxSamples = 3
+      
+      for (let i = 0; i < Math.min(elements.length, maxSamples); i++) {
+        const value = getSampleValue(elements[i], currentFieldType.value, currentFieldAttribute.value)
+        if (value) {
+          samples.push(value)
+        }
+      }
+      
+      livePreviewSamples.value = samples
+    } catch (error) {
+      livePreviewSamples.value = []
+    }
+  }
+
+  // Analyze selector quality and generate alternatives
+  const updateSelectorAnalysis = () => {
+    if (!lockedElement.value || !hoveredElementSelector.value) {
+      selectorAnalysis.value = null
+      return
+    }
+    
+    try {
+      const analysis = analyzeSelectorQuality(lockedElement.value, hoveredElementSelector.value)
+      selectorAnalysis.value = analysis
+    } catch (error) {
+      selectorAnalysis.value = null
+    }
+  }
+
+  // Switch to an alternative selector
+  const useAlternativeSelector = (alternativeSelector: string) => {
+    // This will update the hoveredElementSelector which triggers other updates
+    // We need to find elements matching this selector and set the first one as locked
+    try {
+      const elements = document.querySelectorAll(alternativeSelector)
+      if (elements.length > 0) {
+        lockedElement.value = elements[0] as Element
+        updateSelectorAnalysis()
+        updateLivePreview()
+      }
+    } catch (error) {
+      console.error('Failed to use alternative selector:', error)
+    }
+  }
+
   const getSelections = () => {
     return selectedFields.value
   }
@@ -320,6 +381,8 @@ export function useElementSelection() {
     detailedViewTab,
     editMode,
     testResults,
+    livePreviewSamples,
+    selectorAnalysis,
     addField,
     addKeyValueField,
     removeField,
@@ -333,6 +396,9 @@ export function useElementSelection() {
     scrollToTestResult,
     navigateToElement,
     getSelections,
-    setFields
+    setFields,
+    updateLivePreview,
+    updateSelectorAnalysis,
+    useAlternativeSelector
   }
 }
