@@ -208,8 +208,18 @@ const getSampleValue = (element: Element, type: FieldType, attribute?: string): 
 
 // Update existing K-V field
 const updateKVField = (data: { id: string; fieldName: string; extractions: any[] }) => {
+  console.log('🔄 [Update K-V Field] Starting update for field ID:', data.id)
+  console.log('  - Field name:', data.fieldName)
+  console.log('  - Extractions count:', data.extractions.length)
+  console.log('  - Extractions:', data.extractions)
+  
   const fieldIndex = selectedFields.value.findIndex(f => f.id === data.id)
   if (fieldIndex !== -1) {
+    const field = selectedFields.value[fieldIndex]
+    console.log('  - Found field at index:', fieldIndex)
+    console.log('  - Current field:', field)
+    console.log('  - Current extractions:', field.attributes?.extractions)
+    
     selectedFields.value[fieldIndex] = {
       ...selectedFields.value[fieldIndex],
       name: data.fieldName,
@@ -225,6 +235,11 @@ const updateKVField = (data: { id: string; fieldName: string; extractions: any[]
         }))
       }
     }
+    
+    console.log('  - ✅ Updated K-V field:', selectedFields.value[fieldIndex])
+    console.log('  - New extractions count:', selectedFields.value[fieldIndex].attributes?.extractions?.length)
+  } else {
+    console.log('  - ❌ Field not found with ID:', data.id)
   }
 }
 

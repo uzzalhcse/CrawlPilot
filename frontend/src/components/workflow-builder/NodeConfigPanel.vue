@@ -422,8 +422,15 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
     localNode.value.data.params[key] = {}
   }
   
-  const fields = localNode.value.data.params[key]
-  console.log('  - Current fields before import:', fields)
+  // Create a new object to trigger reactivity
+  const updatedFields: Record<string, any> = {}
+  
+  // Copy existing fields first
+  if (localNode.value.data.params[key]) {
+    Object.assign(updatedFields, localNode.value.data.params[key])
+  }
+  
+  console.log('  - Current fields before import:', updatedFields)
   
   // Add or update fields from the visual selector
   selectedFields.forEach((field: SelectedField) => {
@@ -435,7 +442,7 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
     if (field.mode === 'key-value-pairs' && field.attributes?.extractions) {
       console.log(`    - ✅ K-V field, extractions count: ${field.attributes.extractions.length}`)
       // For key-value pairs, preserve the extractions array
-      fields[field.name] = {
+      updatedFields[field.name] = {
         selector: '',
         type: 'text',
         attribute: '',
@@ -444,12 +451,12 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
         multiple: false,
         limit: 0,
         fields: '',
-        extractions: field.attributes.extractions
+        extractions: [...field.attributes.extractions] // Create new array for reactivity
       }
     } else {
       console.log(`    - ✅ Regular field, selector: ${field.selector}`)
       // For regular fields (single or list)
-      fields[field.name] = {
+      updatedFields[field.name] = {
         selector: field.selector,
         type: field.type === 'attribute' ? 'attr' : field.type,
         attribute: field.attribute || '',
@@ -461,10 +468,14 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
         extractions: ''
       }
     }
-    console.log(`    - Updated field data:`, fields[field.name])
+    console.log(`    - Updated field data:`, updatedFields[field.name])
   })
   
-  console.log('  - ✅ Import complete, final fields:', fields)
+  // Replace the entire object to trigger reactivity
+  localNode.value.data.params[key] = updatedFields
+  
+  console.log('  - ✅ Import complete, final fields:', updatedFields)
+  console.log('  - 🔄 Triggering Vue reactivity by replacing params[key]')
 }
 
 async function closeVisualSelector() {

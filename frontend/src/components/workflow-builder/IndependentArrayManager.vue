@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +25,19 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const extractions = ref<ExtractionPair[]>(props.modelValue || [])
+
+// Watch for prop changes and update local state
+watch(() => props.modelValue, (newValue) => {
+  console.log('🔄 [IndependentArrayManager] Props changed, updating local state')
+  console.log('  - Old extractions count:', extractions.value.length)
+  console.log('  - New extractions count:', newValue?.length || 0)
+  console.log('  - New value:', newValue)
+  
+  if (newValue) {
+    extractions.value = [...newValue] // Create new array for reactivity
+    console.log('  - ✅ Local state updated')
+  }
+}, { deep: true, immediate: true })
 
 function addExtraction() {
   const newExtraction: ExtractionPair = {
