@@ -462,8 +462,13 @@ const canAdd = computed(() => {
 })
 
 const canAddToField = computed(() => {
-  return fieldName.value.trim() !== '' &&
-         extractionPairs.value.length > 0
+  // Can add if field name is filled AND either:
+  // 1. There's a current valid pair (has both key and value selectors)
+  // 2. There are already saved pairs in the array
+  const hasCurrentPair = keySelector.value && valueSelector.value
+  const hasSavedPairs = extractionPairs.value.length > 0
+  
+  return fieldName.value.trim() !== '' && (hasCurrentPair || hasSavedPairs)
 })
 
 function handleStartKeySelection() {
