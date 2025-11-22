@@ -1,8 +1,8 @@
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import type { SelectedField, FieldType, ElementInfo, TestResult, SelectionMode } from '../types'
 import { generateSelector, analyzeSelectorQuality, type AlternativeSelector, type SelectorQuality } from '../utils/selectorGenerator'
 
-export function useElementSelection() {
+export function useElementSelection(isDialogOpen?: Ref<boolean>) {
   // State
   const hoveredElement = ref<Element | null>(null)
   const lockedElement = ref<Element | null>(null)
@@ -54,6 +54,8 @@ export function useElementSelection() {
 
   // Methods
   const handleMouseMove = (e: MouseEvent) => {
+    // Don't track hover if dialog is open
+    if (isDialogOpen?.value) return
     if (lockedElement.value) return
     
     const target = e.target as Element
@@ -63,6 +65,9 @@ export function useElementSelection() {
   }
 
   const handleClick = (e: MouseEvent) => {
+    // Don't intercept clicks if dialog is open
+    if (isDialogOpen?.value) return
+    
     const target = e.target as Element
     // Don't intercept clicks on the control panel or if detailed view is open
     if (target && !target.closest('#crawlify-selector-overlay') && !detailedViewField.value) {

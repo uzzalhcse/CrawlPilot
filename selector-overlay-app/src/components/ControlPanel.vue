@@ -21,8 +21,13 @@
             </Button>
           </div>
           <p class="text-sm text-gray-600 mt-1.5 font-medium">
-            {{ props.detailedViewField ? '✨ Configure field details' : '👆 Click elements on the page to select' }}
+            <span v-if="editingFieldId">✏️ Editing field</span>
+            <span v-else-if="props.detailedViewField">✨ Configure field details</span>
+            <span v-else>👆 Click elements on the page to select</span>
           </p>
+          <div v-if="editingFieldId" class="mt-2 px-3 py-1.5 bg-blue-100 border-2 border-blue-300 rounded-lg text-xs font-semibold text-blue-800">
+            📝 Editing mode - Update field or cancel to create new
+          </div>
         </div>
       </div>
       
@@ -352,18 +357,34 @@
               </Card>
             </div>
 
-            <Button
-              @click="handleAddField"
-              :disabled="!canAddField"
-              class="w-full h-12 text-base font-semibold shadow-md hover:shadow-lg transition-all"
-              size="lg"
-            >
-              <span v-if="canAddField" class="flex items-center gap-2">
-                <span class="text-lg">✓</span>
-                <span>Add Field</span>
-              </span>
-              <span v-else class="text-gray-400">Select an element to continue</span>
-            </Button>
+            <!-- Action Buttons -->
+            <div class="flex gap-2">
+              <Button
+                v-if="editingFieldId"
+                @click="cancelEdit"
+                variant="outline"
+                class="flex-1 h-12 text-base font-semibold"
+                size="lg"
+              >
+                <span class="flex items-center gap-2">
+                  <span class="text-lg">✕</span>
+                  <span>Cancel</span>
+                </span>
+              </Button>
+              <Button
+                @click="handleAddField"
+                :disabled="!canAddField"
+                class="h-12 text-base font-semibold shadow-md hover:shadow-lg transition-all"
+                :class="editingFieldId ? 'flex-1' : 'w-full'"
+                size="lg"
+              >
+                <span v-if="canAddField" class="flex items-center gap-2">
+                  <span class="text-lg">{{ editingFieldId ? '💾' : '✓' }}</span>
+                  <span>{{ editingFieldId ? 'Update Field' : 'Add Field' }}</span>
+                </span>
+                <span v-else class="text-gray-400">Select an element to continue</span>
+              </Button>
+            </div>
           </TabsContent>
 
           <!-- Tab Content - Key-Value Pair Selector -->
@@ -399,8 +420,8 @@
               v-for="field in props.selectedFields"
               :key="field.id"
               class="cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-l-4 bg-gradient-to-r from-white to-gray-50"
-              :class="getFieldBorderClass(field)"
-              @click="emit('openDetailedView', field)"
+              :class="[getFieldBorderClass(field), editingFieldId === field.id ? 'ring-4 ring-blue-400 ring-offset-2' : '']"
+              @click="startEditField(field)"
             >
               <CardContent class="p-4">
                 <div class="flex items-start justify-between gap-3">
@@ -459,7 +480,7 @@
                     </div>
                   </div>
                   <Button
-                    @click.stop="emit('removeField', field.id)"
+                    @click.stop="deleteConfirmField = field"
                     variant="ghost"
                     size="sm"
                     class="h-8 w-8 p-0 ml-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-lg transition-all hover:scale-110"
@@ -533,6 +554,78 @@
         />
       </div>
     </ScrollArea>
+
+    <!-- Delete Confirmation Dialog -->
+    <Dialog :open="deleteConfirmField !== null" @update:open="(open) => !open && (deleteConfirmField = null)">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2 text-red-600">
+            <span class="text-2xl">⚠️</span>
+            <span>Delete Field?</span>
+          </DialogTitle>
+          <DialogDescription class="text-base pt-2">
+            Are you sure you want to delete this field? This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div v-if="deleteConfirmField" class="my-4 p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
+          <div class="font-bold text-gray-900 text-lg mb-2 flex items-center gap-2">
+            <span>📝</span>
+            <span>{{ deleteConfirmField.name }}</span>
+          </div>
+          <div class="text-sm text-gray-600 space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold">Type:</span>
+              <Badge variant="outline" :class="getFieldTypeBadgeClass(deleteConfirmField)">
+                {{ deleteConfirmField.type }}
+              </Badge>
+            </div>
+            <div v-if="deleteConfirmField.mode === 'key-value-pairs'" class="flex items-center gap-2">
+              <span class="font-semibold">Mode:</span>
+              <Badge variant="secondary" class="bg-purple-100 text-purple-800">
+                🔗 Key-Value Pairs
+              </Badge>
+            </div>
+            <div v-if="deleteConfirmField.matchCount" class="flex items-center gap-2">
+              <span class="font-semibold">Matches:</span>
+              <span>{{ deleteConfirmField.matchCount }}</span>
+            </div>
+            <div v-if="deleteConfirmField.transforms && Object.keys(deleteConfirmField.transforms).length > 0" class="flex items-center gap-2">
+              <span class="font-semibold">Transforms:</span>
+              <Badge variant="secondary" class="bg-amber-100 text-amber-800">
+                ✨ {{ Object.keys(deleteConfirmField.transforms).length }}
+              </Badge>
+            </div>
+            <div class="font-mono text-xs bg-white p-2 rounded border border-gray-300 mt-2 truncate">
+              {{ deleteConfirmField.selector }}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter class="flex gap-2 sm:gap-2">
+          <Button
+            @click="deleteConfirmField = null"
+            variant="outline"
+            class="flex-1"
+          >
+            <span class="flex items-center gap-2">
+              <span>✕</span>
+              <span>Cancel</span>
+            </span>
+          </Button>
+          <Button
+            @click="confirmDelete"
+            variant="destructive"
+            class="flex-1"
+          >
+            <span class="flex items-center gap-2">
+              <span>🗑️</span>
+              <span>Delete</span>
+            </span>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -554,6 +647,7 @@ import { Badge } from './ui/badge'
 import { Alert, AlertDescription } from './ui/alert'
 import { ScrollArea } from './ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
 
 interface Props {
   fieldName: string
@@ -582,6 +676,8 @@ const emit = defineEmits<{
   'update:fieldAttribute': [attr: string]
   'update:mode': [mode: SelectionMode]
   'addField': [transforms: any]
+  'updateField': [data: { id: string; transforms: any }]
+  'loadFieldForEdit': [field: SelectedField]
   'addKeyValueField': [data: any]
   'removeField': [id: string]
   'openDetailedView': [field: SelectedField]
@@ -593,6 +689,7 @@ const emit = defineEmits<{
   'testSelector': [field: SelectedField]
   'scrollToResult': [result: TestResult]
   'useAlternativeSelector': [selector: string]
+  'dialogStateChange': [open: boolean]
 }>()
 
 const activeTab = ref<'regular' | 'key-value'>('regular')
@@ -601,6 +698,8 @@ const kvFieldName = ref('')
 const kvSelectorRef = ref<InstanceType<typeof KeyValuePairSelector> | null>(null)
 const showLegend = ref(false)
 const showTransforms = ref(false)
+const editingFieldId = ref<string | null>(null)
+const deleteConfirmField = ref<SelectedField | null>(null)
 
 // Transform options
 const transforms = ref({
@@ -631,6 +730,11 @@ watch(extractMultiple, (isMultiple) => {
     const mode = isMultiple ? 'list' : 'single'
     emit('update:mode', mode)
   }
+})
+
+// Notify parent when dialog state changes
+watch(deleteConfirmField, (field) => {
+  emit('dialogStateChange', field !== null)
 })
 
 const canAddField = computed(() => {
@@ -713,13 +817,88 @@ function handleAddField() {
       return acc
     }, {} as Record<string, boolean>)
   
-  emit('addField', enabledTransforms)
+  if (editingFieldId.value) {
+    // Update existing field
+    emit('updateField', {
+      id: editingFieldId.value,
+      transforms: enabledTransforms
+    })
+    cancelEdit()
+  } else {
+    // Add new field
+    emit('addField', enabledTransforms)
+  }
   
-  // Reset transforms after adding
+  // Reset transforms after adding/updating
   Object.keys(transforms.value).forEach(key => {
     transforms.value[key as keyof typeof transforms.value] = false
   })
   showTransforms.value = false
+}
+
+function startEditField(field: SelectedField) {
+  // Don't allow editing key-value fields in regular mode for now
+  if (field.mode === 'key-value-pairs') {
+    return
+  }
+  
+  // Set editing mode
+  editingFieldId.value = field.id
+  
+  // Populate form with field data
+  emit('update:fieldName', field.name)
+  emit('update:fieldType', field.type)
+  if (field.attribute) {
+    emit('update:fieldAttribute', field.attribute)
+  }
+  
+  // Set extract multiple based on mode
+  extractMultiple.value = field.mode === 'list'
+  
+  // Populate transforms
+  if (field.transforms) {
+    Object.keys(transforms.value).forEach(key => {
+      transforms.value[key as keyof typeof transforms.value] = field.transforms?.[key] || false
+    })
+    // Open transforms section if field has transforms
+    if (Object.keys(field.transforms).length > 0) {
+      showTransforms.value = true
+    }
+  }
+  
+  // Load the element selector for this field
+  emit('loadFieldForEdit', field)
+  
+  // Scroll to top to show the form
+  const scrollArea = document.querySelector('.scrollable-content')
+  if (scrollArea) {
+    scrollArea.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+}
+
+function cancelEdit() {
+  editingFieldId.value = null
+  
+  // Reset form
+  emit('update:fieldName', '')
+  emit('update:fieldAttribute', '')
+  extractMultiple.value = false
+  
+  // Reset transforms
+  Object.keys(transforms.value).forEach(key => {
+    transforms.value[key as keyof typeof transforms.value] = false
+  })
+  showTransforms.value = false
+  
+  // Clear locked element
+  emit('cancelEdit')
+}
+
+function confirmDelete() {
+  if (deleteConfirmField.value) {
+    emit('removeField', deleteConfirmField.value.id)
+    deleteConfirmField.value = null
+  }
 }
 
 function handleAddKeyValueField(data: { fieldName: string; extractions: any[] }) {

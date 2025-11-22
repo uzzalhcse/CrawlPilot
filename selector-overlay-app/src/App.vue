@@ -1,8 +1,9 @@
 <template>
   <div class="absolute inset-0 pointer-events-none z-[999999] font-sans"
        :style="{ minHeight: '100vh', width: '100%', top: 0, left: 0 }">
-    <!-- Highlights overlay -->
+    <!-- Highlights overlay (disabled when dialogs are open) -->
     <HighlightOverlay
+        v-if="!isDialogOpen"
         :hovered-element="hoveredElement"
         :locked-element="lockedElement"
         :selected-fields="selectedFields"
@@ -30,6 +31,8 @@
         :edit-mode="editMode"
         :test-results="testResults"
         @add-field="(transforms) => addField(transforms)"
+        @update-field="updateField"
+        @load-field-for-edit="loadFieldForEdit"
         @add-key-value-field="addKeyValueField"
         @remove-field="removeField"
         @open-detailed-view="openDetailedView"
@@ -37,10 +40,11 @@
         @switch-tab="switchTab"
         @enable-edit-mode="enableEditMode"
         @save-edit="saveEdit"
-        @cancel-edit="cancelEdit"
+        @cancel-edit="cancelEditField"
         @test-selector="(field) => testSelectorInline(field.selector, field)"
         @scroll-to-result="scrollToTestResult"
         @use-alternative-selector="useAlternativeSelector"
+        @dialog-state-change="(open) => isDialogOpen = open"
     />
   </div>
 </template>
@@ -54,6 +58,7 @@ import { useNavigationPrevention } from './composables/useNavigationPrevention'
 import { useKeyValueSelection } from './composables/useKeyValueSelection'
 
 const controlPanelRef = ref<InstanceType<typeof ControlPanel> | null>(null)
+const isDialogOpen = ref(false)
 
 const {
   hoveredElement,
@@ -87,7 +92,7 @@ const {
   updateLivePreview,
   updateSelectorAnalysis,
   useAlternativeSelector
-} = useElementSelection()
+} = useElementSelection(isDialogOpen)
 
 // Update live preview and selector analysis when field type, attribute, or locked element changes
 watch([currentFieldType, currentFieldAttribute, lockedElement], () => {
@@ -129,6 +134,45 @@ const handleKeyValueClick = (e: MouseEvent) => {
 
 const handleNavigate = (element: Element) => {
   navigateToElement(element)
+}
+
+// Update existing field
+const updateField = (data: { id: string; transforms: any }) => {
+  const fieldIndex = selectedFields.value.findIndex(f => f.id === data.id)
+  if (fieldIndex !== -1) {
+    const field = selectedFields.value[fieldIndex]
+    selectedFields.value[fieldIndex] = {
+      ...field,
+      name: currentFieldName.value.trim(),
+      type: currentFieldType.value,
+      attribute: currentFieldType.value === 'attribute' ? currentFieldAttribute.value : undefined,
+      transforms: Object.keys(data.transforms).length > 0 ? data.transforms : undefined,
+      mode: currentMode.value
+    }
+  }
+}
+
+// Load field for editing
+const loadFieldForEdit = (field: any) => {
+  // Find elements matching this selector and lock the first one
+  try {
+    const elements = document.querySelectorAll(field.selector)
+    if (elements.length > 0) {
+      lockedElement.value = elements[0] as Element
+      updateLivePreview()
+      updateSelectorAnalysis()
+    }
+  } catch (error) {
+    console.error('Failed to load field for edit:', error)
+  }
+}
+
+// Cancel edit and clear form
+const cancelEditField = () => {
+  currentFieldName.value = ''
+  currentFieldAttribute.value = ''
+  lockedElement.value = null
+  hoveredElement.value = null
 }
 
 const { initNavigationPrevention, cleanupNavigationPrevention } = useNavigationPrevention()
