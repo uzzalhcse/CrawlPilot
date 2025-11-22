@@ -50,12 +50,9 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-  
-  body {
-    @apply bg-background text-foreground;
+  /* Scope base styles to overlay only - prevents conflicts with host page */
+  #crawlify-selector-overlay {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 }
 

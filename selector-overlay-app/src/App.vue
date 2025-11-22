@@ -1,5 +1,5 @@
 <template>
-  <div class="absolute inset-0 pointer-events-none z-[999999] font-sans"
+  <div id="crawlify-selector-overlay" class="absolute inset-0 pointer-events-none z-[999999] font-sans"
        :style="{ minHeight: '100vh', width: '100%', top: 0, left: 0 }">
     <!-- Highlights overlay (disabled when dialogs are open) -->
     <HighlightOverlay

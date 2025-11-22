@@ -5,7 +5,7 @@ const props = defineProps<{ class?: string }>()
 </script>
 
 <template>
-  <div :class="cn('relative overflow-y-auto overflow-x-hidden crawlify-scrollbar', props.class)">
+  <div :class="cn('relative overflow-y-auto overflow-x-hidden min-h-0 crawlify-scrollbar', props.class)">
     <slot />
   </div>
 </template>

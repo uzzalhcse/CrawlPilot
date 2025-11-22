@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  important: '#crawlify-selector-overlay',
   darkMode: ['class'],
   content: [
     './index.html',
@@ -85,11 +86,11 @@ export default {
       },
       keyframes: {
         'crawlify-pulse': {
-          '0%, 100%': { 
-            boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.3), 0 4px 12px rgba(59, 130, 246, 0.2)' 
+          '0%, 100%': {
+            boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.3), 0 4px 12px rgba(59, 130, 246, 0.2)'
           },
-          '50%': { 
-            boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.5), 0 6px 16px rgba(59, 130, 246, 0.3)' 
+          '50%': {
+            boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.5), 0 6px 16px rgba(59, 130, 246, 0.3)'
           }
         },
         'crawlify-success-pulse': {

@@ -1,10 +1,12 @@
 <template>
-  <div class="fixed top-4 right-4 bg-white rounded-lg shadow-sm w-[440px] lg:w-[480px] max-h-[92vh] flex flex-col pointer-events-auto z-[1000000] border border-gray-200" @click.stop>
+  <div class="fixed top-4 right-4 bg-white rounded-lg shadow-sm w-[440px] lg:w-[480px] max-h-[calc(100vh-8rem)] flex flex-col pointer-events-auto z-[1000000] border border-gray-200 overflow-hidden" 
+       style="box-sizing: border-box; display: flex !important; flex-direction: column !important; max-height: calc(100vh - 8rem) !important; width: 440px !important; max-width: 480px !important;"
+       @click.stop>
     <!-- Header (Fixed) -->
     <div class="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <svg class="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
           </svg>
           <h2 class="text-sm font-semibold text-gray-900">Element Selector</h2>
@@ -17,7 +19,7 @@
           class="h-7 w-7 p-0 hover:bg-gray-100"
           title="Close form"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
         </Button>
@@ -39,7 +41,7 @@
               size="sm"
               class="h-7 px-3 text-xs font-medium"
             >
-              <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
               </svg>
               Add Field
@@ -113,10 +115,10 @@
                       
                       <!-- Selector Display -->
                       <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-[11px] font-mono mt-1.5 space-y-0.5 bg-gray-50 p-1.5 rounded border border-gray-200">
-                        <div class="text-gray-700 truncate">K: {{ field.attributes.extractions[0].key_selector }}</div>
-                        <div class="text-gray-700 truncate">V: {{ field.attributes.extractions[0].value_selector }}</div>
+                        <div class="text-gray-700 break-all">K: {{ field.attributes.extractions[0].key_selector }}</div>
+                        <div class="text-gray-700 break-all">V: {{ field.attributes.extractions[0].value_selector }}</div>
                       </div>
-                      <div v-else class="text-[11px] text-gray-600 font-mono truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                      <div v-else class="text-[11px] text-gray-600 font-mono mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200 break-all">
                         {{ field.selector }}
                       </div>
                       
@@ -128,7 +130,7 @@
                       </div>
                       
                       <!-- Sample Value -->
-                      <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-[11px] text-gray-600 truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                      <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-[11px] text-gray-600 mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200 break-words line-clamp-2">
                         "{{ field.sampleValue }}"
                       </div>
                     </div>
@@ -142,7 +144,7 @@
                         class="h-7 w-7 p-0 hover:bg-gray-100"
                         title="Edit field"
                       >
-                        <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                         </svg>
                       </Button>
@@ -153,7 +155,7 @@
                         class="h-7 w-7 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
                         title="Delete field"
                       >
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                         </svg>
                       </Button>
@@ -177,7 +179,7 @@
               size="sm"
               class="h-7 w-7 p-0 hover:bg-gray-100 -ml-1"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
               </svg>
             </Button>
@@ -195,7 +197,7 @@
 
         <!-- Form Content (Scrollable) -->
         <ScrollArea class="flex-1">
-          <div class="px-4 py-3">
+          <div class="px-4 py-3 pb-12">
             <!-- Tab Navigation -->
             <Tabs v-model="activeTab" class="w-full">
           <TabsList class="grid w-full grid-cols-2 bg-gray-50 p-0.5">
@@ -288,7 +290,7 @@
                       {{ activeTransforms.length }}
                     </Badge>
                   </div>
-                  <svg class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-90': showTransforms }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-90': showTransforms }" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                   </svg>
                 </button>
