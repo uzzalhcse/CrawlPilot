@@ -1,71 +1,72 @@
 <template>
-  <div class="fixed top-4 right-4 bg-white rounded-2xl shadow-2xl w-[440px] lg:w-[480px] max-h-[92vh] flex flex-col pointer-events-auto z-[1000000] border-2 border-gray-100 overflow-hidden backdrop-blur-sm" @click.stop>
-    <!-- Header (Fixed) with better gradient -->
-    <div class="flex-shrink-0 px-6 pt-5 pb-4 border-b-2 border-gray-100 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+  <div class="fixed top-4 right-4 bg-white rounded-lg shadow-sm w-[440px] lg:w-[480px] max-h-[92vh] flex flex-col pointer-events-auto z-[1000000] border border-gray-200 overflow-hidden" @click.stop>
+    <!-- Header (Fixed) -->
+    <div class="flex-shrink-0 px-5 pt-4 pb-3 border-b border-gray-200 bg-white">
       <div class="flex items-start justify-between">
         <div class="flex-1">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
             <div class="flex items-center gap-2">
-              <span class="text-2xl">🎯</span>
-              <h2 class="text-xl font-bold text-gray-900 tracking-tight">Element Selector</h2>
+              <svg class="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
+              </svg>
+              <h2 class="text-base font-semibold text-gray-900">Element Selector</h2>
             </div>
             <Button
               v-if="props.detailedViewField"
               @click="emit('closeDetailedView')"
               variant="ghost"
               size="sm"
-              class="h-8 w-8 p-0 hover:bg-white/80 transition-all"
+              class="h-7 w-7 p-0 hover:bg-gray-100"
               title="Back to list (ESC)"
             >
-              <span class="text-xl">←</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+              </svg>
             </Button>
           </div>
-          <p class="text-sm text-gray-600 mt-1.5 font-medium">
-            <span v-if="editingFieldId">✏️ Editing field</span>
-            <span v-else-if="props.detailedViewField">✨ Configure field details</span>
-            <span v-else>👆 Click elements on the page to select</span>
+          <p class="text-xs text-gray-500 mt-1">
+            <span v-if="editingFieldId">Editing field</span>
+            <span v-else-if="props.detailedViewField">Configure field details</span>
+            <span v-else>Click elements on the page to select</span>
           </p>
-          <div v-if="editingFieldId" class="mt-2 px-3 py-1.5 bg-blue-100 border-2 border-blue-300 rounded-lg text-xs font-semibold text-blue-800">
-            📝 Editing mode - Update field or cancel to create new
+          <div v-if="editingFieldId" class="mt-2 px-2.5 py-1 bg-gray-100 border border-gray-300 rounded text-xs text-gray-700">
+            Editing mode - Update field or cancel to create new
           </div>
         </div>
       </div>
       
-      <!-- Keyboard hints - More visible and attractive -->
-      <div v-if="!props.detailedViewField" class="mt-3 flex items-center gap-4 text-xs">
-        <div class="flex items-center gap-1.5 text-gray-700">
-          <kbd class="px-2 py-1 bg-white border-2 border-gray-300 rounded-md text-gray-800 font-mono font-bold shadow-sm">ESC</kbd>
-          <span class="font-medium">Clear</span>
+      <!-- Keyboard hints -->
+      <div v-if="!props.detailedViewField" class="mt-2.5 flex items-center gap-3 text-xs">
+        <div class="flex items-center gap-1 text-gray-600">
+          <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-[10px] font-mono text-gray-700">ESC</kbd>
+          <span class="text-[11px]">Clear</span>
         </div>
-        <div class="flex items-center gap-1.5 text-gray-700">
-          <kbd class="px-2 py-1 bg-white border-2 border-gray-300 rounded-md text-gray-800 font-mono font-bold shadow-sm">↵</kbd>
-          <span class="font-medium">Add Field</span>
+        <div class="flex items-center gap-1 text-gray-600">
+          <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-[10px] font-mono text-gray-700">↵</kbd>
+          <span class="text-[11px]">Add Field</span>
         </div>
       </div>
     </div>
 
-    <!-- Scrollable Content Area with better styling -->
+    <!-- Scrollable Content Area -->
     <ScrollArea class="flex-1">
-      <div class="px-6 pb-6">
+      <div class="px-5 pb-5">
         <!-- Tab Navigation -->
-        <Tabs v-if="!props.detailedViewField" v-model="activeTab" class="w-full mt-4">
-          <TabsList class="grid w-full grid-cols-2">
-            <TabsTrigger value="regular" class="flex items-center gap-1.5">
-              <span>📄</span>
-              <span class="text-xs">Single/Multiple</span>
+        <Tabs v-if="!props.detailedViewField" v-model="activeTab" class="w-full mt-3">
+          <TabsList class="grid w-full grid-cols-2 bg-gray-50 p-0.5">
+            <TabsTrigger value="regular" class="text-xs data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm">
+              Single/Multiple
             </TabsTrigger>
-            <TabsTrigger value="key-value" class="flex items-center gap-1.5">
-              <span>🔗</span>
-              <span class="text-xs">Key-Value</span>
+            <TabsTrigger value="key-value" class="text-xs data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm">
+              Key-Value
             </TabsTrigger>
           </TabsList>
 
-          <!-- Tab Content - Regular Mode with improved design -->
-          <TabsContent value="regular" class="space-y-4 mt-4">
+          <!-- Tab Content - Regular Mode -->
+          <TabsContent value="regular" class="space-y-3 mt-3">
             <div>
-              <Label for="field-name" class="text-sm font-semibold mb-2 flex items-center gap-2">
-                <span>📝</span>
-                <span>Field Name</span>
+              <Label for="field-name" class="text-xs font-medium text-gray-700 mb-1.5 block">
+                Field Name
               </Label>
               <Input
                 id="field-name"
@@ -74,52 +75,50 @@
                 @keydown.enter="canAddField && emit('addField')"
                 type="text"
                 placeholder="e.g., title, price, description"
-                class="mt-1.5 h-11 text-base"
+                class="h-9 text-sm"
                 autofocus
               />
             </div>
 
-            <!-- Multiple Value Option with better styling -->
-            <Card class="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 shadow-sm hover:shadow-md transition-shadow">
-              <CardContent class="p-4">
-                <label class="flex items-start gap-3 cursor-pointer group">
+            <!-- Multiple Value Option -->
+            <Card class="bg-gray-50 border border-gray-200">
+              <CardContent class="p-3">
+                <label class="flex items-start gap-2.5 cursor-pointer group">
                   <input
                     type="checkbox"
                     v-model="extractMultiple"
-                    class="mt-0.5 w-5 h-5 text-blue-600 rounded-md border-gray-300 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    class="mt-0.5 w-4 h-4 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400 cursor-pointer"
                   />
                   <div class="flex-1">
-                    <span class="text-sm font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">📋 Extract Multiple Values</span>
-                    <p class="text-xs text-gray-600 mt-1 leading-relaxed">Extract an array of values from all matching elements on the page</p>
+                    <span class="text-sm font-medium text-gray-900">Extract Multiple Values</span>
+                    <p class="text-xs text-gray-500 mt-0.5 leading-relaxed">Extract an array of values from all matching elements</p>
                   </div>
                 </label>
               </CardContent>
             </Card>
 
             <div>
-              <Label for="extract-type" class="text-sm font-semibold mb-2 flex items-center gap-2">
-                <span>🎨</span>
-                <span>Extract Type</span>
+              <Label for="extract-type" class="text-xs font-medium text-gray-700 mb-1.5 block">
+                Extract Type
               </Label>
               <Select
                 :model-value="props.fieldType"
                 @update:model-value="emit('update:fieldType', $event)"
               >
-                <SelectTrigger id="extract-type" class="mt-1.5 h-11">
+                <SelectTrigger id="extract-type" class="h-9">
                   <SelectValue placeholder="Select extraction type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="text">📝 Text Content</SelectItem>
-                  <SelectItem value="attribute">🏷️ Attribute</SelectItem>
-                  <SelectItem value="html">📄 HTML</SelectItem>
+                  <SelectItem value="text">Text Content</SelectItem>
+                  <SelectItem value="attribute">Attribute</SelectItem>
+                  <SelectItem value="html">HTML</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div v-if="props.fieldType === 'attribute'" class="animate-in slide-in-from-top-2 duration-300">
-              <Label for="attribute-name" class="text-sm font-semibold mb-2 flex items-center gap-2">
-                <span>🏷️</span>
-                <span>Attribute Name</span>
+            <div v-if="props.fieldType === 'attribute'" class="animate-in slide-in-from-top-2 duration-200">
+              <Label for="attribute-name" class="text-xs font-medium text-gray-700 mb-1.5 block">
+                Attribute Name
               </Label>
               <Input
                 id="attribute-name"
@@ -127,96 +126,97 @@
                 @update:model-value="emit('update:fieldAttribute', $event)"
                 type="text"
                 placeholder="e.g., href, src, data-id"
-                class="mt-1.5 h-11 text-base font-mono"
+                class="h-9 text-sm font-mono"
               />
             </div>
 
             <!-- Transforms Section -->
-            <Card class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 shadow-sm">
-              <CardContent class="p-4">
+            <Card class="bg-white border border-gray-200">
+              <CardContent class="p-3">
                 <button
                   @click="showTransforms = !showTransforms"
-                  class="flex items-center justify-between w-full text-sm font-bold text-gray-900 hover:text-amber-700 transition-colors"
+                  class="flex items-center justify-between w-full text-sm font-medium text-gray-900 hover:text-gray-700"
                 >
                   <div class="flex items-center gap-2">
-                    <span>✨</span>
-                    <span>Transforms</span>
-                    <Badge v-if="activeTransforms.length > 0" variant="secondary" class="bg-amber-600 text-white text-xs">
+                    <span class="text-xs">Transforms</span>
+                    <Badge v-if="activeTransforms.length > 0" variant="secondary" class="bg-gray-900 text-white text-[10px] h-4 px-1.5">
                       {{ activeTransforms.length }}
                     </Badge>
                   </div>
-                  <span class="text-xs">{{ showTransforms ? '▼' : '▶' }}</span>
+                  <svg class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-90': showTransforms }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
                 </button>
 
-                <div v-if="showTransforms" class="mt-4 space-y-3 animate-in slide-in-from-top-2 duration-300">
+                <div v-if="showTransforms" class="mt-3 space-y-3 animate-in slide-in-from-top-2 duration-200">
                   <!-- Text Transforms -->
                   <div>
-                    <div class="text-xs font-bold text-gray-700 mb-2">Text Operations</div>
-                    <div class="space-y-2">
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.trim" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>✂️ Trim whitespace</span>
+                    <div class="text-[11px] font-semibold text-gray-700 mb-1.5">Text Operations</div>
+                    <div class="space-y-1.5">
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.trim" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Trim whitespace</span>
                       </label>
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.lowercase" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>🔡 Lowercase</span>
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.lowercase" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Lowercase</span>
                       </label>
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.uppercase" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>🔠 Uppercase</span>
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.uppercase" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Uppercase</span>
                       </label>
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.capitalize" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>Ⓐ Capitalize first letter</span>
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.capitalize" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Capitalize first letter</span>
                       </label>
                     </div>
                   </div>
 
                   <!-- String Transforms -->
                   <div>
-                    <div class="text-xs font-bold text-gray-700 mb-2">String Operations</div>
-                    <div class="space-y-2">
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.removeSpaces" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>🚫 Remove all spaces</span>
+                    <div class="text-[11px] font-semibold text-gray-700 mb-1.5">String Operations</div>
+                    <div class="space-y-1.5">
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.removeSpaces" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Remove all spaces</span>
                       </label>
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.removeSpecialChars" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>🔧 Remove special characters</span>
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.removeSpecialChars" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Remove special characters</span>
                       </label>
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.removeNumbers" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>🔢 Remove numbers</span>
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.removeNumbers" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Remove numbers</span>
                       </label>
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.extractNumbers" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>🎯 Extract numbers only</span>
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.extractNumbers" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Extract numbers only</span>
                       </label>
                     </div>
                   </div>
 
                   <!-- Type Transforms -->
                   <div>
-                    <div class="text-xs font-bold text-gray-700 mb-2">Type Conversion</div>
-                    <div class="space-y-2">
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.toNumber" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>💯 Convert to number</span>
+                    <div class="text-[11px] font-semibold text-gray-700 mb-1.5">Type Conversion</div>
+                    <div class="space-y-1.5">
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.toNumber" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Convert to number</span>
                       </label>
-                      <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/50 p-2 rounded transition-colors">
-                        <input type="checkbox" v-model="transforms.toBoolean" class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-2 focus:ring-amber-500">
-                        <span>✔️ Convert to boolean</span>
+                      <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded">
+                        <input type="checkbox" v-model="transforms.toBoolean" class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400">
+                        <span>Convert to boolean</span>
                       </label>
                     </div>
                   </div>
 
                   <!-- Transform Preview -->
-                  <div v-if="transformedPreviewSamples.length > 0" class="border-t border-amber-300 pt-3 mt-3">
-                    <div class="text-xs font-bold text-gray-700 mb-2">👁️ Preview with Transforms</div>
-                    <div class="space-y-2">
-                      <div v-for="(sample, idx) in transformedPreviewSamples" :key="idx" class="bg-white rounded p-2 border border-amber-300 text-xs">
-                        <div class="text-gray-500 mb-1">Before: <span class="font-mono">{{ props.livePreviewSamples[idx] }}</span></div>
-                        <div class="text-amber-700 font-semibold">After: <span class="font-mono">{{ sample }}</span></div>
+                  <div v-if="transformedPreviewSamples.length > 0" class="border-t border-gray-200 pt-2.5 mt-2.5">
+                    <div class="text-[11px] font-semibold text-gray-700 mb-1.5">Preview with Transforms</div>
+                    <div class="space-y-1.5">
+                      <div v-for="(sample, idx) in transformedPreviewSamples" :key="idx" class="bg-gray-50 rounded p-2 border border-gray-200 text-[11px]">
+                        <div class="text-gray-500 mb-0.5">Before: <span class="font-mono text-gray-700">{{ props.livePreviewSamples[idx] }}</span></div>
+                        <div class="text-gray-900 font-medium">After: <span class="font-mono">{{ sample }}</span></div>
                       </div>
                     </div>
                   </div>
@@ -224,14 +224,13 @@
               </CardContent>
             </Card>
 
-            <!-- Validation Message with better styling -->
+            <!-- Validation Message -->
             <div v-if="props.hoveredElementValidation" class="text-sm animate-in fade-in duration-200">
               <Alert
                 :variant="props.hoveredElementValidation.isValid ? 'default' : 'destructive'"
-                class="py-3 shadow-sm"
+                class="py-2.5 border"
               >
-                <span class="text-lg mr-2">{{ props.hoveredElementValidation.isValid ? '✅' : '❌' }}</span>
-                <AlertDescription class="font-semibold">
+                <AlertDescription class="text-xs font-medium">
                   {{ props.hoveredElementValidation.message }}
                 </AlertDescription>
               </Alert>
@@ -239,79 +238,75 @@
 
             <!-- Selector Quality & Alternatives -->
             <div v-if="props.selectorAnalysis && props.hoveredElementCount > 0" 
-                 class="animate-in slide-in-from-top-2 duration-300">
-              <Card class="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 shadow-sm">
-                <CardContent class="p-4">
-                  <div class="flex items-center gap-2 mb-3">
-                    <span class="text-lg">⭐</span>
-                    <h3 class="text-sm font-bold text-gray-900">SELECTOR QUALITY</h3>
-                    <span class="ml-auto px-2 py-0.5 text-xs font-bold rounded-full"
+                 class="animate-in slide-in-from-top-2 duration-200">
+              <Card class="bg-white border border-gray-200">
+                <CardContent class="p-3">
+                  <div class="flex items-center gap-2 mb-2.5">
+                    <h3 class="text-xs font-semibold text-gray-900">Selector Quality</h3>
+                    <span class="ml-auto px-2 py-0.5 text-[10px] font-semibold rounded"
                           :class="{
-                            'bg-green-600 text-white': props.selectorAnalysis.current.rating === 'excellent',
-                            'bg-blue-600 text-white': props.selectorAnalysis.current.rating === 'good',
-                            'bg-yellow-600 text-white': props.selectorAnalysis.current.rating === 'fair',
-                            'bg-orange-600 text-white': props.selectorAnalysis.current.rating === 'poor',
-                            'bg-red-600 text-white': props.selectorAnalysis.current.rating === 'fragile'
+                            'bg-green-100 text-green-800': props.selectorAnalysis.current.rating === 'excellent',
+                            'bg-blue-100 text-blue-800': props.selectorAnalysis.current.rating === 'good',
+                            'bg-yellow-100 text-yellow-800': props.selectorAnalysis.current.rating === 'fair',
+                            'bg-orange-100 text-orange-800': props.selectorAnalysis.current.rating === 'poor',
+                            'bg-red-100 text-red-800': props.selectorAnalysis.current.rating === 'fragile'
                           }">
-                      {{ props.selectorAnalysis.current.rating.toUpperCase() }}
+                      {{ props.selectorAnalysis.current.rating }}
                     </span>
                   </div>
 
                   <!-- Current Selector Info -->
-                  <div class="text-xs space-y-1 mb-3">
+                  <div class="text-[11px] space-y-1 mb-2.5">
                     <div v-if="props.selectorAnalysis.current.reasons.length > 0" class="flex flex-wrap gap-1">
                       <span 
                         v-for="(reason, idx) in props.selectorAnalysis.current.reasons" 
                         :key="idx"
-                        class="px-2 py-0.5 bg-green-100 text-green-800 rounded-full font-medium"
+                        class="px-1.5 py-0.5 bg-green-50 text-green-700 rounded border border-green-200"
                       >
-                        ✓ {{ reason }}
+                        {{ reason }}
                       </span>
                     </div>
                     <div v-if="props.selectorAnalysis.current.issues.length > 0" class="flex flex-wrap gap-1">
                       <span 
                         v-for="(issue, idx) in props.selectorAnalysis.current.issues" 
                         :key="idx"
-                        class="px-2 py-0.5 bg-red-100 text-red-800 rounded-full font-medium"
+                        class="px-1.5 py-0.5 bg-red-50 text-red-700 rounded border border-red-200"
                       >
-                        ⚠ {{ issue }}
+                        {{ issue }}
                       </span>
                     </div>
                   </div>
 
                   <!-- Alternative Selectors -->
-                  <div v-if="props.selectorAnalysis.alternatives.length > 0" class="border-t border-purple-300 pt-3 mt-3">
-                    <div class="text-xs font-bold text-gray-700 mb-2">💡 Better Alternatives:</div>
-                    <div class="space-y-2">
+                  <div v-if="props.selectorAnalysis.alternatives.length > 0" class="border-t border-gray-200 pt-2.5 mt-2.5">
+                    <div class="text-[11px] font-semibold text-gray-700 mb-2">Better Alternatives</div>
+                    <div class="space-y-1.5">
                       <button
                         v-for="(alt, idx) in props.selectorAnalysis.alternatives"
                         :key="idx"
                         @click="emit('useAlternativeSelector', alt.selector)"
-                        class="w-full text-left p-2 bg-white rounded border border-purple-300 hover:border-purple-500 hover:bg-purple-50 transition-all text-xs group"
+                        class="w-full text-left p-2 bg-gray-50 rounded border border-gray-200 hover:border-gray-400 hover:bg-gray-100 transition-all text-[11px] group"
                       >
                         <div class="flex items-center justify-between mb-1">
-                          <div class="flex items-center gap-1">
-                            <span class="font-mono text-purple-700 truncate">{{ alt.selector }}</span>
+                          <div class="flex items-center gap-1 flex-1 min-w-0">
+                            <span class="font-mono text-gray-900 truncate">{{ alt.selector }}</span>
                           </div>
-                          <div class="flex items-center gap-1">
-                            <span class="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
+                          <div class="flex items-center gap-1 ml-2">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold"
                                   :class="{
-                                    'bg-green-500 text-white': alt.quality.rating === 'excellent',
-                                    'bg-blue-500 text-white': alt.quality.rating === 'good',
-                                    'bg-yellow-500 text-white': alt.quality.rating === 'fair'
+                                    'bg-green-100 text-green-800': alt.quality.rating === 'excellent',
+                                    'bg-blue-100 text-blue-800': alt.quality.rating === 'good',
+                                    'bg-yellow-100 text-yellow-800': alt.quality.rating === 'fair'
                                   }">
-                              {{ '⭐'.repeat(alt.quality.score) }}
+                              {{ alt.quality.rating }}
                             </span>
                           </div>
                         </div>
-                        <div class="text-gray-600 italic">{{ alt.description }}</div>
-                        <div class="text-purple-600 font-semibold mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          → Click to use this selector
-                        </div>
+                        <div class="text-gray-600">{{ alt.description }}</div>
                       </button>
                     </div>
                   </div>
-                  <div v-else class="border-t border-purple-300 pt-3 mt-3 text-xs text-gray-600 italic text-center">
+                  <div v-else class="border-t border-gray-200 pt-2.5 mt-2.5 text-[11px] text-gray-500 text-center">
                     No better alternatives found
                   </div>
                 </CardContent>
@@ -320,36 +315,35 @@
 
             <!-- Live Preview Section -->
             <div v-if="props.livePreviewSamples.length > 0 && props.hoveredElementCount > 0" 
-                 class="animate-in slide-in-from-top-2 duration-300">
-              <Card class="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 shadow-sm">
-                <CardContent class="p-4">
-                  <div class="flex items-center gap-2 mb-3">
-                    <span class="text-lg">👁️</span>
-                    <h3 class="text-sm font-bold text-gray-900">LIVE PREVIEW</h3>
-                    <span class="ml-auto px-2 py-0.5 bg-green-600 text-white text-xs font-bold rounded-full">
+                 class="animate-in slide-in-from-top-2 duration-200">
+              <Card class="bg-white border border-gray-200">
+                <CardContent class="p-3">
+                  <div class="flex items-center gap-2 mb-2.5">
+                    <h3 class="text-xs font-semibold text-gray-900">Live Preview</h3>
+                    <span class="ml-auto px-2 py-0.5 bg-gray-100 text-gray-700 text-[10px] font-semibold rounded">
                       {{ props.hoveredElementCount }} {{ props.hoveredElementCount === 1 ? 'match' : 'matches' }}
                     </span>
                   </div>
-                  <div class="space-y-2">
+                  <div class="space-y-1.5">
                     <div 
                       v-for="(sample, index) in props.livePreviewSamples" 
                       :key="index"
-                      class="text-xs bg-white rounded-md p-2 border border-green-300 font-mono text-gray-700 truncate"
+                      class="text-[11px] bg-gray-50 rounded p-2 border border-gray-200 font-mono text-gray-700 truncate"
                       :title="sample"
                     >
-                      <span class="text-green-600 font-bold">{{ index + 1 }}.</span> {{ sample || '(empty)' }}
+                      <span class="text-gray-500 font-semibold">{{ index + 1 }}.</span> {{ sample || '(empty)' }}
                     </div>
                     <div v-if="props.hoveredElementCount > props.livePreviewSamples.length" 
-                         class="text-xs text-gray-600 italic text-center">
+                         class="text-[11px] text-gray-500 text-center">
                       ... and {{ props.hoveredElementCount - props.livePreviewSamples.length }} more
                     </div>
                   </div>
-                  <div class="mt-3 text-xs text-gray-600 flex items-center gap-1">
-                    <span class="font-semibold">Output:</span>
-                    <span v-if="extractMultiple" class="font-mono bg-white px-2 py-0.5 rounded border border-green-300">
+                  <div class="mt-2.5 text-[11px] text-gray-600 flex items-center gap-1.5">
+                    <span class="font-medium">Output:</span>
+                    <span v-if="extractMultiple" class="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">
                       Array[{{ props.hoveredElementCount }}]
                     </span>
-                    <span v-else class="font-mono bg-white px-2 py-0.5 rounded border border-green-300">
+                    <span v-else class="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">
                       Single value
                     </span>
                   </div>
@@ -363,26 +357,20 @@
                 v-if="editingFieldId"
                 @click="cancelEdit"
                 variant="outline"
-                class="flex-1 h-12 text-base font-semibold"
-                size="lg"
+                class="flex-1 h-9 text-sm font-medium"
               >
-                <span class="flex items-center gap-2">
-                  <span class="text-lg">✕</span>
-                  <span>Cancel</span>
-                </span>
+                Cancel
               </Button>
               <Button
                 @click="handleAddField"
                 :disabled="!canAddField"
-                class="h-12 text-base font-semibold shadow-md hover:shadow-lg transition-all"
+                class="h-9 text-sm font-medium"
                 :class="editingFieldId ? 'flex-1' : 'w-full'"
-                size="lg"
               >
-                <span v-if="canAddField" class="flex items-center gap-2">
-                  <span class="text-lg">{{ editingFieldId ? '💾' : '✓' }}</span>
-                  <span>{{ editingFieldId ? 'Update Field' : 'Add Field' }}</span>
+                <span v-if="canAddField">
+                  {{ editingFieldId ? 'Update Field' : 'Add Field' }}
                 </span>
-                <span v-else class="text-gray-400">Select an element to continue</span>
+                <span v-else class="text-gray-400">Select an element</span>
               </Button>
             </div>
           </TabsContent>
@@ -398,56 +386,59 @@
           </TabsContent>
         </Tabs>
 
-        <!-- Selected Fields List with improved design -->
-        <div v-if="!props.detailedViewField" class="mt-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-base font-bold text-gray-900 flex items-center gap-2">
-              <span>📦</span>
-              <span>Selected Fields</span>
+        <!-- Selected Fields List -->
+        <div v-if="!props.detailedViewField" class="mt-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold text-gray-900">
+              Selected Fields
             </h3>
-            <Badge variant="secondary" class="text-sm px-3 py-1 font-bold bg-blue-100 text-blue-700 border border-blue-300">
+            <Badge variant="secondary" class="text-[10px] px-2 py-0.5 font-semibold bg-gray-100 text-gray-700">
               {{ props.selectedFields.length }}
             </Badge>
           </div>
           
-          <div v-if="props.selectedFields.length === 0" class="text-sm text-gray-500 text-center py-10 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
-            <div class="text-5xl mb-3 animate-bounce">📋</div>
-            <div class="font-semibold text-gray-700 text-base">No fields selected yet</div>
-            <div class="text-xs mt-2 text-gray-600">Click on elements in the page to start selecting</div>
+          <div v-if="props.selectedFields.length === 0" class="text-sm text-gray-500 text-center py-8 border border-dashed border-gray-300 rounded bg-gray-50">
+            <div class="text-gray-400 mb-2">
+              <svg class="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+            </div>
+            <div class="font-medium text-gray-700">No fields selected yet</div>
+            <div class="text-xs mt-1 text-gray-500">Click elements on the page to start</div>
           </div>
 
-          <div v-else class="space-y-3">
+          <div v-else class="space-y-2">
             <Card
               v-for="field in props.selectedFields"
               :key="field.id"
-              class="cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-l-4 bg-gradient-to-r from-white to-gray-50"
-              :class="[getFieldBorderClass(field), editingFieldId === field.id ? 'ring-4 ring-blue-400 ring-offset-2' : '']"
+              class="cursor-pointer hover:border-gray-400 transition-colors border-l-[3px] bg-white"
+              :class="[getFieldBorderClass(field), editingFieldId === field.id ? 'ring-2 ring-gray-400 ring-offset-1' : '']"
               @click="startEditField(field)"
             >
-              <CardContent class="p-4">
-                <div class="flex items-start justify-between gap-3">
+              <CardContent class="p-3">
+                <div class="flex items-start justify-between gap-2">
                   <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-2">
-                      <div class="font-bold text-gray-900 truncate text-base">{{ field.name }}</div>
-                      <!-- Mode Badge with improved styling -->
+                    <div class="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                      <div class="font-semibold text-gray-900 truncate text-sm">{{ field.name }}</div>
+                      <!-- Mode Badge -->
                       <Badge
                         v-if="field.mode === 'key-value-pairs'"
                         variant="secondary"
-                        class="bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 border-purple-300 text-xs font-bold"
+                        class="bg-gray-100 text-gray-700 text-[10px] font-medium h-4 px-1.5"
                       >
-                        🔗 K-V
+                        K-V
                       </Badge>
                       <Badge
                         v-else-if="field.matchCount && field.matchCount > 1"
                         variant="secondary"
-                        class="bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-800 border-purple-300 text-xs font-bold"
+                        class="bg-gray-100 text-gray-700 text-[10px] font-medium h-4 px-1.5"
                       >
-                        📋 {{ field.matchCount }}
+                        {{ field.matchCount }}
                       </Badge>
                       <Badge
                         v-else
                         variant="outline"
-                        class="text-xs font-semibold"
+                        class="text-[10px] font-medium h-4 px-1.5"
                         :class="getFieldTypeBadgeClass(field)"
                       >
                         {{ field.type }}
@@ -456,38 +447,40 @@
                       <Badge
                         v-if="field.transforms && Object.keys(field.transforms).length > 0"
                         variant="secondary"
-                        class="bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 border-amber-300 text-xs font-bold"
+                        class="bg-gray-900 text-white text-[10px] font-medium h-4 px-1.5"
                       >
-                        ✨ {{ Object.keys(field.transforms).length }}
+                        {{ Object.keys(field.transforms).length }}
                       </Badge>
                     </div>
                     
-                    <!-- Selector Display with better contrast -->
-                    <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-xs font-mono mt-2 space-y-1 bg-gray-100 p-2 rounded border border-gray-200">
-                      <div class="text-green-700 truncate font-semibold">🔑 {{ field.attributes.extractions[0].key_selector }}</div>
-                      <div class="text-blue-700 truncate font-semibold">💎 {{ field.attributes.extractions[0].value_selector }}</div>
+                    <!-- Selector Display -->
+                    <div v-if="field.mode === 'key-value-pairs' && field.attributes?.extractions?.[0]" class="text-[11px] font-mono mt-1.5 space-y-0.5 bg-gray-50 p-1.5 rounded border border-gray-200">
+                      <div class="text-gray-700 truncate">K: {{ field.attributes.extractions[0].key_selector }}</div>
+                      <div class="text-gray-700 truncate">V: {{ field.attributes.extractions[0].value_selector }}</div>
                     </div>
-                    <div v-else class="text-xs text-gray-600 font-mono truncate mt-2 bg-gray-100 px-2 py-1.5 rounded border border-gray-200">
+                    <div v-else class="text-[11px] text-gray-600 font-mono truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
                       {{ field.selector }}
                     </div>
                     
-                    <div v-if="field.matchCount && field.mode !== 'key-value-pairs'" class="flex items-center gap-2 mt-2">
-                      <Badge variant="outline" class="text-xs font-semibold" :class="field.matchCount > 1 ? 'border-purple-400 text-purple-700 bg-purple-50' : 'border-blue-400 text-blue-700 bg-blue-50'">
+                    <div v-if="field.matchCount && field.mode !== 'key-value-pairs'" class="flex items-center gap-1.5 mt-1.5">
+                      <Badge variant="outline" class="text-[10px] font-medium h-4 px-1.5" :class="field.matchCount > 1 ? 'border-gray-400 text-gray-700' : 'border-gray-300 text-gray-600'">
                         {{ field.matchCount }} {{ field.matchCount === 1 ? 'match' : 'matches' }}
                       </Badge>
                     </div>
-                    <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-xs text-gray-700 truncate mt-2 italic bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                      💬 "{{ field.sampleValue }}"
+                    <div v-if="field.sampleValue && field.mode !== 'key-value-pairs'" class="text-[11px] text-gray-600 truncate mt-1.5 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                      "{{ field.sampleValue }}"
                     </div>
                   </div>
                   <Button
                     @click.stop="deleteConfirmField = field"
                     variant="ghost"
                     size="sm"
-                    class="h-8 w-8 p-0 ml-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-lg transition-all hover:scale-110"
+                    class="h-7 w-7 p-0 ml-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                     title="Remove field"
                   >
-                    <span class="text-lg">✕</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
                   </Button>
                 </div>
               </CardContent>
@@ -495,44 +488,43 @@
           </div>
 
           <!-- Color Legend (Collapsible) -->
-          <div class="mt-4 border-t pt-4">
+          <div class="mt-3 border-t border-gray-200 pt-3">
             <button
               @click="showLegend = !showLegend"
-              class="flex items-center justify-between w-full text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
+              class="flex items-center justify-between w-full text-xs font-medium text-gray-700 hover:text-gray-900"
             >
-              <div class="flex items-center gap-2">
-                <span>🎨</span>
-                <span>Color Legend</span>
-              </div>
-              <span class="text-xs">{{ showLegend ? '▼' : '▶' }}</span>
+              <span>Color Legend</span>
+              <svg class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-90': showLegend }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+              </svg>
             </button>
             
-            <div v-if="showLegend" class="mt-3 space-y-2 animate-in slide-in-from-top-2 duration-300">
-              <div class="text-xs text-gray-600 mb-2 font-medium">Field Types:</div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+            <div v-if="showLegend" class="mt-2.5 space-y-2 animate-in slide-in-from-top-2 duration-200">
+              <div class="text-[11px] text-gray-600 mb-1.5 font-medium">Field Types:</div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
                 <span class="text-gray-700">Text Content</span>
               </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-3 h-3 rounded-full bg-purple-500"></div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <div class="w-2.5 h-2.5 rounded-full bg-purple-500"></div>
                 <span class="text-gray-700">Attribute</span>
               </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-3 h-3 rounded-full bg-pink-500"></div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <div class="w-2.5 h-2.5 rounded-full bg-pink-500"></div>
                 <span class="text-gray-700">HTML</span>
               </div>
               
-              <div class="text-xs text-gray-600 mt-3 mb-2 font-medium">Match Count:</div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+              <div class="text-[11px] text-gray-600 mt-2 mb-1.5 font-medium">Match Count:</div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
                 <span class="text-gray-700">1 match (unique)</span>
               </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
                 <span class="text-gray-700">2-10 matches</span>
               </div>
-              <div class="flex items-center gap-2 text-xs">
-                <div class="w-3 h-3 rounded-full bg-orange-500"></div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <div class="w-2.5 h-2.5 rounded-full bg-orange-500"></div>
                 <span class="text-gray-700">11+ matches</span>
               </div>
             </div>
@@ -560,44 +552,42 @@
     <Dialog :open="deleteConfirmField !== null" @update:open="(open) => !open && (deleteConfirmField = null)">
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle class="flex items-center gap-2 text-red-600">
-            <span class="text-2xl">⚠️</span>
-            <span>Delete Field?</span>
+          <DialogTitle class="text-base font-semibold text-gray-900">
+            Delete Field?
           </DialogTitle>
-          <DialogDescription class="text-base pt-2">
+          <DialogDescription class="text-sm pt-1">
             Are you sure you want to delete this field? This action cannot be undone.
           </DialogDescription>
         </DialogHeader>
         
-        <div v-if="deleteConfirmField" class="my-4 p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
-          <div class="font-bold text-gray-900 text-lg mb-2 flex items-center gap-2">
-            <span>📝</span>
-            <span>{{ deleteConfirmField.name }}</span>
+        <div v-if="deleteConfirmField" class="my-3 p-3 bg-gray-50 rounded border border-gray-200">
+          <div class="font-semibold text-gray-900 text-sm mb-2">
+            {{ deleteConfirmField.name }}
           </div>
-          <div class="text-sm text-gray-600 space-y-1">
+          <div class="text-xs text-gray-600 space-y-1.5">
             <div class="flex items-center gap-2">
-              <span class="font-semibold">Type:</span>
-              <Badge variant="outline" :class="getFieldTypeBadgeClass(deleteConfirmField)">
+              <span class="font-medium">Type:</span>
+              <Badge variant="outline" :class="getFieldTypeBadgeClass(deleteConfirmField)" class="text-[10px] h-4 px-1.5">
                 {{ deleteConfirmField.type }}
               </Badge>
             </div>
             <div v-if="deleteConfirmField.mode === 'key-value-pairs'" class="flex items-center gap-2">
-              <span class="font-semibold">Mode:</span>
-              <Badge variant="secondary" class="bg-purple-100 text-purple-800">
-                🔗 Key-Value Pairs
+              <span class="font-medium">Mode:</span>
+              <Badge variant="secondary" class="bg-gray-100 text-gray-700 text-[10px] h-4 px-1.5">
+                Key-Value Pairs
               </Badge>
             </div>
             <div v-if="deleteConfirmField.matchCount" class="flex items-center gap-2">
-              <span class="font-semibold">Matches:</span>
+              <span class="font-medium">Matches:</span>
               <span>{{ deleteConfirmField.matchCount }}</span>
             </div>
             <div v-if="deleteConfirmField.transforms && Object.keys(deleteConfirmField.transforms).length > 0" class="flex items-center gap-2">
-              <span class="font-semibold">Transforms:</span>
-              <Badge variant="secondary" class="bg-amber-100 text-amber-800">
-                ✨ {{ Object.keys(deleteConfirmField.transforms).length }}
+              <span class="font-medium">Transforms:</span>
+              <Badge variant="secondary" class="bg-gray-900 text-white text-[10px] h-4 px-1.5">
+                {{ Object.keys(deleteConfirmField.transforms).length }}
               </Badge>
             </div>
-            <div class="font-mono text-xs bg-white p-2 rounded border border-gray-300 mt-2 truncate">
+            <div class="font-mono text-[11px] bg-white p-2 rounded border border-gray-200 mt-2 truncate">
               {{ deleteConfirmField.selector }}
             </div>
           </div>
@@ -607,22 +597,16 @@
           <Button
             @click="deleteConfirmField = null"
             variant="outline"
-            class="flex-1"
+            class="flex-1 h-9 text-sm"
           >
-            <span class="flex items-center gap-2">
-              <span>✕</span>
-              <span>Cancel</span>
-            </span>
+            Cancel
           </Button>
           <Button
             @click="confirmDelete"
             variant="destructive"
-            class="flex-1"
+            class="flex-1 h-9 text-sm"
           >
-            <span class="flex items-center gap-2">
-              <span>🗑️</span>
-              <span>Delete</span>
-            </span>
+            Delete
           </Button>
         </DialogFooter>
       </DialogContent>

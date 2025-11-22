@@ -1,38 +1,37 @@
 <template>
-  <div class="kv-selector space-y-4">
+  <div class="kv-selector space-y-3">
     <!-- Field Name Input -->
     <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1">
-        Field Name <span class="text-red-500">*</span>
+      <label class="block text-xs font-medium text-gray-700 mb-1.5">
+        Field Name <span class="text-red-600">*</span>
       </label>
       <input
         v-model="fieldName"
         type="text"
         placeholder="e.g., attributes, specifications"
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        class="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-gray-400 focus:border-gray-400"
         @keydown.enter="handleAdd"
       />
     </div>
 
-    <!-- Key Selector Section with improved design -->
+    <!-- Key Selector Section -->
     <div 
-      class="selector-section key-section rounded-xl border-2 transition-all duration-300 shadow-sm hover:shadow-md"
+      class="selector-section key-section rounded border transition-all"
       :class="keySectionClass"
     >
-      <div class="section-header bg-gradient-to-br from-green-50 to-emerald-50 px-5 py-4 rounded-t-xl border-b-2 border-green-200">
+      <div class="section-header bg-gray-50 px-4 py-3 rounded-t border-b border-gray-200">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <span class="text-3xl">🔑</span>
-            <span class="font-bold text-gray-900 text-base tracking-tight">KEY SELECTOR</span>
-            <span v-if="keyCount > 0" class="px-2.5 py-1 bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-bold rounded-full shadow-sm">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-gray-900 text-sm">Key Selector</span>
+            <span v-if="keyCount > 0" class="px-2 py-0.5 bg-gray-900 text-white text-[10px] font-semibold rounded">
               {{ keyCount }}
             </span>
           </div>
         </div>
-        <p class="text-xs text-gray-700 mt-2 font-medium">Select the labels/names (e.g., "Color", "Size")</p>
+        <p class="text-[11px] text-gray-600 mt-1">Select the labels/names (e.g., "Color", "Size")</p>
       </div>
       
-      <div class="p-4 space-y-3">
+      <div class="p-3 space-y-2.5">
         <!-- Selector Input/Display -->
         <div>
           <div class="flex gap-2">
@@ -40,42 +39,42 @@
               @click="handleStartKeySelection"
               :disabled="isSelectingValues"
               :class="[
-                'flex-1 px-4 py-2 rounded-lg font-medium transition-all',
+                'flex-1 h-9 px-3 rounded text-sm font-medium transition-all',
                 isSelectingKeys
-                  ? 'bg-green-600 text-white animate-pulse'
+                  ? 'bg-gray-900 text-white'
                   : keySelector
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-300'
-                    : 'bg-green-500 text-white hover:bg-green-600',
+                    ? 'bg-gray-100 text-gray-900 hover:bg-gray-200 border border-gray-300'
+                    : 'bg-gray-900 text-white hover:bg-gray-800',
                 isSelectingValues && 'opacity-50 cursor-not-allowed'
               ]"
             >
-              <span v-if="isSelectingKeys">🎯 Click an element...</span>
-              <span v-else-if="keySelector">📍 Change Selection</span>
-              <span v-else>📍 Click to Pick Keys</span>
+              <span v-if="isSelectingKeys">Click an element...</span>
+              <span v-else-if="keySelector">Change Selection</span>
+              <span v-else>Click to Pick Keys</span>
             </button>
             <button
               v-if="isSelectingKeys"
               @click="handleCancelSelection"
-              class="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-medium"
+              class="h-9 px-3 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-medium"
             >
-              ✕
+              Cancel
             </button>
           </div>
         </div>
         
-        <div v-if="keySelector" class="bg-gray-50 p-3 rounded border border-gray-200">
-          <div class="text-xs text-gray-500 mb-1">CSS Selector:</div>
-          <code class="text-xs text-gray-800 break-all font-mono">{{ keySelector }}</code>
+        <div v-if="keySelector" class="bg-gray-50 p-2 rounded border border-gray-200">
+          <div class="text-[11px] text-gray-500 mb-0.5">CSS Selector:</div>
+          <code class="text-[11px] text-gray-800 break-all font-mono">{{ keySelector }}</code>
         </div>
         
         <!-- Extraction Options -->
         <div class="flex gap-2">
           <div class="flex-1">
-            <label class="block text-xs font-medium text-gray-700 mb-1">Extract:</label>
+            <label class="block text-[11px] font-medium text-gray-700 mb-1">Extract:</label>
             <select
               v-model="keyType"
               @change="handleKeyTypeChange"
-              class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
+              class="w-full h-8 px-2 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-gray-400"
             >
               <option value="text">Text Content</option>
               <option value="attribute">Attribute</option>
@@ -83,34 +82,34 @@
             </select>
           </div>
           <div v-if="keyType === 'attribute'" class="flex-1">
-            <label class="block text-xs font-medium text-gray-700 mb-1">Attribute:</label>
+            <label class="block text-[11px] font-medium text-gray-700 mb-1">Attribute:</label>
             <input
               v-model="keyAttribute"
               @input="handleKeyAttributeChange"
               type="text"
               placeholder="e.g., href, src"
-              class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-green-500"
+              class="w-full h-8 px-2 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-gray-400"
             />
           </div>
         </div>
         
         <!-- Preview -->
-        <div v-if="keyMatches.length > 0" class="bg-green-50 border border-green-200 rounded p-3">
-          <div class="text-xs font-semibold text-green-800 mb-2">
-            ✓ Preview: {{ keyMatches.length }} keys found
+        <div v-if="keyMatches.length > 0" class="bg-gray-50 border border-gray-200 rounded p-2.5">
+          <div class="text-[11px] font-semibold text-gray-900 mb-2">
+            Preview: {{ keyMatches.length }} keys found
           </div>
           <div class="space-y-1 max-h-32 overflow-y-auto crawlify-scrollbar">
             <div
               v-for="(item, idx) in keyMatches.slice(0, 5)"
               :key="idx"
-              class="flex items-start gap-2 text-xs"
+              class="flex items-start gap-2 text-[11px]"
             >
-              <span class="inline-flex items-center justify-center w-5 h-5 bg-green-500 text-white rounded-full font-bold flex-shrink-0">
+              <span class="inline-flex items-center justify-center w-4 h-4 bg-gray-700 text-white rounded text-[10px] font-semibold flex-shrink-0">
                 {{ idx + 1 }}
               </span>
               <span class="text-gray-700 break-all">{{ item || '(empty)' }}</span>
             </div>
-            <div v-if="keyMatches.length > 5" class="text-xs text-gray-500 italic pl-7">
+            <div v-if="keyMatches.length > 5" class="text-[11px] text-gray-500 pl-6">
               ... and {{ keyMatches.length - 5 }} more
             </div>
           </div>
@@ -118,25 +117,24 @@
       </div>
     </div>
 
-    <!-- Value Selector Section with improved design -->
+    <!-- Value Selector Section -->
     <div 
-      class="selector-section value-section rounded-xl border-2 transition-all duration-300 shadow-sm hover:shadow-md"
+      class="selector-section value-section rounded border transition-all"
       :class="valueSectionClass"
     >
-      <div class="section-header bg-gradient-to-br from-blue-50 to-indigo-50 px-5 py-4 rounded-t-xl border-b-2 border-blue-200">
+      <div class="section-header bg-gray-50 px-4 py-3 rounded-t border-b border-gray-200">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <span class="text-3xl">💎</span>
-            <span class="font-bold text-gray-900 text-base tracking-tight">VALUE SELECTOR</span>
-            <span v-if="valueCount > 0" class="px-2.5 py-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-bold rounded-full shadow-sm">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-gray-900 text-sm">Value Selector</span>
+            <span v-if="valueCount > 0" class="px-2 py-0.5 bg-gray-900 text-white text-[10px] font-semibold rounded">
               {{ valueCount }}
             </span>
           </div>
         </div>
-        <p class="text-xs text-gray-700 mt-2 font-medium">Select the data/values (e.g., "Black", "Large")</p>
+        <p class="text-[11px] text-gray-600 mt-1">Select the data/values (e.g., "Black", "Large")</p>
       </div>
       
-      <div class="p-4 space-y-3">
+      <div class="p-3 space-y-2.5">
         <!-- Selector Input/Display -->
         <div>
           <div class="flex gap-2">
@@ -144,42 +142,42 @@
               @click="handleStartValueSelection"
               :disabled="isSelectingKeys"
               :class="[
-                'flex-1 px-4 py-2 rounded-lg font-medium transition-all',
+                'flex-1 h-9 px-3 rounded text-sm font-medium transition-all',
                 isSelectingValues
-                  ? 'bg-blue-600 text-white animate-pulse'
+                  ? 'bg-gray-900 text-white'
                   : valueSelector
-                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300'
-                    : 'bg-blue-500 text-white hover:bg-blue-600',
+                    ? 'bg-gray-100 text-gray-900 hover:bg-gray-200 border border-gray-300'
+                    : 'bg-gray-900 text-white hover:bg-gray-800',
                 isSelectingKeys && 'opacity-50 cursor-not-allowed'
               ]"
             >
-              <span v-if="isSelectingValues">🎯 Click an element...</span>
-              <span v-else-if="valueSelector">📍 Change Selection</span>
-              <span v-else>📍 Click to Pick Values</span>
+              <span v-if="isSelectingValues">Click an element...</span>
+              <span v-else-if="valueSelector">Change Selection</span>
+              <span v-else>Click to Pick Values</span>
             </button>
             <button
               v-if="isSelectingValues"
               @click="handleCancelSelection"
-              class="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-medium"
+              class="h-9 px-3 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-medium"
             >
-              ✕
+              Cancel
             </button>
           </div>
         </div>
         
-        <div v-if="valueSelector" class="bg-gray-50 p-3 rounded border border-gray-200">
-          <div class="text-xs text-gray-500 mb-1">CSS Selector:</div>
-          <code class="text-xs text-gray-800 break-all font-mono">{{ valueSelector }}</code>
+        <div v-if="valueSelector" class="bg-gray-50 p-2 rounded border border-gray-200">
+          <div class="text-[11px] text-gray-500 mb-0.5">CSS Selector:</div>
+          <code class="text-[11px] text-gray-800 break-all font-mono">{{ valueSelector }}</code>
         </div>
         
         <!-- Extraction Options -->
         <div class="flex gap-2">
           <div class="flex-1">
-            <label class="block text-xs font-medium text-gray-700 mb-1">Extract:</label>
+            <label class="block text-[11px] font-medium text-gray-700 mb-1">Extract:</label>
             <select
               v-model="valueType"
               @change="handleValueTypeChange"
-              class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+              class="w-full h-8 px-2 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-gray-400"
             >
               <option value="text">Text Content</option>
               <option value="attribute">Attribute</option>
@@ -187,34 +185,34 @@
             </select>
           </div>
           <div v-if="valueType === 'attribute'" class="flex-1">
-            <label class="block text-xs font-medium text-gray-700 mb-1">Attribute:</label>
+            <label class="block text-[11px] font-medium text-gray-700 mb-1">Attribute:</label>
             <input
               v-model="valueAttribute"
               @input="handleValueAttributeChange"
               type="text"
               placeholder="e.g., href, src"
-              class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+              class="w-full h-8 px-2 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-gray-400"
             />
           </div>
         </div>
         
         <!-- Preview -->
-        <div v-if="valueMatches.length > 0" class="bg-blue-50 border border-blue-200 rounded p-3">
-          <div class="text-xs font-semibold text-blue-800 mb-2">
-            ✓ Preview: {{ valueMatches.length }} values found
+        <div v-if="valueMatches.length > 0" class="bg-gray-50 border border-gray-200 rounded p-2.5">
+          <div class="text-[11px] font-semibold text-gray-900 mb-2">
+            Preview: {{ valueMatches.length }} values found
           </div>
           <div class="space-y-1 max-h-32 overflow-y-auto crawlify-scrollbar">
             <div
               v-for="(item, idx) in valueMatches.slice(0, 5)"
               :key="idx"
-              class="flex items-start gap-2 text-xs"
+              class="flex items-start gap-2 text-[11px]"
             >
-              <span class="inline-flex items-center justify-center w-5 h-5 bg-blue-500 text-white rounded-full font-bold flex-shrink-0">
+              <span class="inline-flex items-center justify-center w-4 h-4 bg-gray-700 text-white rounded text-[10px] font-semibold flex-shrink-0">
                 {{ idx + 1 }}
               </span>
               <span class="text-gray-700 break-all">{{ item || '(empty)' }}</span>
             </div>
-            <div v-if="valueMatches.length > 5" class="text-xs text-gray-500 italic pl-7">
+            <div v-if="valueMatches.length > 5" class="text-[11px] text-gray-500 pl-6">
               ... and {{ valueMatches.length - 5 }} more
             </div>
           </div>
@@ -222,24 +220,22 @@
       </div>
     </div>
 
-    <!-- Pairing Preview with enhanced design -->
-    <div v-if="pairs.length > 0" class="pairing-preview bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-xl p-5 shadow-md">
-      <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
-          <span class="text-2xl">🔗</span>
-          <span class="font-bold text-gray-900 text-base tracking-tight">PAIRING PREVIEW</span>
-          <span class="text-xs text-gray-700 font-semibold bg-purple-200 px-2 py-1 rounded-full">({{ pairs.length }} pairs)</span>
+    <!-- Pairing Preview -->
+    <div v-if="pairs.length > 0" class="pairing-preview bg-white border border-gray-200 rounded p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="font-semibold text-gray-900 text-sm">Pairing Preview</span>
+          <span class="text-[10px] text-gray-600 font-medium bg-gray-100 px-2 py-0.5 rounded">({{ pairs.length }} pairs)</span>
         </div>
-        <div v-if="hasCountMismatch" class="flex items-center gap-1.5 text-orange-600 text-xs font-bold bg-orange-100 px-2 py-1 rounded-full">
-          <span>⚠️</span>
+        <div v-if="hasCountMismatch" class="flex items-center gap-1 text-orange-600 text-[10px] font-semibold bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
           <span>Mismatch</span>
         </div>
       </div>
 
       <!-- Mismatch Warning -->
-      <div v-if="hasCountMismatch" class="bg-orange-50 border border-orange-300 rounded p-3 mb-3">
-        <div class="text-sm font-medium text-orange-800 mb-1">⚠️ Count Mismatch Warning</div>
-        <div class="text-xs text-orange-700">
+      <div v-if="hasCountMismatch" class="bg-orange-50 border border-orange-200 rounded p-2.5 mb-3">
+        <div class="text-xs font-semibold text-orange-900 mb-1">Count Mismatch Warning</div>
+        <div class="text-[11px] text-orange-800">
           Keys: <strong>{{ keyCount }}</strong> | Values: <strong>{{ valueCount }}</strong>
           <br />
           Only <strong>{{ Math.min(keyCount, valueCount) }}</strong> pairs will be created.
@@ -248,33 +244,33 @@
       </div>
 
       <!-- Pairing Table -->
-      <div class="bg-white border border-purple-200 rounded overflow-hidden">
-        <table class="w-full text-xs">
-          <thead class="bg-purple-100">
+      <div class="bg-white border border-gray-200 rounded overflow-hidden">
+        <table class="w-full text-[11px]">
+          <thead class="bg-gray-50">
             <tr>
               <th class="px-3 py-2 text-left font-semibold text-gray-700">Key</th>
-              <th class="px-2 py-2 text-center w-8"></th>
+              <th class="px-2 py-2 text-center w-6"></th>
               <th class="px-3 py-2 text-left font-semibold text-gray-700">Value</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-purple-100">
+          <tbody class="divide-y divide-gray-100">
             <tr
               v-for="pair in pairs.slice(0, 5)"
               :key="pair.index"
-              class="hover:bg-purple-50"
+              class="hover:bg-gray-50"
             >
               <td class="px-3 py-2">
                 <div class="flex items-start gap-2">
-                  <span class="inline-flex items-center justify-center w-4 h-4 bg-green-500 text-white rounded-full text-[10px] font-bold flex-shrink-0">
+                  <span class="inline-flex items-center justify-center w-4 h-4 bg-gray-700 text-white rounded text-[10px] font-semibold flex-shrink-0">
                     {{ pair.index }}
                   </span>
                   <span class="break-all">{{ pair.key || '(empty)' }}</span>
                 </div>
               </td>
-              <td class="px-2 py-2 text-center text-purple-500 font-bold">→</td>
+              <td class="px-2 py-2 text-center text-gray-400 font-medium">→</td>
               <td class="px-3 py-2">
                 <div class="flex items-start gap-2">
-                  <span class="inline-flex items-center justify-center w-4 h-4 bg-blue-500 text-white rounded-full text-[10px] font-bold flex-shrink-0">
+                  <span class="inline-flex items-center justify-center w-4 h-4 bg-gray-700 text-white rounded text-[10px] font-semibold flex-shrink-0">
                     {{ pair.index }}
                   </span>
                   <span class="break-all">{{ pair.value || '(empty)' }}</span>
@@ -283,7 +279,7 @@
             </tr>
           </tbody>
         </table>
-        <div v-if="pairs.length > 5" class="px-3 py-2 bg-purple-50 text-xs text-gray-600 italic text-center">
+        <div v-if="pairs.length > 5" class="px-3 py-2 bg-gray-50 text-[11px] text-gray-500 text-center">
           ... and {{ pairs.length - 5 }} more pairs
         </div>
       </div>
@@ -291,66 +287,64 @@
 
     <!-- Transformations -->
     <div class="transformations">
-      <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+      <label class="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
         <input
           v-model="applyTrim"
           type="checkbox"
-          class="w-4 h-4 text-blue-500 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+          class="w-3.5 h-3.5 text-gray-900 rounded border-gray-300 focus:ring-2 focus:ring-gray-400"
         />
         <span>Trim whitespace</span>
       </label>
     </div>
 
     <!-- All Extraction Pairs Section (Shows Current + Saved) -->
-    <div v-if="extractionPairs.length > 0 || (keySelector && valueSelector)" class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4">
-      <div class="flex items-center justify-between mb-3">
-        <span class="font-semibold text-purple-900">📦 All Extraction Pairs ({{ totalPairsCount }})</span>
-        <span class="text-xs text-purple-700">{{ editingPairIndex !== null ? '✏️ Editing in form above' : '➕ Configure new pair above' }}</span>
+    <div v-if="extractionPairs.length > 0 || (keySelector && valueSelector)" class="bg-gray-50 border border-gray-200 rounded p-3">
+      <div class="flex items-center justify-between mb-2.5">
+        <span class="font-semibold text-gray-900 text-sm">All Extraction Pairs ({{ totalPairsCount }})</span>
+        <span class="text-[11px] text-gray-600">{{ editingPairIndex !== null ? 'Editing in form above' : 'Configure new pair above' }}</span>
       </div>
       
       <div class="space-y-3">
         <!-- Current pair being configured (if exists and not editing a saved pair) -->
         <div
           v-if="keySelector && valueSelector && editingPairIndex === null"
-          class="bg-white border-2 border-amber-400 rounded-lg overflow-hidden shadow-md"
+          class="bg-white border border-gray-300 rounded overflow-hidden"
         >
           <!-- Pair Header -->
-          <div class="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-amber-100 to-amber-50">
+          <div class="flex items-center justify-between px-3 py-2 bg-gray-100 border-b border-gray-300">
             <div class="flex items-center gap-2">
-              <span class="text-sm font-bold text-amber-900">Pair {{ extractionPairs.length + 1 }}</span>
-              <span class="text-xs px-2 py-0.5 bg-amber-500 text-white rounded-full font-bold">⚡ CURRENT</span>
+              <span class="text-xs font-semibold text-gray-900">Pair {{ extractionPairs.length + 1 }}</span>
+              <span class="text-[10px] px-2 py-0.5 bg-gray-900 text-white rounded font-semibold">CURRENT</span>
             </div>
-            <span class="text-xs text-amber-700 italic">Unsaved - click button below to save</span>
+            <span class="text-[11px] text-gray-600">Unsaved - click button below to save</span>
           </div>
           
           <!-- Pair Details -->
-          <div class="p-3 space-y-2 text-xs">
+          <div class="p-2.5 space-y-2 text-[11px]">
             <!-- Key Info -->
-            <div class="bg-green-50 border border-green-200 rounded p-2">
-              <div class="font-semibold text-green-800 mb-1 flex items-center gap-1">
-                <span>🔑</span>
-                <span>Key Selector</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2">
+              <div class="font-semibold text-gray-900 mb-1">
+                Key Selector
               </div>
-              <div class="font-mono text-green-900 break-all">{{ keySelector }}</div>
-              <div class="mt-1 text-green-700">
-                <span class="font-semibold">Type:</span> {{ keyType }}
+              <div class="font-mono text-gray-800 break-all">{{ keySelector }}</div>
+              <div class="mt-1 text-gray-600">
+                <span class="font-medium">Type:</span> {{ keyType }}
                 <span v-if="keyType === 'attribute' && keyAttribute" class="ml-2">
-                  <span class="font-semibold">Attr:</span> {{ keyAttribute }}
+                  <span class="font-medium">Attr:</span> {{ keyAttribute }}
                 </span>
               </div>
             </div>
             
             <!-- Value Info -->
-            <div class="bg-blue-50 border border-blue-200 rounded p-2">
-              <div class="font-semibold text-blue-800 mb-1 flex items-center gap-1">
-                <span>💎</span>
-                <span>Value Selector</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2">
+              <div class="font-semibold text-gray-900 mb-1">
+                Value Selector
               </div>
-              <div class="font-mono text-blue-900 break-all">{{ valueSelector }}</div>
-              <div class="mt-1 text-blue-700">
-                <span class="font-semibold">Type:</span> {{ valueType }}
+              <div class="font-mono text-gray-800 break-all">{{ valueSelector }}</div>
+              <div class="mt-1 text-gray-600">
+                <span class="font-medium">Type:</span> {{ valueType }}
                 <span v-if="valueType === 'attribute' && valueAttribute" class="ml-2">
-                  <span class="font-semibold">Attr:</span> {{ valueAttribute }}
+                  <span class="font-medium">Attr:</span> {{ valueAttribute }}
                 </span>
               </div>
             </div>
@@ -362,83 +356,81 @@
           v-for="(pair, idx) in extractionPairs"
           :key="idx"
           :class="[
-            'bg-white border-2 rounded-lg overflow-hidden transition-all',
+            'bg-white border rounded overflow-hidden transition-all',
             editingPairIndex === idx 
-              ? 'border-blue-400 shadow-md ring-2 ring-blue-200' 
-              : 'border-purple-200 hover:border-purple-400'
+              ? 'border-gray-400 ring-2 ring-gray-300' 
+              : 'border-gray-200 hover:border-gray-300'
           ]"
         >
           <!-- Pair Header -->
           <div :class="[
-            'flex items-center justify-between px-3 py-2',
+            'flex items-center justify-between px-3 py-2 border-b',
             editingPairIndex === idx
-              ? 'bg-gradient-to-r from-blue-100 to-blue-50'
-              : 'bg-gradient-to-r from-purple-100 to-purple-50'
+              ? 'bg-gray-100 border-gray-400'
+              : 'bg-gray-50 border-gray-200'
           ]">
             <div class="flex items-center gap-2">
               <span :class="[
-                'text-sm font-bold',
-                editingPairIndex === idx ? 'text-blue-900' : 'text-purple-900'
+                'text-xs font-semibold',
+                editingPairIndex === idx ? 'text-gray-900' : 'text-gray-900'
               ]">Pair {{ idx + 1 }}</span>
-              <span v-if="editingPairIndex === idx" class="text-xs px-2 py-0.5 bg-blue-500 text-white rounded-full font-bold">
-                ✏️ EDITING
+              <span v-if="editingPairIndex === idx" class="text-[10px] px-2 py-0.5 bg-gray-900 text-white rounded font-semibold">
+                EDITING
               </span>
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-1.5">
               <button
                 v-if="editingPairIndex !== idx"
                 @click="editExtractionPair(idx)"
-                class="text-xs px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded font-medium transition-colors"
+                class="text-[10px] px-2 py-1 bg-gray-900 hover:bg-gray-800 text-white rounded font-medium transition-colors"
                 title="Edit this pair"
               >
-                ✏️ Edit
+                Edit
               </button>
               <button
                 v-else
                 @click="cancelEditPair"
-                class="text-xs px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded font-medium transition-colors"
+                class="text-[10px] px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded font-medium transition-colors"
                 title="Cancel editing"
               >
-                ✕ Cancel
+                Cancel
               </button>
               <button
                 @click="removeExtractionPair(idx)"
-                class="text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded font-medium transition-colors"
+                class="text-[10px] px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded font-medium transition-colors"
                 title="Delete this pair"
               >
-                🗑️ Delete
+                Delete
               </button>
             </div>
           </div>
           
           <!-- Pair Details -->
-          <div class="p-3 space-y-2 text-xs">
+          <div class="p-2.5 space-y-2 text-[11px]">
             <!-- Key Info -->
-            <div class="bg-green-50 border border-green-200 rounded p-2">
-              <div class="font-semibold text-green-800 mb-1 flex items-center gap-1">
-                <span>🔑</span>
-                <span>Key Selector</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2">
+              <div class="font-semibold text-gray-900 mb-1">
+                Key Selector
               </div>
-              <div class="font-mono text-green-900 break-all">{{ pair.key_selector }}</div>
-              <div class="mt-1 text-green-700">
-                <span class="font-semibold">Type:</span> {{ pair.key_type }}
+              <div class="font-mono text-gray-800 break-all">{{ pair.key_selector }}</div>
+              <div class="mt-1 text-gray-600">
+                <span class="font-medium">Type:</span> {{ pair.key_type }}
                 <span v-if="pair.key_attribute" class="ml-2">
-                  <span class="font-semibold">Attr:</span> {{ pair.key_attribute }}
+                  <span class="font-medium">Attr:</span> {{ pair.key_attribute }}
                 </span>
               </div>
             </div>
             
             <!-- Value Info -->
-            <div class="bg-blue-50 border border-blue-200 rounded p-2">
-              <div class="font-semibold text-blue-800 mb-1 flex items-center gap-1">
-                <span>💎</span>
-                <span>Value Selector</span>
+            <div class="bg-gray-50 border border-gray-200 rounded p-2">
+              <div class="font-semibold text-gray-900 mb-1">
+                Value Selector
               </div>
-              <div class="font-mono text-blue-900 break-all">{{ pair.value_selector }}</div>
-              <div class="mt-1 text-blue-700">
-                <span class="font-semibold">Type:</span> {{ pair.value_type }}
+              <div class="font-mono text-gray-800 break-all">{{ pair.value_selector }}</div>
+              <div class="mt-1 text-gray-600">
+                <span class="font-medium">Type:</span> {{ pair.value_type }}
                 <span v-if="pair.value_attribute" class="ml-2">
-                  <span class="font-semibold">Attr:</span> {{ pair.value_attribute }}
+                  <span class="font-medium">Attr:</span> {{ pair.value_attribute }}
                 </span>
               </div>
             </div>
@@ -448,11 +440,11 @@
     </div>
 
     <!-- Tips -->
-    <details class="bg-blue-50 border border-blue-200 rounded-lg p-3">
-      <summary class="text-sm font-medium text-blue-900 cursor-pointer">
-        💡 Tips
+    <details class="bg-gray-50 border border-gray-200 rounded p-2.5">
+      <summary class="text-xs font-medium text-gray-900 cursor-pointer">
+        Tips
       </summary>
-      <ul class="mt-2 space-y-1 text-xs text-blue-800 list-disc list-inside">
+      <ul class="mt-2 space-y-1 text-[11px] text-gray-600 list-disc list-inside">
         <li>Select elements with the same parent structure for best results</li>
         <li>Keys and values are paired by their order (index position)</li>
         <li>The 1st key pairs with the 1st value, 2nd with 2nd, etc.</li>
@@ -460,18 +452,15 @@
       </ul>
     </details>
 
-    <!-- Add Buttons with improved styling -->
-    <div class="flex gap-3">
+    <!-- Add Buttons -->
+    <div class="flex gap-2">
       <!-- Cancel button when editing -->
       <button
         v-if="editingPairIndex !== null && !canAdd"
         @click="cancelEditPair"
-        class="flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base shadow-md hover:shadow-lg hover:scale-105 bg-gradient-to-r from-gray-400 to-gray-500 text-white hover:from-gray-500 hover:to-gray-600"
+        class="flex-1 h-9 px-3 rounded font-medium transition-all text-sm bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
       >
-        <span class="flex items-center justify-center gap-2">
-          <span class="text-lg">✕</span>
-          <span>Cancel Edit</span>
-        </span>
+        Cancel Edit
       </button>
       
       <!-- Add/Save button -->
@@ -480,43 +469,27 @@
         @click="handleAddAnotherPair"
         :disabled="!canAdd"
         :class="[
-          'flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base shadow-md',
+          'flex-1 h-9 px-3 rounded font-medium transition-all text-sm',
           canAdd
-            ? editingPairIndex !== null
-              ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 hover:shadow-lg hover:scale-105'
-              : 'bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700 hover:shadow-lg hover:scale-105'
-            : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+            ? 'bg-gray-900 text-white hover:bg-gray-800'
+            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
         ]"
       >
-        <span v-if="editingPairIndex !== null" class="flex items-center justify-center gap-2">
-          <span class="text-lg">💾</span>
-          <span>Save Changes</span>
-        </span>
-        <span v-else class="flex items-center justify-center gap-2">
-          <span class="text-lg">➕</span>
-          <span>Add Another Pair</span>
-        </span>
+        <span v-if="editingPairIndex !== null">Save Changes</span>
+        <span v-else>Add Another Pair</span>
       </button>
       <button
         @click="handleAdd"
         :disabled="!canAddToField"
         :class="[
-          'flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base shadow-md',
+          'flex-1 h-9 px-3 rounded font-medium transition-all text-sm',
           canAddToField
-            ? props.editingFieldId
-              ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 hover:shadow-lg hover:scale-105'
-              : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-lg hover:scale-105'
-            : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+            ? 'bg-gray-900 text-white hover:bg-gray-800'
+            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
         ]"
       >
-        <span v-if="props.editingFieldId" class="flex items-center justify-center gap-2">
-          <span class="text-lg">💾</span>
-          <span>Update Field</span>
-        </span>
-        <span v-else class="flex items-center justify-center gap-2">
-          <span class="text-lg">✓</span>
-          <span>Add to Field List</span>
-        </span>
+        <span v-if="props.editingFieldId">Update Field</span>
+        <span v-else>Add to Field List</span>
       </button>
     </div>
   </div>
@@ -582,14 +555,14 @@ const extractionPairs = ref<ExtractionPair[]>([])
 const editingPairIndex = ref<number | null>(null) // Track which pair index is being edited (-1 = new pair)
 
 const keySectionClass = computed(() => {
-  if (isSelectingKeys.value) return 'border-green-500 shadow-lg'
-  if (keyCount.value > 0) return 'border-green-300'
+  if (isSelectingKeys.value) return 'border-gray-400'
+  if (keyCount.value > 0) return 'border-gray-300'
   return 'border-gray-200'
 })
 
 const valueSectionClass = computed(() => {
-  if (isSelectingValues.value) return 'border-blue-500 shadow-lg'
-  if (valueCount.value > 0) return 'border-blue-300'
+  if (isSelectingValues.value) return 'border-gray-400'
+  if (valueCount.value > 0) return 'border-gray-300'
   return 'border-gray-200'
 })
 
