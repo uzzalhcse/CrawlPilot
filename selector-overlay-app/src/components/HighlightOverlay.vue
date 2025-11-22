@@ -66,8 +66,12 @@
         :class="getFieldHighlightClass(field)"
         :style="highlightStyle(rect)"
       >
-        <div class="absolute -top-7 left-0 text-white text-xs px-2 py-1 rounded shadow-md font-medium whitespace-nowrap"
-             :class="getFieldBadgeClass(field)">
+        <div 
+          class="absolute -top-7 left-0 text-white text-xs px-2 py-1 rounded shadow-md font-medium whitespace-nowrap cursor-pointer hover:scale-105 transition-transform pointer-events-auto"
+          :class="getFieldBadgeClass(field)"
+          @click.stop="emit('edit-field', field)"
+          :title="`Click to edit '${field.name}'`"
+        >
           {{ field.name }}<span v-if="field.type === 'attribute' && field.attribute" class="opacity-90 ml-1">@{{ field.attribute }}</span><span v-if="getFieldRects(field).length > 1" class="opacity-75 ml-1">#{{ index + 1 }}</span>
         </div>
       </div>
@@ -153,6 +157,7 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   'navigate': [element: Element]
+  'edit-field': [field: SelectedField]
 }>()
 
 // Store rects for selected fields (all matching elements, not just first)

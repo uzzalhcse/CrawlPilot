@@ -682,6 +682,7 @@ const emit = defineEmits<{
   'scrollToResult': [result: TestResult]
   'useAlternativeSelector': [selector: string]
   'dialogStateChange': [open: boolean]
+  'formStateChange': [open: boolean]
 }>()
 
 const activeTab = ref<'regular' | 'key-value'>('regular')
@@ -728,6 +729,11 @@ watch(extractMultiple, (isMultiple) => {
 // Notify parent when dialog state changes
 watch(deleteConfirmField, (field) => {
   emit('dialogStateChange', field !== null)
+})
+
+// Notify parent when form state changes
+watch(showFieldForm, (isOpen) => {
+  emit('formStateChange', isOpen)
 })
 
 const canAddField = computed(() => {

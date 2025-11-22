@@ -57,7 +57,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
     // Don't track hover if dialog is open
     if (isDialogOpen?.value) return
     if (lockedElement.value) return
-    
+
     const target = e.target as Element
     if (target && !target.closest('#crawlify-selector-overlay')) {
       hoveredElement.value = target
@@ -67,18 +67,18 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
   const handleClick = (e: MouseEvent) => {
     // Don't intercept clicks if dialog is open
     if (isDialogOpen?.value) return
-    
+
     const target = e.target as Element
     // Don't intercept clicks on the control panel or if detailed view is open
     if (target && !target.closest('#crawlify-selector-overlay') && !detailedViewField.value) {
       e.preventDefault()
       e.stopPropagation()
-      
+
       // Skip if in key-value mode (handled by KeyValuePairSelector)
       if (currentMode.value === 'key-value-pairs') {
         return
       }
-      
+
       lockedElement.value = target
       // Update hoveredElement to match the locked element to ensure selector consistency
       hoveredElement.value = target
@@ -91,7 +91,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
     // Generate selector from the locked element (this is the source of truth)
     const selector = generateSelector(lockedElement.value)
     const sampleValue = getSampleValue(lockedElement.value, currentFieldType.value, currentFieldAttribute.value)
-    
+
     // Calculate match count based on the actual selector generated
     let matchCount = 0
     try {
@@ -99,7 +99,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
     } catch {
       matchCount = 0
     }
-    
+
     const field: SelectedField = {
       id: `field-${Date.now()}`,
       name: currentFieldName.value.trim(),
@@ -114,12 +114,39 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
     }
 
     selectedFields.value.push(field)
-    
+
     // Reset form and clear locked element
     currentFieldName.value = ''
     currentFieldAttribute.value = ''
     lockedElement.value = null
     hoveredElement.value = null
+  }
+
+  // Quick add field with auto-suggested name (for click-first workflow)
+  const quickAddField = (element: Element, suggestedName: string, fieldType: FieldType = 'text', attribute?: string) => {
+    const selector = generateSelector(element)
+    const sampleValue = getSampleValue(element, fieldType, attribute)
+
+    let matchCount = 0
+    try {
+      matchCount = document.querySelectorAll(selector).length
+    } catch {
+      matchCount = 0
+    }
+
+    const field: SelectedField = {
+      id: `field-${Date.now()}`,
+      name: suggestedName,
+      selector,
+      type: fieldType,
+      attribute: fieldType === 'attribute' ? attribute : undefined,
+      timestamp: Date.now(),
+      sampleValue,
+      matchCount,
+      mode: matchCount > 1 ? 'list' : 'single'
+    }
+
+    selectedFields.value.push(field)
   }
 
   const addKeyValueField = (data: {
@@ -147,7 +174,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
     }
 
     selectedFields.value.push(field)
-    
+
     // Reset form
     currentFieldName.value = ''
   }
@@ -182,15 +209,15 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
 
   const saveEdit = (updatedField: Partial<SelectedField>) => {
     if (!detailedViewField.value) return
-    
+
     const index = selectedFields.value.findIndex(f => f.id === detailedViewField.value!.id)
-    
+
     if (index !== -1) {
       selectedFields.value[index] = {
         ...selectedFields.value[index],
         ...updatedField
       }
-      
+
       detailedViewField.value = selectedFields.value[index]
     }
     editMode.value = false
@@ -261,19 +288,19 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
       livePreviewSamples.value = []
       return
     }
-    
+
     try {
       const elements = document.querySelectorAll(hoveredElementSelector.value)
       const samples: string[] = []
       const maxSamples = 3
-      
+
       for (let i = 0; i < Math.min(elements.length, maxSamples); i++) {
         const value = getSampleValue(elements[i], currentFieldType.value, currentFieldAttribute.value)
         if (value) {
           samples.push(value)
         }
       }
-      
+
       livePreviewSamples.value = samples
     } catch (error) {
       livePreviewSamples.value = []
@@ -286,7 +313,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
       selectorAnalysis.value = null
       return
     }
-    
+
     try {
       const analysis = analyzeSelectorQuality(lockedElement.value, hoveredElementSelector.value)
       selectorAnalysis.value = analysis
@@ -332,7 +359,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
         hoveredElement.value = null
       }
     }
-    
+
     // Enter to add field when element is locked
     if (e.key === 'Enter' && lockedElement.value && currentFieldName.value.trim()) {
       addField()
@@ -342,13 +369,15 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
   // Lifecycle
   onMounted(() => {
     document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('click', handleClick, true)
+    // Disabled: new click-first workflow in App.vue handles clicks now
+    // document.addEventListener('click', handleClick, true)
     document.addEventListener('keydown', handleKeyDown)
   })
 
   onBeforeUnmount(() => {
     document.removeEventListener('mousemove', handleMouseMove)
-    document.removeEventListener('click', handleClick, true)
+    // Disabled: new click-first workflow in App.vue handles clicks now
+    // document.removeEventListener('click', handleClick, true)
     document.removeEventListener('keydown', handleKeyDown)
   })
 
@@ -390,6 +419,7 @@ export function useElementSelection(isDialogOpen?: Ref<boolean>) {
     livePreviewSamples,
     selectorAnalysis,
     addField,
+    quickAddField,
     addKeyValueField,
     removeField,
     openDetailedView,
