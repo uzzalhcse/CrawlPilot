@@ -392,6 +392,7 @@
             <KeyValuePairSelector
               ref="kvSelectorRef"
               v-model:field-name="kvFieldName"
+              :editing-field-id="editingFieldId"
               @add="handleAddKeyValueField"
             />
           </TabsContent>
@@ -677,7 +678,9 @@ const emit = defineEmits<{
   'update:mode': [mode: SelectionMode]
   'addField': [transforms: any]
   'updateField': [data: { id: string; transforms: any }]
+  'updateKVField': [data: { id: string; fieldName: string; extractions: any[] }]
   'loadFieldForEdit': [field: SelectedField]
+  'loadKVFieldForEdit': [field: SelectedField]
   'addKeyValueField': [data: any]
   'removeField': [id: string]
   'openDetailedView': [field: SelectedField]
@@ -837,13 +840,38 @@ function handleAddField() {
 }
 
 function startEditField(field: SelectedField) {
-  // Don't allow editing key-value fields in regular mode for now
-  if (field.mode === 'key-value-pairs') {
-    return
-  }
+  console.log('🎯 startEditField called with field:', field)
+  console.log('  - field.mode:', field.mode)
+  console.log('  - field.name:', field.name)
   
   // Set editing mode
   editingFieldId.value = field.id
+  
+  if (field.mode === 'key-value-pairs') {
+    console.log('✅ K-V field detected')
+    // Switch to Key-Value tab
+    activeTab.value = 'key-value'
+    console.log('  - Switched to K-V tab')
+    
+    // Populate K-V field name
+    kvFieldName.value = field.name
+    console.log('  - Set field name:', kvFieldName.value)
+    
+    // Load the K-V field data into the selector
+    console.log('  - Emitting loadKVFieldForEdit with field:', field)
+    emit('loadKVFieldForEdit', field)
+    
+    // Scroll to top to show the form
+    const scrollArea = document.querySelector('.scrollable-content')
+    if (scrollArea) {
+      scrollArea.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    return
+  }
+  
+  // Regular field editing
+  // Switch to regular tab
+  activeTab.value = 'regular'
   
   // Populate form with field data
   emit('update:fieldName', field.name)
@@ -902,7 +930,18 @@ function confirmDelete() {
 }
 
 function handleAddKeyValueField(data: { fieldName: string; extractions: any[] }) {
-  emit('addKeyValueField', data)
+  if (editingFieldId.value) {
+    // Update existing K-V field
+    emit('updateKVField', {
+      id: editingFieldId.value,
+      fieldName: data.fieldName,
+      extractions: data.extractions
+    })
+    cancelEdit()
+  } else {
+    // Add new K-V field
+    emit('addKeyValueField', data)
+  }
   kvFieldName.value = ''
 }
 
@@ -919,4 +958,9 @@ const getFieldTypeBadgeClass = (field: SelectedField) => {
   if (field.type === 'html') return 'border-pink-300 text-pink-700'
   return 'border-gray-300 text-gray-700'
 }
+
+// Expose kvSelectorRef to parent
+defineExpose({
+  kvSelectorRef
+})
 </script>

@@ -32,7 +32,9 @@
         :test-results="testResults"
         @add-field="(transforms) => addField(transforms)"
         @update-field="updateField"
+        @update-k-v-field="updateKVField"
         @load-field-for-edit="loadFieldForEdit"
+        @load-k-v-field-for-edit="loadKVFieldForEdit"
         @add-key-value-field="addKeyValueField"
         @remove-field="removeField"
         @open-detailed-view="openDetailedView"
@@ -50,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch, provide } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch, provide, nextTick } from 'vue'
 import ControlPanel from './components/ControlPanel.vue'
 import HighlightOverlay from './components/HighlightOverlay.vue'
 import { useElementSelection } from './composables/useElementSelection'
@@ -152,6 +154,28 @@ const updateField = (data: { id: string; transforms: any }) => {
   }
 }
 
+// Update existing K-V field
+const updateKVField = (data: { id: string; fieldName: string; extractions: any[] }) => {
+  const fieldIndex = selectedFields.value.findIndex(f => f.id === data.id)
+  if (fieldIndex !== -1) {
+    selectedFields.value[fieldIndex] = {
+      ...selectedFields.value[fieldIndex],
+      name: data.fieldName,
+      attributes: {
+        extractions: data.extractions.map(ext => ({
+          key_selector: ext.key_selector,
+          value_selector: ext.value_selector,
+          key_type: ext.key_type,
+          value_type: ext.value_type,
+          key_attribute: ext.key_attribute,
+          value_attribute: ext.value_attribute,
+          transform: ext.transform
+        }))
+      }
+    }
+  }
+}
+
 // Load field for editing
 const loadFieldForEdit = (field: any) => {
   // Find elements matching this selector and lock the first one
@@ -164,6 +188,48 @@ const loadFieldForEdit = (field: any) => {
     }
   } catch (error) {
     console.error('Failed to load field for edit:', error)
+  }
+}
+
+// Load K-V field for editing
+const loadKVFieldForEdit = async (field: any) => {
+  console.log('🔧 loadKVFieldForEdit called with field:', field)
+  console.log('  - field.attributes:', field.attributes)
+  console.log('  - field.attributes?.extractions:', field.attributes?.extractions)
+  console.log('  - controlPanelRef.value:', controlPanelRef.value)
+  
+  // Load the extraction pairs into the K-V selector
+  if (field.attributes?.extractions && controlPanelRef.value) {
+    console.log('✅ Conditions met, waiting for tab to render...')
+    
+    // Wait for the tab to switch and K-V selector to be mounted
+    // Sometimes need multiple ticks for component to fully mount
+    await nextTick()
+    await nextTick()
+    console.log('⏰ After nextTick (x2)')
+    
+    // Try accessing with a slight delay if still not available
+    let kvSelector = (controlPanelRef.value as any).kvSelectorRef
+    console.log('  - kvSelector (attempt 1):', kvSelector)
+    
+    if (!kvSelector) {
+      console.log('⏰ Waiting 50ms for component to mount...')
+      await new Promise(resolve => setTimeout(resolve, 50))
+      kvSelector = (controlPanelRef.value as any).kvSelectorRef
+      console.log('  - kvSelector (attempt 2 after delay):', kvSelector)
+    }
+    
+    console.log('  - kvSelector?.loadFieldData:', kvSelector?.loadFieldData)
+    
+    if (kvSelector && kvSelector.loadFieldData) {
+      console.log('🚀 Calling kvSelector.loadFieldData')
+      kvSelector.loadFieldData(field.attributes.extractions)
+    } else {
+      console.log('❌ kvSelector or loadFieldData still not available')
+      console.log('  - Full controlPanelRef:', controlPanelRef.value)
+    }
+  } else {
+    console.log('❌ Conditions not met for loading K-V field')
   }
 }
 

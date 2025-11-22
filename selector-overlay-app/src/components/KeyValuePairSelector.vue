@@ -365,15 +365,15 @@
         :class="[
           'flex-1 px-5 py-3.5 rounded-xl font-bold transition-all text-base shadow-md',
           canAddToField
-            ? props.editMode
+            ? props.editingFieldId
               ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 hover:shadow-lg hover:scale-105'
               : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-lg hover:scale-105'
             : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
         ]"
       >
-        <span v-if="props.editMode" class="flex items-center justify-center gap-2">
-          <span class="text-lg">✓</span>
-          <span>Update Pair</span>
+        <span v-if="props.editingFieldId" class="flex items-center justify-center gap-2">
+          <span class="text-lg">💾</span>
+          <span>Update Field</span>
         </span>
         <span v-else class="flex items-center justify-center gap-2">
           <span class="text-lg">✓</span>
@@ -424,8 +424,10 @@ const {
 
 const props = withDefaults(defineProps<{
   editMode?: boolean
+  editingFieldId?: string | null
 }>(), {
-  editMode: false
+  editMode: false,
+  editingFieldId: null
 })
 
 const emit = defineEmits<{
@@ -561,10 +563,67 @@ function initializeWithData(data: {
   kvSelection.initialize(data)
 }
 
+// Load existing field data for editing
+function loadFieldData(extractions: any[]) {
+  console.log('🔍 loadFieldData called with:', extractions)
+  
+  if (!extractions || extractions.length === 0) {
+    console.log('❌ No extractions provided')
+    return
+  }
+  
+  // Load the first pair to get started
+  const firstPair = extractions[0]
+  console.log('📝 First pair:', firstPair)
+  
+  // Initialize with the first pair - this will set selectors and load elements
+  const initData = {
+    key_selector: firstPair.key_selector,
+    value_selector: firstPair.value_selector,
+    key_type: firstPair.key_type,
+    value_type: firstPair.value_type,
+    key_attribute: firstPair.key_attribute,
+    value_attribute: firstPair.value_attribute
+  }
+  console.log('🚀 Calling initialize with:', initData)
+  kvSelection.initialize(initData)
+  
+  // Log state after initialization
+  console.log('✅ After initialize:')
+  console.log('  - keySelector:', keySelector.value)
+  console.log('  - valueSelector:', valueSelector.value)
+  console.log('  - keyCount:', keyCount.value)
+  console.log('  - valueCount:', valueCount.value)
+  console.log('  - keyMatches:', keyMatches.value)
+  console.log('  - valueMatches:', valueMatches.value)
+  
+  // If there are multiple pairs, load them into extractionPairs
+  if (extractions.length > 1) {
+    console.log('📦 Loading additional pairs:', extractions.length - 1)
+    // Load remaining pairs (skip first one since we're showing it in the form)
+    extractionPairs.value = extractions.slice(1).map(ext => ({
+      key_selector: ext.key_selector,
+      value_selector: ext.value_selector,
+      key_type: ext.key_type,
+      value_type: ext.value_type,
+      key_attribute: ext.key_attribute,
+      value_attribute: ext.value_attribute,
+      transform: ext.transform
+    }))
+  } else {
+    console.log('📦 Only one pair, clearing extractionPairs')
+    // Only one pair, clear extraction pairs array
+    extractionPairs.value = []
+  }
+  
+  console.log('🎉 loadFieldData complete')
+}
+
 defineExpose({
   isSelectingKeys,
   isSelectingValues,
-  initializeWithData
+  initializeWithData,
+  loadFieldData
 })
 </script>
 
