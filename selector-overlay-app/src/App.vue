@@ -58,6 +58,8 @@ import HighlightOverlay from './components/HighlightOverlay.vue'
 import { useElementSelection } from './composables/useElementSelection'
 import { useNavigationPrevention } from './composables/useNavigationPrevention'
 import { useKeyValueSelection } from './composables/useKeyValueSelection'
+import { generateSelector } from './utils/selectorGenerator'
+import type { FieldType } from './types'
 
 const controlPanelRef = ref<InstanceType<typeof ControlPanel> | null>(null)
 const isDialogOpen = ref(false)
@@ -140,17 +142,67 @@ const handleNavigate = (element: Element) => {
 
 // Update existing field
 const updateField = (data: { id: string; transforms: any }) => {
+  console.log('🔄 [Update Field] Starting update for field ID:', data.id)
+  console.log('  - Transforms:', data.transforms)
+  
   const fieldIndex = selectedFields.value.findIndex(f => f.id === data.id)
   if (fieldIndex !== -1) {
     const field = selectedFields.value[fieldIndex]
+    console.log('  - Found field at index:', fieldIndex)
+    console.log('  - Current field:', field)
+    console.log('  - Locked element:', lockedElement.value)
+    
+    // Generate new selector from locked element
+    let newSelector = field.selector
+    let newSampleValue = field.sampleValue
+    let newMatchCount = field.matchCount
+    
+    if (lockedElement.value) {
+      newSelector = generateSelector(lockedElement.value)
+      newSampleValue = getSampleValue(lockedElement.value, currentFieldType.value, currentFieldAttribute.value)
+      
+      try {
+        newMatchCount = document.querySelectorAll(newSelector).length
+      } catch {
+        newMatchCount = 0
+      }
+      
+      console.log('  - New selector generated:', newSelector)
+      console.log('  - New sample value:', newSampleValue)
+      console.log('  - New match count:', newMatchCount)
+    } else {
+      console.log('  - No locked element, keeping existing selector')
+    }
+    
     selectedFields.value[fieldIndex] = {
       ...field,
       name: currentFieldName.value.trim(),
+      selector: newSelector,
       type: currentFieldType.value,
       attribute: currentFieldType.value === 'attribute' ? currentFieldAttribute.value : undefined,
+      sampleValue: newSampleValue,
+      matchCount: newMatchCount,
       transforms: Object.keys(data.transforms).length > 0 ? data.transforms : undefined,
       mode: currentMode.value
     }
+    
+    console.log('  - ✅ Updated field:', selectedFields.value[fieldIndex])
+  } else {
+    console.log('  - ❌ Field not found with ID:', data.id)
+  }
+}
+
+// Helper function to get sample value
+const getSampleValue = (element: Element, type: FieldType, attribute?: string): string => {
+  switch (type) {
+    case 'text':
+      return element.textContent?.trim() || ''
+    case 'attribute':
+      return attribute ? element.getAttribute(attribute) || '' : ''
+    case 'html':
+      return element.innerHTML
+    default:
+      return ''
   }
 }
 

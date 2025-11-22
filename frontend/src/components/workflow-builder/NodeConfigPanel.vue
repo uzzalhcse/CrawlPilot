@@ -326,13 +326,21 @@ async function openVisualSelector(key: string) {
       session.session_id,
       2000,
       (fields: SelectedField[]) => {
+        console.log('📥 [Workflow Builder] Received fields from polling:', fields)
+        console.log('  - Field count:', fields.length)
+        console.log('  - Fields:', fields.map(f => ({ name: f.name, mode: f.mode, hasExtractions: !!f.attributes?.extractions })))
+        
         // Update the node with selected fields
         if (fields.length > 0 && localNode.value) {
+          console.log('  - Importing to key:', key)
           importFieldsFromVisualSelector(key, fields)
+          console.log('  - Import complete, current params:', localNode.value.data.params[key])
+        } else {
+          console.log('  - Skipping import: fields empty or localNode not available')
         }
       },
       (error) => {
-        console.error('Error polling for fields:', error)
+        console.error('❌ [Workflow Builder] Error polling for fields:', error)
         visualSelectorError.value = 'Session closed or connection lost'
         closeVisualSelector()
       }
@@ -401,18 +409,31 @@ function convertNodeFieldsToSelectedFields(nodeFields: any): SelectedField[] {
 }
 
 function importFieldsFromVisualSelector(key: string, selectedFields: SelectedField[]) {
-  if (!localNode.value) return
+  console.log('🔄 [Import] Starting import for key:', key)
+  console.log('  - Selected fields:', selectedFields)
+  
+  if (!localNode.value) {
+    console.log('  - ❌ No localNode, aborting')
+    return
+  }
   
   if (!localNode.value.data.params[key]) {
+    console.log('  - Creating new params[key]')
     localNode.value.data.params[key] = {}
   }
   
   const fields = localNode.value.data.params[key]
+  console.log('  - Current fields before import:', fields)
   
   // Add or update fields from the visual selector
   selectedFields.forEach((field: SelectedField) => {
+    console.log(`  - Processing field: ${field.name}`)
+    console.log(`    - Mode: ${field.mode}`)
+    console.log(`    - Has extractions: ${!!field.attributes?.extractions}`)
+    
     // Check if it's a key-value-pairs field
     if (field.mode === 'key-value-pairs' && field.attributes?.extractions) {
+      console.log(`    - ✅ K-V field, extractions count: ${field.attributes.extractions.length}`)
       // For key-value pairs, preserve the extractions array
       fields[field.name] = {
         selector: '',
@@ -426,6 +447,7 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
         extractions: field.attributes.extractions
       }
     } else {
+      console.log(`    - ✅ Regular field, selector: ${field.selector}`)
       // For regular fields (single or list)
       fields[field.name] = {
         selector: field.selector,
@@ -439,7 +461,10 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
         extractions: ''
       }
     }
+    console.log(`    - Updated field data:`, fields[field.name])
   })
+  
+  console.log('  - ✅ Import complete, final fields:', fields)
 }
 
 async function closeVisualSelector() {
@@ -715,8 +740,8 @@ function parseExtractionsValue(value: any): ExtractionPair[] {
                   <span v-if="(fieldData as any).multiple && (fieldData as any).fields" class="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium border border-blue-300 shrink-0" title="Nested object array">
                     🔗 Nested
                   </span>
-                  <span v-if="(fieldData as any).extractions" class="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded font-medium border border-orange-300 shrink-0" title="Independent array extraction">
-                    ⚡ Independent
+                  <span v-if="(fieldData as any).extractions" class="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium border border-green-300 shrink-0" title="Key-Value Pairs">
+                    🔗 K-V Pairs ({{ parseExtractionsValue((fieldData as any).extractions).length }})
                   </span>
                   <div class="text-xs text-muted-foreground">
                     <span v-if="(fieldData as any).selector" class="font-mono bg-muted px-1.5 py-0.5 rounded">

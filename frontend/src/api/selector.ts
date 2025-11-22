@@ -78,13 +78,28 @@ export const selectorApi = {
     onError?: (error: any) => void
   ): Promise<() => void> {
     let active = true;
+    let pollCount = 0;
 
     const poll = async () => {
       while (active) {
         try {
+          pollCount++;
+          console.log(`🔄 [Polling] Attempt ${pollCount} for session: ${sessionId}`);
           const result = await this.getSelectedFields(sessionId);
+          console.log(`  - Response:`, result);
+          console.log(`  - Fields count: ${result.fields.length}`);
+          if (result.fields.length > 0) {
+            console.log(`  - Fields detail:`, result.fields.map(f => ({
+              name: f.name,
+              mode: f.mode,
+              selector: f.selector,
+              hasExtractions: !!f.attributes?.extractions,
+              extractionsCount: f.attributes?.extractions?.length || 0
+            })));
+          }
           onUpdate(result.fields);
         } catch (error) {
+          console.error(`❌ [Polling] Error on attempt ${pollCount}:`, error);
           if (onError) {
             onError(error);
           }
@@ -95,10 +110,12 @@ export const selectorApi = {
       }
     };
 
+    console.log(`▶️ [Polling] Started for session: ${sessionId}, interval: ${intervalMs}ms`);
     poll();
 
     // Return a function to stop polling
     return () => {
+      console.log(`⏹️ [Polling] Stopped for session: ${sessionId} after ${pollCount} attempts`);
       active = false;
     };
   }
