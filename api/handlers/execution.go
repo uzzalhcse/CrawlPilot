@@ -142,6 +142,7 @@ func (h *ExecutionHandler) GetExecutionStatus(c *fiber.Ctx) error {
 	workflow, err := h.workflowRepo.GetByID(ctx, execution.WorkflowID)
 	if err == nil {
 		execution.WorkflowName = workflow.Name
+		execution.WorkflowConfig = &workflow.Config
 	}
 
 	// Check if currently running in memory

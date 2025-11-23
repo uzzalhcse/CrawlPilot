@@ -461,3 +461,23 @@ func (q *URLQueue) RequeueForLater(ctx context.Context, id string) error {
 
 	return nil
 }
+
+// UpdatePhaseID updates the phase ID of a queued item
+func (q *URLQueue) UpdatePhaseID(ctx context.Context, id string, phaseID string) error {
+	query := `
+		UPDATE url_queue
+		SET phase_id = $1
+		WHERE id = $2
+	`
+
+	result, err := q.db.Pool.Exec(ctx, query, phaseID, id)
+	if err != nil {
+		return fmt.Errorf("failed to update phase ID: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("URL not found: %s", id)
+	}
+
+	return nil
+}

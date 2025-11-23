@@ -107,6 +107,13 @@ export interface NodeData {
   parentId?: string
   level?: number
   branch?: 'true' | 'false'
+  // Execution status
+  status?: 'pending' | 'running' | 'completed' | 'failed'
+  startTime?: string
+  endTime?: string
+  result?: any
+  error?: string
+  logs?: string[]
 }
 
 export interface WorkflowEdge {

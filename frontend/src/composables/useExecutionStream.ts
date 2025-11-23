@@ -22,6 +22,7 @@ export function useExecutionStream(executionId: string) {
     const logs = ref<LogEntry[]>([])
     const currentPhase = ref<string | null>(null)
     const activeNodes = ref<Set<string>>(new Set())
+    const nodeStatuses = ref(new Map<string, any>())
 
     let eventSource: EventSource | null = null
 
@@ -37,9 +38,15 @@ export function useExecutionStream(executionId: string) {
         }
 
         eventSource.onerror = (error) => {
-            console.error('SSE Error:', error)
-            isConnected.value = false
-            // EventSource automatically tries to reconnect, but we might want to handle it explicitly
+            // Check if this is a normal closure (execution completed) vs a real error
+            if (eventSource?.readyState === EventSource.CLOSED) {
+                console.log('SSE Connection closed')
+                isConnected.value = false
+            } else {
+                console.error('SSE Error:', error)
+                isConnected.value = false
+                // EventSource automatically tries to reconnect
+            }
         }
 
         // Generic event handler
@@ -95,6 +102,17 @@ export function useExecutionStream(executionId: string) {
             const event = JSON.parse(e.data)
             const data = event.data
             activeNodes.value.add(data.node_id)
+
+            // Update node status
+            const current = nodeStatuses.value.get(data.node_id) || {}
+            nodeStatuses.value.set(data.node_id, {
+                ...current,
+                status: 'running',
+                startTime: new Date().toISOString(),
+                params: data.params, // Capture params
+                logs: []
+            })
+
             logs.value.push(createLogEntry(`Node started: ${data.node_name || data.node_id}`, 'debug', data))
         })
 
@@ -102,6 +120,16 @@ export function useExecutionStream(executionId: string) {
             const event = JSON.parse(e.data)
             const data = event.data
             activeNodes.value.delete(data.node_id)
+
+            // Update node status
+            const current = nodeStatuses.value.get(data.node_id) || {}
+            nodeStatuses.value.set(data.node_id, {
+                ...current,
+                status: 'completed',
+                endTime: new Date().toISOString(),
+                result: data.result // Capture result
+            })
+
             logs.value.push(createLogEntry(`Node completed: ${data.node_id}`, 'debug', data))
         })
 
@@ -109,6 +137,16 @@ export function useExecutionStream(executionId: string) {
             const event = JSON.parse(e.data)
             const data = event.data
             activeNodes.value.delete(data.node_id)
+
+            // Update node status
+            const current = nodeStatuses.value.get(data.node_id) || {}
+            nodeStatuses.value.set(data.node_id, {
+                ...current,
+                status: 'failed',
+                endTime: new Date().toISOString(),
+                error: data.error
+            })
+
             logs.value.push(createLogEntry(`Node failed: ${data.error}`, 'warn', data))
         })
 
@@ -153,7 +191,8 @@ export function useExecutionStream(executionId: string) {
         isConnected,
         logs,
         currentPhase,
-        activeNodes
+        activeNodes,
+        nodeStatuses
     }
 }
 

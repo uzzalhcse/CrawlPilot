@@ -127,10 +127,20 @@ const updateActiveTab = () => {
     if (execution.value.status === 'running') {
       activeTab.value = 'live'
     } else if (execution.value.status === 'completed' && activeTab.value === 'live') {
+      // Switch to data tab when completed and data is available
       activeTab.value = 'data'
     }
   }
 }
+
+// Watch for status changes to auto-switch tabs
+watch(() => execution.value?.status, (newStatus, oldStatus) => {
+  if (newStatus === 'completed' && oldStatus === 'running') {
+    // Execution just completed, switch to data tab and reload data
+    activeTab.value = 'data'
+    loadExtractedData()
+  }
+})
 
 const progressPercentage = computed(() => {
   const stats = executionsStore.executionStats

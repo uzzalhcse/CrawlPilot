@@ -1,0 +1,272 @@
+<script setup lang="ts">
+import { ref, watch, markRaw, onMounted } from 'vue'
+import { VueFlow, useVueFlow, Panel } from '@vue-flow/core'
+import { Background } from '@vue-flow/background'
+import { Controls } from '@vue-flow/controls'
+import { MiniMap } from '@vue-flow/minimap'
+import ExecutionNode from './ExecutionNode.vue'
+import NodeDetailPanel from './NodeDetailPanel.vue'
+import type { WorkflowNode, WorkflowEdge } from '@/types'
+import { convertNodesToWorkflowConfig } from '@/lib/workflow-utils'
+
+// Import Vue Flow styles
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
+import '@vue-flow/controls/dist/style.css'
+import '@vue-flow/minimap/dist/style.css'
+
+const props = defineProps<{
+  workflowConfig: any
+  activeNodes: Set<string>
+  nodeStatuses: Map<string, any>
+}>()
+
+const nodes = ref<WorkflowNode[]>([])
+const edges = ref<WorkflowEdge[]>([])
+const selectedNode = ref<any>(null)
+const showDetailPanel = ref(false)
+
+// Custom node types
+const nodeTypes: any = {
+  custom: markRaw(ExecutionNode)
+}
+
+const { fitView } = useVueFlow()
+
+// Initialize graph from config
+const initGraph = () => {
+  if (!props.workflowConfig) return
+
+  // Reuse logic from WorkflowBuilder to layout nodes
+  // We need to reconstruct the graph from the config
+  // This is a simplified version of what's in WorkflowBuilder
+  
+  const loadedNodes: WorkflowNode[] = []
+  const loadedEdges: WorkflowEdge[] = []
+  
+  // Helper to expand nodes (same as builder)
+  const expandNode = (node: any, phaseId: string, level: number = 0, parentId?: string): any[] => {
+    const expandedNodes: any[] = []
+    expandedNodes.push({ ...node, phaseId, parentId, level })
+    
+    if (node.type === 'sequence' && node.params?.steps) {
+      node.params.steps.forEach((step: any, index: number) => {
+        const childId = step.id || `${node.id}_step_${index}`
+        const childNode = {
+          id: childId,
+          type: step.type,
+          name: step.name || `${step.type} (${index + 1})`,
+          params: step.params || {},
+          optional: step.optional,
+          dependencies: index === 0 ? [] : [`${node.id}_step_${index - 1}`]
+        }
+        expandedNodes.push(...expandNode(childNode, phaseId, level + 1, node.id))
+      })
+    }
+    
+    // Handle other nested types (conditional, loop) similarly if needed
+    // For now, basic sequence support covers most cases
+    
+    return expandedNodes
+  }
+
+  let allNodes: any[] = []
+  let phaseNodeIds: string[][] = []
+
+  if (props.workflowConfig.phases) {
+    props.workflowConfig.phases.forEach((phase: any, phaseIndex: number) => {
+      if (phase.nodes) {
+        phaseNodeIds.push([])
+        phase.nodes.forEach((node: any) => {
+          const expanded = expandNode(node, phase.id, 0)
+          allNodes = [...allNodes, ...expanded]
+          phaseNodeIds[phaseIndex].push(...expanded.map((n: any) => n.id))
+        })
+      }
+    })
+  } else {
+    // Legacy support
+    allNodes = [
+      ...(props.workflowConfig.url_discovery || []).map((n: any) => ({ ...n, phaseId: 'discovery' })),
+      ...(props.workflowConfig.data_extraction || []).map((n: any) => ({ ...n, phaseId: 'extraction' }))
+    ]
+  }
+
+  // Layout logic (simplified)
+  const nodeWidth = 280
+  const horizontalGap = 100
+  const levelVerticalGap = 200
+  
+  const nodesByLevel = new Map<number, any[]>()
+  allNodes.forEach(node => {
+    const level = node.level || 0
+    if (!nodesByLevel.has(level)) nodesByLevel.set(level, [])
+    nodesByLevel.get(level)!.push(node)
+  })
+
+  let currentY = 100
+  const nodePositions = new Map<string, { x: number, y: number }>()
+
+  // Position nodes
+  const maxLevel = Math.max(...Array.from(nodesByLevel.keys()), 0)
+  for (let level = 0; level <= maxLevel; level++) {
+    const levelNodes = nodesByLevel.get(level) || []
+    if (levelNodes.length === 0) continue
+
+    const totalWidth = (levelNodes.length * nodeWidth) + ((levelNodes.length - 1) * horizontalGap)
+    const startX = Math.max(100, (1200 - totalWidth) / 2)
+
+    levelNodes.forEach((node, index) => {
+      nodePositions.set(node.id, {
+        x: startX + (index * (nodeWidth + horizontalGap)),
+        y: currentY
+      })
+    })
+    currentY += levelVerticalGap
+  }
+
+  // Create nodes
+  allNodes.forEach(node => {
+    const position = nodePositions.get(node.id) || { x: 0, y: 0 }
+    
+    loadedNodes.push({
+      id: node.id,
+      type: 'custom',
+      position,
+      data: {
+        label: node.name,
+        nodeType: node.type,
+        params: node.params,
+        status: 'pending' // Initial status
+      }
+    })
+
+    // Create edges
+    if (node.dependencies) {
+      node.dependencies.forEach((depId: string) => {
+        loadedEdges.push({
+          id: `${depId}-${node.id}`,
+          source: depId,
+          target: node.id,
+          animated: true,
+          style: { stroke: '#94a3b8' }
+        })
+      })
+    }
+    
+    if (node.parentId) {
+      loadedEdges.push({
+        id: `parent_${node.parentId}-${node.id}`,
+        source: node.parentId,
+        target: node.id,
+        animated: false,
+        style: { strokeDasharray: '5,5', stroke: '#cbd5e1' }
+      })
+    }
+  })
+
+  // Phase connections
+  if (phaseNodeIds.length > 1) {
+    for (let i = 0; i < phaseNodeIds.length - 1; i++) {
+      const current = phaseNodeIds[i]
+      const next = phaseNodeIds[i+1]
+      if (current.length && next.length) {
+        const source = current[current.length - 1]
+        const target = next[0]
+        if (!loadedEdges.some(e => e.source === source && e.target === target)) {
+          loadedEdges.push({
+            id: `phase_${i}_${i+1}`,
+            source,
+            target,
+            animated: true,
+            style: { stroke: '#94a3b8' }
+          })
+        }
+      }
+    }
+  }
+
+  nodes.value = loadedNodes
+  edges.value = loadedEdges
+  
+  setTimeout(() => fitView(), 100)
+}
+
+// Watch for status updates
+watch(() => props.nodeStatuses, (newStatuses) => {
+  nodes.value = nodes.value.map(node => {
+    const status = newStatuses.get(node.id)
+    if (status) {
+      // Update node data with status info
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          ...status, // Merge status, result, error, logs
+          status: status.status
+        }
+      }
+    }
+    return node
+  })
+  
+  // Update selected node if it's open
+  if (selectedNode.value && showDetailPanel.value) {
+    const updated = nodes.value.find(n => n.id === selectedNode.value.id)
+    if (updated) {
+      selectedNode.value = updated
+    }
+  }
+}, { deep: true })
+
+const onNodeClick = (event: any) => {
+  selectedNode.value = event.node
+  showDetailPanel.value = true
+}
+
+onMounted(() => {
+  initGraph()
+})
+</script>
+
+<template>
+  <div class="relative w-full h-[600px] border rounded-lg bg-muted/10 overflow-hidden">
+    <VueFlow
+      v-model:nodes="nodes"
+      v-model:edges="edges"
+      :node-types="nodeTypes"
+      @node-click="onNodeClick"
+      :default-viewport="{ zoom: 1 }"
+      :min-zoom="0.2"
+      :max-zoom="4"
+      fit-view-on-init
+    >
+      <Background pattern-color="#cbd5e1" :gap="20" />
+      <Controls />
+      <MiniMap />
+      
+      <Panel position="top-right">
+        <div class="bg-card/90 backdrop-blur p-2 rounded border shadow-sm text-xs space-y-1">
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+            <span>Running</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-green-500"></div>
+            <span>Completed</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-red-500"></div>
+            <span>Failed</span>
+          </div>
+        </div>
+      </Panel>
+    </VueFlow>
+
+    <NodeDetailPanel 
+      :node="selectedNode" 
+      :open="showDetailPanel" 
+      @close="showDetailPanel = false" 
+    />
+  </div>
+</template>

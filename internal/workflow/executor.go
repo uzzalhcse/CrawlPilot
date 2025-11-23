@@ -403,30 +403,28 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		})
 	}
 
-	// Save extracted data if this is an extraction phase
-	if phaseToExecute.Type == models.PhaseTypeExtraction {
-		if e.extractedItemsRepo != nil {
-			extractedData := e.collectExtractedData(&execCtx)
-			// Debug: Log what was collected
-			logger.Debug("Collected extracted data",
-				zap.Int("field_count", len(extractedData)),
-				zap.Any("data", extractedData))
-			if len(extractedData) > 0 {
-				schemaName := phaseToExecute.ID
-				// Get node execution ID from context (set by the last extraction node)
-				var nodeExecIDPtr *string
-				if nodeExecID, ok := execCtx.Get("_node_exec_id"); ok {
-					if nodeExecIDStr, ok := nodeExecID.(string); ok {
-						nodeExecIDPtr = &nodeExecIDStr
-					}
+	// Save extracted data if any was collected (regardless of phase type)
+	if e.extractedItemsRepo != nil {
+		extractedData := e.collectExtractedData(&execCtx)
+		// Debug: Log what was collected
+		logger.Debug("Collected extracted data",
+			zap.Int("field_count", len(extractedData)),
+			zap.Any("data", extractedData))
+		if len(extractedData) > 0 {
+			schemaName := phaseToExecute.ID
+			// Get node execution ID from context (set by the last extraction node)
+			var nodeExecIDPtr *string
+			if nodeExecID, ok := execCtx.Get("_node_exec_id"); ok {
+				if nodeExecIDStr, ok := nodeExecID.(string); ok {
+					nodeExecIDPtr = &nodeExecIDStr
 				}
-				if err := e.saveExtractedData(ctx, executionID, item.ID, schemaName, nodeExecIDPtr, extractedData); err != nil {
-					logger.Error("Failed to save extracted data", zap.Error(err))
-				} else {
-					logger.Info("Saved extracted data",
-						zap.String("url", item.URL),
-						zap.Int("fields", len(extractedData)))
-				}
+			}
+			if err := e.saveExtractedData(ctx, executionID, item.ID, schemaName, nodeExecIDPtr, extractedData); err != nil {
+				logger.Error("Failed to save extracted data", zap.Error(err))
+			} else {
+				logger.Info("Saved extracted data",
+					zap.String("url", item.URL),
+					zap.Int("fields", len(extractedData)))
 			}
 		}
 	}
@@ -459,7 +457,10 @@ func (e *Executor) urlMatchesPhase(item *models.URLQueueItem, phase *models.Work
 
 	// Otherwise, check URLFilter if present
 	if phase.URLFilter == nil {
-		logger.Debug("No URL filter for phase", zap.String("phase_id", phase.ID))
+		logger.Debug("No URL filter for phase",
+			zap.String("phase_id", phase.ID),
+			zap.Any("phase_config", phase),
+		)
 		return false
 	}
 
@@ -531,13 +532,22 @@ func (e *Executor) handlePhaseTransition(ctx context.Context, workflow *models.W
 	// If there's a next phase, mark discovered URLs for that phase
 	if transition.NextPhase != "" {
 		// Get discovered URLs from exec context
-		discoveredData, ok := execCtx.Get("discovered_urls")
+		discoveredData, ok := execCtx.Get("_discovered_item_ids")
 		if ok {
-			if discoveredURLs, ok := discoveredData.([]string); ok && len(discoveredURLs) > 0 {
+			if discoveredIDs, ok := discoveredData.([]string); ok && len(discoveredIDs) > 0 {
 				// These URLs were discovered in this phase, assign to next phase
 				logger.Info("Transitioning URLs to next phase",
-					zap.Int("url_count", len(discoveredURLs)),
+					zap.Int("url_count", len(discoveredIDs)),
 					zap.String("next_phase", transition.NextPhase))
+
+				for _, id := range discoveredIDs {
+					if err := e.urlQueue.UpdatePhaseID(ctx, id, transition.NextPhase); err != nil {
+						logger.Error("Failed to update phase ID for transitioned URL",
+							zap.String("url_id", id),
+							zap.String("phase_id", transition.NextPhase),
+							zap.Error(err))
+					}
+				}
 			}
 		}
 	}
@@ -586,6 +596,7 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		"node_id":   node.ID,
 		"node_type": node.Type,
 		"node_name": node.Name,
+		"params":    node.Params,
 	})
 
 	// Create node execution record
@@ -645,13 +656,28 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 
 					// Handle discovered URLs
 					if len(output.DiscoveredURLs) > 0 {
-						if enqErr := e.enqueueLinks(ctx, executionID, item, output.DiscoveredURLs, node.Params, node.ID, nodeExecID); enqErr != nil {
+						if enqueuedIDs, enqErr := e.enqueueLinks(ctx, executionID, item, output.DiscoveredURLs, node.Params, node.ID, nodeExecID); enqErr != nil {
 							logger.Error("Failed to enqueue links", zap.Error(enqErr))
-						} else if e.nodeExecRepo != nil && nodeExecID != "" {
-							// Update node execution with URLs discovered count
-							if nodeExec, getErr := e.nodeExecRepo.GetByID(ctx, nodeExecID); getErr == nil {
-								nodeExec.URLsDiscovered = len(output.DiscoveredURLs)
-								e.nodeExecRepo.Update(ctx, nodeExec)
+						} else {
+							// Track discovered item IDs in context for phase transition
+							if len(enqueuedIDs) > 0 {
+								existingIDs, _ := execCtx.Get("_discovered_item_ids")
+								var ids []string
+								if existingIDs != nil {
+									if casted, ok := existingIDs.([]string); ok {
+										ids = casted
+									}
+								}
+								ids = append(ids, enqueuedIDs...)
+								execCtx.Set("_discovered_item_ids", ids)
+							}
+
+							if e.nodeExecRepo != nil && nodeExecID != "" {
+								// Update node execution with URLs discovered count
+								if nodeExec, getErr := e.nodeExecRepo.GetByID(ctx, nodeExecID); getErr == nil {
+									nodeExec.URLsDiscovered = len(output.DiscoveredURLs)
+									e.nodeExecRepo.Update(ctx, nodeExec)
+								}
 							}
 						}
 					}
@@ -718,10 +744,10 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 }
 
 // enqueueLinks enqueues discovered links with hierarchy tracking
-func (e *Executor) enqueueLinks(ctx context.Context, executionID string, parentItem *models.URLQueueItem, links []string, params map[string]interface{}, nodeID, nodeExecID string) error {
+func (e *Executor) enqueueLinks(ctx context.Context, executionID string, parentItem *models.URLQueueItem, links []string, params map[string]interface{}, nodeID, nodeExecID string) ([]string, error) {
 	baseURL, err := url.Parse(parentItem.URL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var items []*models.URLQueueItem
@@ -773,7 +799,18 @@ func (e *Executor) enqueueLinks(ctx context.Context, executionID string, parentI
 		items = append(items, item)
 	}
 
-	return e.urlQueue.EnqueueBatch(ctx, items)
+	// Enqueue batch and get IDs
+	if err := e.urlQueue.EnqueueBatch(ctx, items); err != nil {
+		return nil, err
+	}
+
+	// Collect IDs of enqueued items
+	var enqueuedIDs []string
+	for _, item := range items {
+		enqueuedIDs = append(enqueuedIDs, item.ID)
+	}
+
+	return enqueuedIDs, nil
 }
 
 // Helper functions
@@ -1065,7 +1102,7 @@ func (e *Executor) executePagination(ctx context.Context, node *models.Node, bro
 
 	// Enqueue all discovered links if we have them
 	if len(allLinks) > 0 {
-		if err := e.enqueueLinks(ctx, executionID, item, allLinks, node.Params, node.ID, ""); err != nil {
+		if _, err := e.enqueueLinks(ctx, executionID, item, allLinks, node.Params, node.ID, ""); err != nil {
 			logger.Error("Failed to enqueue paginated links", zap.Error(err))
 			return nil, err
 		}

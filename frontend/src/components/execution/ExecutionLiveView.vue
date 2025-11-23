@@ -3,6 +3,7 @@ import { onMounted, computed } from 'vue'
 import { useExecutionStream } from '@/composables/useExecutionStream'
 import PhaseStepper from './PhaseStepper.vue'
 import LiveLogViewer from './LiveLogViewer.vue'
+import ActiveExecutionGraph from './ActiveExecutionGraph.vue'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Wifi, WifiOff } from 'lucide-vue-next'
@@ -12,7 +13,7 @@ const props = defineProps<{
   workflowConfig?: any
 }>()
 
-const { connect, disconnect, isConnected, logs, currentPhase, activeNodes } = useExecutionStream(props.executionId)
+const { connect, disconnect, isConnected, logs, currentPhase, activeNodes, nodeStatuses } = useExecutionStream(props.executionId)
 
 onMounted(() => {
   connect()
@@ -73,12 +74,22 @@ const phases = computed(() => {
       <PhaseStepper :phases="phases" :current-phase-id="currentPhase" />
     </Card>
 
+    <!-- Active Execution Graph -->
+    <Card class="p-0 overflow-hidden border shadow-sm">
+      <div class="p-4 border-b bg-muted/30 flex items-center justify-between">
+        <h3 class="font-semibold">Live Workflow Graph</h3>
+        <div class="text-xs text-muted-foreground">
+          {{ activeNodes.size }} active nodes
+        </div>
+      </div>
+      <ActiveExecutionGraph 
+        :workflow-config="workflowConfig" 
+        :active-nodes="activeNodes"
+        :node-statuses="nodeStatuses"
+      />
+    </Card>
+
     <!-- Live Logs -->
     <LiveLogViewer :logs="logs" />
-    
-    <!-- Active Nodes Debug (Temporary) -->
-    <div v-if="activeNodes.size > 0" class="text-xs text-muted-foreground">
-      Active Nodes: {{ Array.from(activeNodes).join(', ') }}
-    </div>
   </div>
 </template>

@@ -61,23 +61,45 @@ func (h *StreamHandler) StreamExecutionEvents(c *fiber.Ctx) error {
 		for {
 			select {
 			case event := <-eventChan:
-				// Filter events by execution ID
-				if event.ExecutionID == executionID {
-					data, err := json.Marshal(event)
-					if err != nil {
-						logger.Error("Failed to marshal event", zap.Error(err))
-						continue
-					}
-
-					// Send event
-					fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, string(data))
-					w.Flush()
-
-					// If execution completed or failed, we can close the stream after a short delay
-					// or let the client close it. Usually better to let client decide.
+				// Filter by execution ID
+				if event.ExecutionID != executionID {
+					continue
 				}
+
+				// Marshal event data
+				data, err := json.Marshal(event)
+				if err != nil {
+					logger.Error("Failed to marshal event", zap.Error(err))
+					continue
+				}
+
+				// Write SSE event
+				_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, string(data))
+				if err != nil {
+					logger.Debug("Client disconnected while writing event", zap.String("execution_id", executionID), zap.Error(err))
+					return // Exit the StreamWriter goroutine
+				}
+
+				// Flush the response
+				if err := w.Flush(); err != nil {
+					logger.Debug("Client disconnected during flush", zap.String("execution_id", executionID), zap.Error(err))
+					return // Exit the StreamWriter goroutine
+				}
+
+				// Close stream when execution completes or fails
+				if event.Type == "execution_completed" || event.Type == "execution_failed" {
+					logger.Debug("Execution finished, closing SSE stream",
+						zap.String("execution_id", executionID),
+						zap.String("event_type", event.Type))
+					// Send a final comment to ensure clean closure
+					fmt.Fprintf(w, ": stream closed\n\n")
+					w.Flush()
+					return // Exit the StreamWriter goroutine
+				}
+
 			case <-ctx.Done():
-				return
+				logger.Debug("Client closed connection", zap.String("execution_id", executionID))
+				return // Exit the StreamWriter goroutine
 			case <-time.After(30 * time.Second):
 				// Send keepalive ping
 				fmt.Fprintf(w, ": keepalive\n\n")
