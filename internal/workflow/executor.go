@@ -819,8 +819,8 @@ func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[st
 	// Get all values from execution context, excluding internal fields
 	contextData := execCtx.GetAll()
 	for key, value := range contextData {
-		// Skip internal fields like url, depth, but keep _schema
-		if key != "url" && key != "depth" {
+		// Skip internal/metadata fields - these are not extracted data
+		if key != "url" && key != "depth" && key != "phase_id" && key != "_node_exec_id" {
 			data[key] = value
 		}
 	}

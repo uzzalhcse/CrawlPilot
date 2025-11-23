@@ -1,0 +1,115 @@
+{
+    "name": "Columbia Sports Crawler - Phase-Based",
+    "description": "Comprehensive crawler for Columbia Sports e-commerce site using phase-based architecture",
+    "config": {
+        "start_urls": [
+            "https://www.columbiasports.co.jp/shop/default.aspx"
+        ],
+        "max_depth": 3,
+        "rate_limit_delay": 2000,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        },
+        "phases": [
+            {
+                "id": "discover_categories",
+                "type": "discovery",
+                "name": "Discover Main Product Categories",
+                "nodes": [
+                    {
+                        "id": "discover_main_categories",
+                        "type": "extract_links",
+                        "name": "Extract Category Links",
+                        "params": {
+                            "selector": "ul.block-header-gnav li a",
+                            "marker": "category",
+                            "limit": 2
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "paginate_products"
+                }
+            },
+            {
+                "id": "paginate_products",
+                "type": "discovery",
+                "name": "Paginate Through Product Listings",
+                "nodes": [
+                    {
+                        "id": "paginate_product_pages",
+                        "type": "paginate",
+                        "name": "Paginate Through Product Listings",
+                        "params": {
+                            "selector": "ul.block-thumbnail-t--items a",
+                            "next_selector": "div.direction_.next_ a.btn_",
+                            "link_selector": "div.pagination_ ul.number_ li a",
+                            "max_pages": 20,
+                            "type": "auto",
+                            "wait_after": 2000,
+                            "marker": "product"
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "category"
+                    ]
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "extract_product_data"
+                }
+            },
+            {
+                "id": "extract_product_data",
+                "type": "extraction",
+                "name": "Extract Product Details",
+                "nodes": [
+                    {
+                        "id": "extract_columbia_product_data",
+                        "type": "extract",
+                        "name": "Extract Columbia Product Details",
+                        "params": {
+                            "schema": "columbia_product",
+                            "timeout": 10000,
+                            "fields": {
+                                "page_title": {
+                                    "selector": "title",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "product_name": {
+                                    "selector": "h1.block-goods-name--text span",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "description": {
+                                    "selector": ".block-goods-description-content.active",
+                                    "type": "text",
+                                    "transform": "clean_html"
+                                },
+                                "price": {
+                                    "selector": ".block-goods-price--price .price",
+                                    "type": "text",
+                                    "transform": "trim",
+                                    "default": "0"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "product"
+                    ]
+                }
+            }
+        ]
+    },
+    "status": "active"
+}
