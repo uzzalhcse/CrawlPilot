@@ -26,7 +26,6 @@ type WorkflowConfig struct {
 	Cookies        []Cookie          `json:"cookies,omitempty" yaml:"cookies,omitempty"`
 	Authentication *AuthConfig       `json:"authentication,omitempty" yaml:"authentication,omitempty"`
 	ProxyConfig    *ProxyConfig      `json:"proxy_config,omitempty" yaml:"proxy_config,omitempty"`
-	Storage        StorageConfig     `json:"storage" yaml:"storage"`
 }
 
 // Node represents a single workflow node (atomic task)
@@ -114,15 +113,6 @@ type ProxyConfig struct {
 	Server   string `json:"server" yaml:"server"`
 	Username string `json:"username,omitempty" yaml:"username,omitempty"`
 	Password string `json:"password,omitempty" yaml:"password,omitempty"`
-}
-
-// StorageConfig defines where and how to store extracted data
-type StorageConfig struct {
-	Type       string                 `json:"type" yaml:"type"` // database, file, webhook
-	TableName  string                 `json:"table_name,omitempty" yaml:"table_name,omitempty"`
-	FilePath   string                 `json:"file_path,omitempty" yaml:"file_path,omitempty"`
-	WebhookURL string                 `json:"webhook_url,omitempty" yaml:"webhook_url,omitempty"`
-	Params     map[string]interface{} `json:"params,omitempty" yaml:"params,omitempty"`
 }
 
 // RetryConfig defines retry behavior for a node

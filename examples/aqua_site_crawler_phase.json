@@ -141,11 +141,7 @@
                     ]
                 }
             }
-        ],
-        "storage": {
-            "type": "database",
-            "table_name": "aqua_products"
-        }
+        ]
     },
     "status": "active"
 }
