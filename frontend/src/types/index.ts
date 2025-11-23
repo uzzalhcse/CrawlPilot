@@ -14,8 +14,32 @@ export interface WorkflowConfig {
   rate_limit_delay: number
   headers?: Record<string, string>
   storage: StorageConfig
-  url_discovery: Node[]
-  data_extraction: Node[]
+  // NEW: Phase-based format
+  phases?: WorkflowPhase[]
+  // LEGACY: Old format (for backward compatibility)
+  url_discovery?: Node[]
+  data_extraction?: Node[]
+}
+
+export interface WorkflowPhase {
+  id: string
+  type: 'discovery' | 'extraction' | 'processing' | 'custom'
+  name?: string
+  nodes: Node[]
+  url_filter?: URLFilter
+  transition?: PhaseTransition
+}
+
+export interface URLFilter {
+  markers?: string[]
+  patterns?: string[]
+  depth?: number
+}
+
+export interface PhaseTransition {
+  condition: string
+  next_phase?: string
+  params?: Record<string, any>
 }
 
 export interface Node {
@@ -104,7 +128,7 @@ export type NodeType =
   | 'type'
   | 'hover'
   | 'wait'
-  | 'wait_for'
+
   | 'screenshot'
   // Extraction
   | 'extract'
@@ -117,6 +141,7 @@ export type NodeType =
   | 'map'
   | 'validate'
   // Control Flow
+  | 'sequence'
   | 'conditional'
   | 'loop'
   | 'parallel'
@@ -139,7 +164,7 @@ export interface NodeTemplate {
 export interface ParamField {
   key: string
   label: string
-  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array' | 'field_array' | 'nested_field_array'
+  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array' | 'field_array' | 'nested_field_array' | 'sequence_steps'
   required?: boolean
   defaultValue?: any
   options?: { label: string; value: string }[]

@@ -69,11 +69,26 @@ function loadWorkflow(workflow: Workflow) {
   const loadedNodes: WorkflowNode[] = []
   const loadedEdges: WorkflowEdge[] = []
 
-  // Combine url_discovery and data_extraction nodes
-  const allNodes = [
-    ...(workflow.config.url_discovery || []),
-    ...(workflow.config.data_extraction || [])
-  ]
+  let allNodes: any[] = []
+  let phaseNodeIds: string[][] = [] // Track which nodes belong to which phase
+  
+  // Support both phase-based and legacy formats
+  if (workflow.config.phases && workflow.config.phases.length > 0) {
+    // NEW: Phase-based format
+    workflow.config.phases.forEach((phase: any) => {
+      if (phase.nodes) {
+        const phaseNodes = phase.nodes.map((n: any) => n.id)
+        phaseNodeIds.push(phaseNodes)
+        allNodes = [...allNodes, ...phase.nodes]
+      }
+    })
+  } else {
+    // LEGACY: Old url_discovery/data_extraction format
+    allNodes = [
+      ...(workflow.config.url_discovery || []),
+      ...(workflow.config.data_extraction || [])
+    ]
+  }
 
   // Create nodes with positions
   allNodes.forEach((node, index) => {
@@ -95,9 +110,9 @@ function loadWorkflow(workflow: Workflow) {
       }
     })
 
-    // Create edges based on dependencies
+    // Create edges based on dependencies (if they exist)
     if (node.dependencies && node.dependencies.length > 0) {
-      node.dependencies.forEach(depId => {
+      node.dependencies.forEach((depId: string) => {
         loadedEdges.push({
           id: `${depId}-${node.id}`,
           source: depId,
@@ -107,6 +122,31 @@ function loadWorkflow(workflow: Workflow) {
       })
     }
   })
+
+  // For phase-based workflows: Create visual connections between phases
+  if (phaseNodeIds.length > 1) {
+    for (let i = 0; i < phaseNodeIds.length - 1; i++) {
+      const currentPhaseNodes = phaseNodeIds[i]
+      const nextPhaseNodes = phaseNodeIds[i + 1]
+      
+      // Connect last node of current phase to first node of next phase
+      if (currentPhaseNodes.length > 0 && nextPhaseNodes.length > 0) {
+        const sourceId = currentPhaseNodes[currentPhaseNodes.length - 1]
+        const targetId = nextPhaseNodes[0]
+        
+        // Only add if not already connected via dependencies
+        const edgeExists = loadedEdges.some(e => e.source === sourceId && e.target === targetId)
+        if (!edgeExists) {
+          loadedEdges.push({
+            id: `phase_${i}_to_${i + 1}`,
+            source: sourceId,
+            target: targetId,
+            animated: true
+          })
+        }
+      }
+    }
+  }
 
   nodes.value = loadedNodes
   edges.value = loadedEdges

@@ -71,7 +71,7 @@ const nodeIcon = computed(() => {
 
   // Interaction
   if (['click', 'scroll', 'hover', 'type'].includes(type)) return MousePointer
-  if (['wait', 'wait_for', 'screenshot'].includes(type)) return RefreshCw
+  if (['wait', 'screenshot'].includes(type)) return RefreshCw
 
   // Transformation
   if (['transform', 'filter', 'map'].includes(type)) return Sparkles
@@ -109,7 +109,7 @@ function getCategoryByNodeType(type: string): string {
   if (type.startsWith('extract')) {
     return 'Extraction'
   }
-  if (['click', 'scroll', 'type', 'hover', 'wait', 'wait_for', 'screenshot'].includes(type)) {
+  if (['click', 'scroll', 'type', 'hover', 'wait', 'screenshot'].includes(type)) {
     return 'Interaction'
   }
   if (['transform', 'filter', 'map', 'validate'].includes(type)) {

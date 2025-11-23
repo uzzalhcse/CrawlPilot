@@ -39,104 +39,68 @@ async function handleSave(data: {
       return
     }
 
-    // Convert nodes and edges back to workflow config
-    // Backend expects nodes in two categories: url_discovery and data_extraction
-    // Based on backend NodeType constants in pkg/models/workflow.go
+    // Convert nodes and edges to phase-based workflow config
+    // Group nodes into phases based on their type and dependencies
     
-    const URL_DISCOVERY_TYPES = new Set([
-      'fetch',
-      'extract_links',
-      'filter_urls',
-      'navigate',
-      'paginate'
-    ])
+    const phases: any[] = []
     
-    const DATA_EXTRACTION_TYPES = new Set([
-      'extract',
-      'extract_text',
-      'extract_attr',
-      'extract_json'
-    ])
-    
-    const INTERACTION_TYPES = new Set([
-      'click',
-      'scroll',
-      'type',
-      'hover',
-      'wait',
-      'wait_for',
-      'screenshot'
-    ])
-    
-    const TRANSFORMATION_TYPES = new Set([
-      'transform',
-      'filter',
-      'map',
-      'validate'
-    ])
-    
-    // Categorize nodes based on their type
-    const urlDiscoveryNodes: any[] = []
-    const dataExtractionNodes: any[] = []
-    
-    data.nodes.forEach(node => {
-      const nodeType = node.data.nodeType
-      const backendNode = convertToBackendNode(node, data.edges)
-      
-      if (URL_DISCOVERY_TYPES.has(nodeType)) {
-        urlDiscoveryNodes.push(backendNode)
-      } else if (DATA_EXTRACTION_TYPES.has(nodeType)) {
-        dataExtractionNodes.push(backendNode)
-      } else if (INTERACTION_TYPES.has(nodeType) || TRANSFORMATION_TYPES.has(nodeType)) {
-        // Interaction and transformation nodes can be in either category depending on their dependencies
-        // If they depend on extraction nodes, they go to data_extraction, otherwise url_discovery
-        const deps = backendNode.dependencies || []
-        const dependsOnExtraction = deps.some((depId: string) => {
-          const depNode = data.nodes.find(n => n.id === depId)
-          return depNode && DATA_EXTRACTION_TYPES.has(depNode.data.nodeType)
-        })
-        
-        if (dependsOnExtraction || dataExtractionNodes.length > 0) {
-          dataExtractionNodes.push(backendNode)
-        } else {
-          urlDiscoveryNodes.push(backendNode)
-        }
-      } else {
-        // Unknown node types default to url_discovery
-        console.warn(`Unknown node type: ${nodeType}, adding to url_discovery`)
-        urlDiscoveryNodes.push(backendNode)
-      }
+    // Phase 1: URL Discovery - nodes that discover/navigate URLs
+    const discoveryNodes = data.nodes.filter(node => {
+      const type = node.data.nodeType
+      return ['fetch', 'extract_links', 'filter_urls', 'navigate', 'paginate'].includes(type)
     })
-
-    // Validate: Check for duplicate node IDs (should never happen with proper categorization)
-    const allNodes = [...urlDiscoveryNodes, ...dataExtractionNodes]
-    const nodeIds = allNodes.map(n => n.id)
-    const duplicates = nodeIds.filter((id, index) => nodeIds.indexOf(id) !== index)
-
-    if (duplicates.length > 0) {
-      toast.error('Duplicate node IDs found', {
-        description: `The following nodes appear multiple times: ${duplicates.join(', ')}. Please refresh and try again.`
+    
+    if (discoveryNodes.length > 0) {
+      phases.push({
+        id: 'discovery_phase',
+        type: 'discovery',
+        name: 'URL Discovery',
+        nodes: discoveryNodes.map(node => convertToBackendNode(node, data.edges)),
+        url_filter: {
+          depth: 0 // Start URLs
+        }
       })
-      console.error('Duplicate node IDs:', duplicates)
-      console.error('URL Discovery nodes:', urlDiscoveryNodes.map(n => ({ id: n.id, type: n.type })))
-      console.error('Data Extraction nodes:', dataExtractionNodes.map(n => ({ id: n.id, type: n.type })))
-      return
     }
     
-    // Validate: Ensure all nodes are categorized
-    if (allNodes.length !== data.nodes.length) {
-      toast.warning('Node count mismatch', {
-        description: `${data.nodes.length} nodes in builder, but only ${allNodes.length} were categorized. Some nodes may be missing.`
+    // Phase 2: Extraction - nodes that extract data from product pages
+    const extractionNodes = data.nodes.filter(node => {
+      const type = node.data.nodeType
+      return ['extract', 'extract_text', 'extract_attr', 'extract_json', 'sequence', 
+              'click', 'scroll', 'hover', 'type', 'wait'].includes(type)
+    })
+    
+    if (extractionNodes.length > 0) {
+      phases.push({
+        id: 'extraction_phase',
+        type: 'extraction',
+        name: 'Data Extraction',
+        nodes: extractionNodes.map(node => convertToBackendNode(node, data.edges)),
+        url_filter: {
+          markers: ['product'] // Default marker
+        }
       })
-      console.warn(`Node count mismatch: ${data.nodes.length} in builder, ${allNodes.length} categorized`)
+    }
+    
+    // Phase 3: Processing - transformation and validation nodes
+    const processingNodes = data.nodes.filter(node => {
+      const type = node.data.nodeType
+      return ['transform', 'filter', 'map', 'validate'].includes(type)
+    })
+    
+    if (processingNodes.length > 0) {
+      phases.push({
+        id: 'processing_phase',
+        type: 'processing',
+        name: 'Data Processing',
+        nodes: processingNodes.map(node => convertToBackendNode(node, data.edges))
+      })
     }
 
     const config = {
       start_urls: workflowsStore.currentWorkflow?.config.start_urls || [],
+      phases,
       max_depth: workflowsStore.currentWorkflow?.config.max_depth || 3,
       rate_limit_delay: workflowsStore.currentWorkflow?.config.rate_limit_delay || 1000,
-      url_discovery: urlDiscoveryNodes.length > 0 ? urlDiscoveryNodes : undefined,
-      data_extraction: dataExtractionNodes.length > 0 ? dataExtractionNodes : undefined,
       storage: workflowsStore.currentWorkflow?.config.storage || {
         type: 'database'
       }
@@ -151,7 +115,7 @@ async function handleSave(data: {
     // Dismiss loading toast and show success
     toast.dismiss('save-workflow')
     toast.success('Workflow saved successfully', {
-      description: `${data.name} has been updated with ${allNodes.length} node(s)`
+      description: `${data.name} has been updated with ${data.nodes.length} node(s) in ${phases.length} phase(s)`
     })
   } catch (e: any) {
     const errorMessage = e.response?.data?.error || e.message || 'Unknown error'
