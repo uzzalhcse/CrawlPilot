@@ -734,6 +734,11 @@ func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[st
 		}
 	}
 
+	// Always include the source URL for reference
+	if url, exists := execCtx.Get("_url"); exists {
+		data["source_url"] = url
+	}
+
 	return data
 }
 
