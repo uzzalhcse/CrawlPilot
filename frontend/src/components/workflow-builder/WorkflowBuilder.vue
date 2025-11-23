@@ -12,6 +12,7 @@ import NodeConfigPanel from './NodeConfigPanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import MonacoEditor from '@/components/ui/MonacoEditor.vue'
 import { Save, Play, Sparkles, Code, Layout } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { convertNodesToWorkflowConfig } from '@/lib/workflow-utils'
@@ -590,12 +591,13 @@ const nodeTypes = {
       <template v-else>
         <div class="flex-1 p-4 bg-muted/10 flex flex-col">
           <div class="flex-1 relative">
-            <textarea
+            <MonacoEditor
               v-model="jsonContent"
-              class="w-full h-full p-4 font-mono text-sm bg-card border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-              spellcheck="false"
-            ></textarea>
-            <div v-if="jsonError" class="absolute bottom-4 left-4 right-4 bg-destructive/10 text-destructive p-3 rounded border border-destructive/20 text-sm">
+              language="json"
+              theme="vs-dark"
+              class="w-full h-full border border-border rounded-lg"
+            />
+            <div v-if="jsonError" class="absolute bottom-4 left-4 right-4 bg-destructive/10 text-destructive p-3 rounded border border-destructive/20 text-sm z-10">
               {{ jsonError }}
             </div>
           </div>
