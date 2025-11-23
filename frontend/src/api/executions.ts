@@ -10,6 +10,9 @@ export interface ExecutionTimeline {
   duration_ms: number
   status: string
   error?: string
+  timestamp?: string // Alias for started_at
+  urls_discovered?: number
+  items_extracted?: number
 }
 
 export interface ExecutionHierarchy {
@@ -23,12 +26,17 @@ export interface ExecutionHierarchy {
 
 export interface PerformanceMetrics {
   node_type: string
+  node_name?: string
   total_executions: number
+  executions?: number // Alias for total_executions
   successful: number
   failed: number
+  success_rate?: number // Computed or returned
   avg_duration_ms: number
   min_duration_ms: number
   max_duration_ms: number
+  total_urls_discovered?: number
+  total_items_extracted?: number
 }
 
 export interface ItemWithHierarchy {
@@ -71,8 +79,8 @@ export const executionsApi = {
   },
 
   // Get extracted data
-  getData(id: string) {
-    return apiClient.get<ExtractedData[]>(`/executions/${id}/data`)
+  getData(id: string, params?: { limit?: number; offset?: number }) {
+    return apiClient.get<{ items: ExtractedData[]; total: number; limit: number; offset: number }>(`/executions/${id}/data`, { params })
   },
 
   // Stop execution

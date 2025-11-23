@@ -3,9 +3,9 @@ import { defineStore } from 'pinia'
 import { executionsApi } from '@/api/executions'
 import { workflowsApi } from '@/api/workflows'
 import type { Execution, ExecutionStats, ExtractedData } from '@/types'
-import type { 
-  ExecutionTimeline, 
-  ExecutionHierarchy, 
+import type {
+  ExecutionTimeline,
+  ExecutionHierarchy,
   PerformanceMetrics,
   ItemWithHierarchy,
   Bottleneck
@@ -24,16 +24,21 @@ export const useExecutionsStore = defineStore('executions', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  // Pagination State
+  const extractedDataTotal = ref(0)
+  const extractedDataLimit = ref(50)
+  const extractedDataOffset = ref(0)
+
   // Computed
-  const runningExecutions = computed(() => 
+  const runningExecutions = computed(() =>
     executions.value.filter(e => e.status === 'running')
   )
 
-  const completedExecutions = computed(() => 
+  const completedExecutions = computed(() =>
     executions.value.filter(e => e.status === 'completed')
   )
 
-  const failedExecutions = computed(() => 
+  const failedExecutions = computed(() =>
     executions.value.filter(e => e.status === 'failed')
   )
 
@@ -77,7 +82,7 @@ export const useExecutionsStore = defineStore('executions', () => {
       // Backend returns { execution_id, stats, pending_count }
       const stats = response.data.stats || {}
       const pending = response.data.pending_count || 0
-      
+
       executionStats.value = {
         total_urls: (stats.completed || 0) + (stats.processing || 0) + pending,
         pending: pending,
@@ -86,7 +91,7 @@ export const useExecutionsStore = defineStore('executions', () => {
         failed: stats.failed || 0,
         items_extracted: stats.items_extracted || 0
       } as any
-      
+
       return executionStats.value
     } catch (e: any) {
       error.value = e.response?.data?.error || 'Failed to fetch execution stats'
@@ -96,13 +101,16 @@ export const useExecutionsStore = defineStore('executions', () => {
     }
   }
 
-  async function fetchExtractedData(id: string) {
+  async function fetchExtractedData(id: string, params?: { limit?: number; offset?: number }) {
     loading.value = true
     error.value = null
     try {
-      const response = await executionsApi.getData(id)
-      // Backend returns { execution_id, items, total }
+      const response = await executionsApi.getData(id, params)
+      // Backend returns { execution_id, items, total, limit, offset }
       extractedData.value = response.data.items || []
+      extractedDataTotal.value = response.data.total || 0
+      extractedDataLimit.value = response.data.limit || 50
+      extractedDataOffset.value = response.data.offset || 0
       return extractedData.value
     } catch (e: any) {
       error.value = e.response?.data?.error || 'Failed to fetch extracted data'
@@ -222,6 +230,9 @@ export const useExecutionsStore = defineStore('executions', () => {
     performance.value = []
     itemsWithHierarchy.value = []
     bottlenecks.value = []
+    extractedDataTotal.value = 0
+    extractedDataLimit.value = 50
+    extractedDataOffset.value = 0
   }
 
   return {
@@ -229,6 +240,9 @@ export const useExecutionsStore = defineStore('executions', () => {
     currentExecution,
     executionStats,
     extractedData,
+    extractedDataTotal,
+    extractedDataLimit,
+    extractedDataOffset,
     timeline,
     hierarchy,
     performance,

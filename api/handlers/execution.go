@@ -45,6 +45,11 @@ func NewExecutionHandler(
 	}
 }
 
+// GetEventBroadcaster returns the event broadcaster from the underlying executor
+func (h *ExecutionHandler) GetEventBroadcaster() *workflow.EventBroadcaster {
+	return h.executor.GetEventBroadcaster()
+}
+
 // StartExecution starts a workflow execution
 func (h *ExecutionHandler) StartExecution(c *fiber.Ctx) error {
 	workflowID := c.Params("id")
@@ -211,8 +216,12 @@ func (h *ExecutionHandler) GetQueueStats(c *fiber.Ctx) error {
 func (h *ExecutionHandler) GetExtractedData(c *fiber.Ctx) error {
 	executionID := c.Params("execution_id")
 
-	// Get extracted items (no pagination in repository method, returns all)
-	items, err := h.extractedItemsRepo.GetByExecutionID(context.Background(), executionID)
+	// Get limit and offset
+	limit := c.QueryInt("limit", 50)
+	offset := c.QueryInt("offset", 0)
+
+	// Get extracted items with pagination
+	items, err := h.extractedItemsRepo.GetByExecutionID(context.Background(), executionID, limit, offset)
 	if err != nil {
 		logger.Error("Failed to get extracted items", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -231,6 +240,8 @@ func (h *ExecutionHandler) GetExtractedData(c *fiber.Ctx) error {
 		"execution_id": executionID,
 		"items":        items,
 		"total":        total,
+		"limit":        limit,
+		"offset":       offset,
 	})
 }
 

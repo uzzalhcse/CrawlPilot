@@ -64,6 +64,8 @@ export interface Execution {
   completed_at?: string
   error?: string
   stats?: ExecutionStats
+  workflow_name?: string
+  workflow_config?: WorkflowConfig
 }
 
 export interface ExecutionStats {
@@ -81,7 +83,7 @@ export interface ExtractedData {
   url: string
   schema: string
   data: Record<string, any>
-  created_at: string
+  extracted_at: string
 }
 
 // Vue Flow related types

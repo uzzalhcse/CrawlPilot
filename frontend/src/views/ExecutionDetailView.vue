@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useExecutionsStore } from '@/stores/executions'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,20 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { 
   ArrowLeft, 
   Loader2, 
@@ -23,8 +37,14 @@ import {
   Clock,
   StopCircle,
   Download,
-  RefreshCw
+  RefreshCw,
+  Play,
+  FileJson,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2
 } from 'lucide-vue-next'
+import ExecutionLiveView from '@/components/execution/ExecutionLiveView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,13 +52,85 @@ const executionsStore = useExecutionsStore()
 const executionId = route.params.id as string
 
 const refreshInterval = ref<number | null>(null)
-const activeTab = ref('overview')
+const activeTab = ref('live')
+
+// Pagination State
+const currentPage = ref(1)
+const pageSize = ref(50)
+
+// Dialog State
+const isDialogOpen = ref(false)
+const selectedItemData = ref<any>(null)
+const selectedItemTitle = ref('')
 
 // Real execution data from store
 const execution = computed(() => executionsStore.currentExecution)
-const timeline = computed(() => executionsStore.timeline)
 const extractedData = computed(() => executionsStore.extractedData)
-const performance = computed(() => executionsStore.performance)
+const totalItems = computed(() => executionsStore.extractedDataTotal)
+
+// Parse the JSON string data into objects
+const parsedExtractedData = computed(() => {
+  if (!extractedData.value) return []
+  return extractedData.value.map(item => {
+    let parsedData = item.data
+    if (typeof item.data === 'string') {
+      try {
+        parsedData = JSON.parse(item.data)
+      } catch (e) {
+        console.error('Failed to parse item data:', e)
+        parsedData = { error: 'Invalid JSON', raw: item.data }
+      }
+    }
+    return {
+      ...item,
+      parsedData
+    }
+  })
+})
+
+// Dynamic columns for the data table
+const dataColumns = computed(() => {
+  if (!parsedExtractedData.value || parsedExtractedData.value.length === 0) return []
+  
+  const keys = new Set<string>()
+  parsedExtractedData.value.forEach(item => {
+    if (item.parsedData) {
+      Object.keys(item.parsedData).forEach(key => keys.add(key))
+    }
+  })
+  
+  return Array.from(keys).sort()
+})
+
+const renderCell = (value: any) => {
+  if (value === null || value === undefined) return '-'
+  if (typeof value === 'object') return 'View Details'
+  if (String(value).startsWith('http')) {
+    return value 
+  }
+  return String(value)
+}
+
+const isComplexValue = (value: any) => {
+  return typeof value === 'object' && value !== null
+}
+
+const openDetailDialog = (key: string, value: any) => {
+  selectedItemTitle.value = key
+  selectedItemData.value = value
+  isDialogOpen.value = true
+}
+
+// Auto-switch tab based on status
+const updateActiveTab = () => {
+  if (execution.value) {
+    if (execution.value.status === 'running') {
+      activeTab.value = 'live'
+    } else if (execution.value.status === 'completed' && activeTab.value === 'live') {
+      activeTab.value = 'data'
+    }
+  }
+}
 
 const progressPercentage = computed(() => {
   const stats = executionsStore.executionStats
@@ -51,7 +143,7 @@ const getStatusVariant = (status: string) => {
     case 'running':
       return 'default'
     case 'completed':
-      return 'success'
+      return 'default'
     case 'failed':
       return 'destructive'
     default:
@@ -73,17 +165,8 @@ const getStatusIcon = (status: string) => {
 }
 
 const formatDate = (dateString: string) => {
+  if (!dateString) return '-'
   return new Date(dateString).toLocaleString()
-}
-
-const formatDuration = (ms: number) => {
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  
-  if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`
-  }
-  return `${seconds}s`
 }
 
 const handleBack = () => {
@@ -99,12 +182,8 @@ const handleStop = async () => {
   }
 }
 
-const handleRefresh = async () => {
-  await loadExecutionData()
-}
-
 const handleDownloadData = () => {
-  const dataStr = JSON.stringify(extractedData.value, null, 2)
+  const dataStr = JSON.stringify(parsedExtractedData.value, null, 2)
   const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
   const exportFileDefaultName = `execution_${executionId}_data.json`
   
@@ -119,13 +198,33 @@ const loadExecutionData = async () => {
     await Promise.all([
       executionsStore.fetchExecutionById(executionId),
       executionsStore.fetchExecutionStats(executionId),
-      executionsStore.fetchTimeline(executionId),
-      executionsStore.fetchExtractedData(executionId),
-      executionsStore.fetchPerformance(executionId)
+      loadExtractedData()
     ])
   } catch (error) {
     console.error('Failed to load execution data:', error)
   }
+}
+
+const loadExtractedData = async () => {
+  try {
+    await executionsStore.fetchExtractedData(executionId, {
+      limit: pageSize.value,
+      offset: (currentPage.value - 1) * pageSize.value
+    })
+  } catch (error) {
+    console.error('Failed to load extracted data:', error)
+  }
+}
+
+const handlePageChange = (page: number) => {
+  currentPage.value = page
+  loadExtractedData()
+}
+
+const handlePageSizeChange = (value: string) => {
+  pageSize.value = parseInt(value)
+  currentPage.value = 1
+  loadExtractedData()
 }
 
 const startAutoRefresh = () => {
@@ -136,300 +235,220 @@ const startAutoRefresh = () => {
   }, 5000)
 }
 
-const stopAutoRefresh = () => {
-  if (refreshInterval.value) {
-    clearInterval(refreshInterval.value)
-    refreshInterval.value = null
-  }
-}
-
 onMounted(async () => {
   await loadExecutionData()
+  updateActiveTab()
   startAutoRefresh()
 })
 
 onUnmounted(() => {
-  stopAutoRefresh()
-  executionsStore.clearCurrentExecution()
+  if (refreshInterval.value) {
+    clearInterval(refreshInterval.value)
+  }
 })
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="container mx-auto py-6 space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-4">
-        <Button @click="handleBack" variant="ghost" size="icon">
-          <ArrowLeft class="h-5 w-5" />
+        <Button variant="ghost" size="icon" @click="handleBack">
+          <ArrowLeft class="h-4 w-4" />
         </Button>
         <div>
-          <h2 class="text-3xl font-bold tracking-tight">Execution Details</h2>
-          <p class="text-muted-foreground">{{ execution?.workflow_name || 'Loading...' }}</p>
+          <h1 class="text-2xl font-bold tracking-tight">Execution Details</h1>
+          <div class="flex items-center gap-2 text-muted-foreground">
+            <span class="font-mono text-sm">{{ executionId }}</span>
+            <span v-if="execution">• {{ execution.workflow_name }}</span>
+          </div>
         </div>
       </div>
       <div class="flex items-center gap-2">
-        <Button @click="handleRefresh" variant="outline" size="sm">
-          <RefreshCw class="mr-2 h-4 w-4" />
-          Refresh
-        </Button>
         <Button 
-          v-if="execution?.status === 'running'"
-          @click="handleStop" 
+          v-if="execution?.status === 'running'" 
           variant="destructive" 
+          @click="handleStop"
           size="sm"
         >
           <StopCircle class="mr-2 h-4 w-4" />
-          Stop
+          Stop Execution
         </Button>
       </div>
     </div>
 
-    <!-- Loading State -->
     <div v-if="executionsStore.loading && !execution" class="flex items-center justify-center py-12">
       <Loader2 class="h-8 w-8 animate-spin text-primary" />
     </div>
 
     <template v-else-if="execution">
-      <!-- Status Banner -->
-      <Card class="p-6">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-4">
-            <Badge v-if="execution" :variant="getStatusVariant(execution.status)" class="flex items-center gap-2 px-3 py-1">
-              <component 
-                :is="getStatusIcon(execution.status)" 
-                class="h-4 w-4"
-                :class="{ 'animate-spin': execution.status === 'running' }"
-              />
-              <span class="text-sm font-semibold uppercase">{{ execution.status }}</span>
-            </Badge>
-            <div v-if="execution" class="text-sm text-muted-foreground">
-              Started: {{ formatDate(execution.started_at) }}
-            </div>
+      <!-- Status Bar -->
+      <Card class="p-4 flex items-center justify-between bg-muted/30">
+        <div class="flex items-center gap-4">
+          <Badge :variant="getStatusVariant(execution.status)" class="flex items-center gap-2 px-3 py-1 text-sm">
+            <component 
+              :is="getStatusIcon(execution.status)" 
+              class="h-4 w-4"
+              :class="{ 'animate-spin': execution.status === 'running' }"
+            />
+            <span class="uppercase">{{ execution.status }}</span>
+          </Badge>
+          <div class="text-sm text-muted-foreground">
+            Started: {{ formatDate(execution.started_at) }}
           </div>
-          <div class="text-right">
-            <div class="text-2xl font-bold">{{ progressPercentage }}%</div>
-            <div class="text-sm text-muted-foreground">Complete</div>
+          <div v-if="execution.completed_at" class="text-sm text-muted-foreground">
+            Completed: {{ formatDate(execution.completed_at) }}
           </div>
         </div>
-        <Progress :model-value="progressPercentage" class="mt-4" />
+        
+        <div class="flex items-center gap-6">
+          <div class="text-right">
+            <div class="text-sm font-medium">{{ executionsStore.executionStats?.items_extracted || 0 }}</div>
+            <div class="text-xs text-muted-foreground">Items Extracted</div>
+          </div>
+          <div class="text-right">
+            <div class="text-sm font-medium">{{ executionsStore.executionStats?.total_urls || 0 }}</div>
+            <div class="text-xs text-muted-foreground">Total URLs</div>
+          </div>
+          <div class="text-right">
+            <div class="text-sm font-medium">{{ executionsStore.executionStats?.completed || 0 }}</div>
+            <div class="text-xs text-muted-foreground">Completed</div>
+          </div>
+           <div class="text-right">
+            <div class="text-sm font-medium text-red-500">{{ executionsStore.executionStats?.failed || 0 }}</div>
+            <div class="text-xs text-muted-foreground">Failed</div>
+          </div>
+        </div>
       </Card>
 
-      <!-- Stats Grid -->
-      <div class="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-        <Card class="p-4">
-          <div class="text-sm text-muted-foreground">Total URLs</div>
-          <div class="text-2xl font-bold">{{ executionsStore.executionStats?.total_urls || 0 }}</div>
-        </Card>
-        <Card class="p-4">
-          <div class="text-sm text-muted-foreground">Pending</div>
-          <div class="text-2xl font-bold text-gray-600">{{ executionsStore.executionStats?.pending || 0 }}</div>
-        </Card>
-        <Card class="p-4">
-          <div class="text-sm text-muted-foreground">Processing</div>
-          <div class="text-2xl font-bold text-blue-600">{{ executionsStore.executionStats?.processing || 0 }}</div>
-        </Card>
-        <Card class="p-4">
-          <div class="text-sm text-muted-foreground">Completed</div>
-          <div class="text-2xl font-bold text-green-600">{{ executionsStore.executionStats?.completed || 0 }}</div>
-        </Card>
-        <Card class="p-4">
-          <div class="text-sm text-muted-foreground">Failed</div>
-          <div class="text-2xl font-bold text-red-600">{{ executionsStore.executionStats?.failed || 0 }}</div>
-        </Card>
-        <Card class="p-4">
-          <div class="text-sm text-muted-foreground">Items Extracted</div>
-          <div class="text-2xl font-bold text-purple-600">{{ executionsStore.executionStats?.items_extracted || 0 }}</div>
-        </Card>
-      </div>
+      <!-- Main Content -->
+      <Tabs v-model="activeTab" class="space-y-4">
+        <TabsList>
+          <TabsTrigger value="live" v-if="execution.status === 'running'">Live View</TabsTrigger>
+          <TabsTrigger value="data">Extracted Data</TabsTrigger>
+        </TabsList>
 
-    <!-- Tabs -->
-    <Tabs v-model="activeTab" class="space-y-4">
-      <TabsList>
-        <TabsTrigger value="overview">Overview</TabsTrigger>
-        <TabsTrigger value="timeline">Timeline</TabsTrigger>
-        <TabsTrigger value="data">Extracted Data</TabsTrigger>
-        <TabsTrigger value="performance">Performance</TabsTrigger>
-      </TabsList>
+        <TabsContent value="live" v-if="execution.status === 'running'" class="space-y-4">
+          <ExecutionLiveView 
+            :execution-id="executionId" 
+            :workflow-config="execution.workflow_config || {}" 
+          />
+        </TabsContent>
 
-      <!-- Overview Tab -->
-      <TabsContent value="overview" class="space-y-4">
-        <Card v-if="execution" class="p-6">
-          <h3 class="mb-4 text-lg font-semibold">Execution Information</h3>
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <div class="text-sm text-muted-foreground">Execution ID</div>
-              <div class="font-mono text-sm">{{ execution.id }}</div>
-            </div>
-            <div>
-              <div class="text-sm text-muted-foreground">Workflow ID</div>
-              <div class="font-mono text-sm">{{ execution.workflow_id }}</div>
-            </div>
-            <div>
-              <div class="text-sm text-muted-foreground">Started At</div>
-              <div class="text-sm">{{ formatDate(execution.started_at) }}</div>
-            </div>
-            <div v-if="execution.completed_at">
-              <div class="text-sm text-muted-foreground">Completed At</div>
-              <div class="text-sm">{{ formatDate(execution.completed_at) }}</div>
-            </div>
-            <div v-else>
-              <div class="text-sm text-muted-foreground">Status</div>
-              <Badge :variant="getStatusVariant(execution.status)">{{ execution.status }}</Badge>
-            </div>
-          </div>
-        </Card>
-
-        <Card class="p-6">
-          <h3 class="mb-4 text-lg font-semibold">Queue Statistics</h3>
-          <div class="space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-muted-foreground">Completion Rate</span>
-              <span class="text-sm font-medium">{{ progressPercentage }}%</span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-muted-foreground">Success Rate</span>
-              <span class="text-sm font-medium">
-                {{ executionsStore.executionStats ? Math.round((executionsStore.executionStats.completed / (executionsStore.executionStats.completed + executionsStore.executionStats.failed || 1)) * 100) : 0 }}%
-              </span>
-            </div>
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-muted-foreground">Items per URL</span>
-              <span class="text-sm font-medium">
-                {{ executionsStore.executionStats ? ((executionsStore.executionStats.items_extracted / executionsStore.executionStats.completed) || 0).toFixed(2) : '0.00' }}
-              </span>
-            </div>
-          </div>
-        </Card>
-      </TabsContent>
-
-      <!-- Timeline Tab -->
-      <TabsContent value="timeline">
-        <Card class="p-6">
-          <div class="mb-4 flex items-center justify-between">
-            <h3 class="text-lg font-semibold">Node Execution Timeline</h3>
-          </div>
-          <div v-if="!timeline || timeline.length === 0" class="py-12 text-center">
-            <p class="text-muted-foreground">No timeline data available</p>
-          </div>
-          <Table v-else>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>Node</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>URLs Discovered</TableHead>
-                <TableHead>Items Extracted</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="(item, index) in timeline" :key="index">
-                <TableCell class="text-sm text-muted-foreground">
-                  {{ formatDate(item.timestamp) }}
-                </TableCell>
-                <TableCell class="font-medium">{{ item.node_name }}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{{ item.node_type }}</Badge>
-                </TableCell>
-                <TableCell>{{ item.urls_discovered || 0 }}</TableCell>
-                <TableCell>{{ item.items_extracted || 0 }}</TableCell>
-                <TableCell>
-                  <Badge :variant="getStatusVariant(item.status)" class="flex w-fit items-center gap-1">
-                    <component 
-                      :is="getStatusIcon(item.status)" 
-                      class="h-3 w-3"
-                      :class="{ 'animate-spin': item.status === 'running' }"
-                    />
-                    {{ item.status }}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </Card>
-      </TabsContent>
-
-      <!-- Extracted Data Tab -->
-      <TabsContent value="data">
-        <Card class="p-6">
-          <div class="mb-4 flex items-center justify-between">
-            <h3 class="text-lg font-semibold">Extracted Data ({{ extractedData.length }} items)</h3>
-            <Button @click="handleDownloadData" size="sm" variant="outline">
-              <Download class="mr-2 h-4 w-4" />
-              Download JSON
-            </Button>
-          </div>
-          <div class="space-y-4">
-            <div 
-              v-for="item in extractedData" 
-              :key="item.id"
-              class="rounded-lg border p-4"
-            >
-              <div class="mb-2 flex items-center justify-between">
-                <Badge variant="outline">{{ item.schema }}</Badge>
-                <span class="text-xs text-muted-foreground">{{ formatDate(item.created_at) }}</span>
+        <TabsContent value="data">
+          <Card class="p-6">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="text-lg font-semibold">Extracted Data ({{ totalItems }} items)</h3>
+              <div class="flex items-center gap-2">
+                 <Select :model-value="String(pageSize)" @update:model-value="handlePageSizeChange">
+                  <SelectTrigger class="w-[100px]">
+                    <SelectValue placeholder="Page Size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10 / page</SelectItem>
+                    <SelectItem value="50">50 / page</SelectItem>
+                    <SelectItem value="100">100 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button @click="handleDownloadData" size="sm" variant="outline">
+                  <Download class="mr-2 h-4 w-4" />
+                  Download JSON
+                </Button>
               </div>
-              <div class="text-sm text-muted-foreground mb-2">{{ item.url }}</div>
-              <pre class="rounded bg-muted p-3 text-xs overflow-x-auto">{{ JSON.stringify(item.data, null, 2) }}</pre>
             </div>
-          </div>
-        </Card>
-      </TabsContent>
+            
+            <div v-if="parsedExtractedData.length === 0" class="py-12 text-center text-muted-foreground">
+              No data extracted yet.
+            </div>
+            
+            <div v-else class="space-y-4">
+              <div class="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead class="w-[180px]">Timestamp</TableHead>
+                      <TableHead v-for="col in dataColumns" :key="col">{{ col }}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow v-for="item in parsedExtractedData" :key="item.id">
+                      <TableCell class="whitespace-nowrap text-muted-foreground text-xs">
+                        {{ formatDate(item.extracted_at) }}
+                      </TableCell>
+                      <TableCell v-for="col in dataColumns" :key="col" class="max-w-[300px] truncate">
+                        <template v-if="isComplexValue(item.parsedData[col])">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            class="h-6 text-xs"
+                            @click="openDetailDialog(col, item.parsedData[col])"
+                          >
+                            <Maximize2 class="mr-2 h-3 w-3" />
+                            View Details
+                          </Button>
+                        </template>
+                        <template v-else>
+                          {{ renderCell(item.parsedData[col]) }}
+                        </template>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
 
-      <!-- Performance Tab -->
-      <TabsContent value="performance">
-        <Card class="p-6">
-          <h3 class="mb-4 text-lg font-semibold">Performance Metrics by Node</h3>
-          <div v-if="!performance || performance.length === 0" class="py-12 text-center">
-            <p class="text-muted-foreground">No performance data available</p>
-          </div>
-          <Table v-else>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Node Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Executions</TableHead>
-                <TableHead>Success Rate</TableHead>
-                <TableHead>Avg Duration</TableHead>
-                <TableHead>URLs Discovered</TableHead>
-                <TableHead>Items Extracted</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="perf in performance" :key="perf.node_name">
-                <TableCell class="font-medium">{{ perf.node_name }}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{{ perf.node_type }}</Badge>
-                </TableCell>
-                <TableCell>{{ perf.executions }}</TableCell>
-                <TableCell>
-                  <div class="flex items-center gap-2">
-                    <div class="text-sm font-medium">
-                      {{ perf.success_rate }}%
-                    </div>
-                    <div class="text-xs text-muted-foreground">
-                      ({{ perf.executions - perf.failures }}/{{ perf.executions }})
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>{{ perf.avg_duration_ms ? formatDuration(perf.avg_duration_ms) : '-' }}</TableCell>
-                <TableCell>{{ perf.total_urls_discovered || 0 }}</TableCell>
-                <TableCell>{{ perf.total_items_extracted || 0 }}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </Card>
-      </TabsContent>
-    </Tabs>
+              <!-- Pagination Controls -->
+              <div class="flex items-center justify-between">
+                <div class="text-sm text-muted-foreground">
+                  Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ Math.min(currentPage * pageSize, totalItems) }} of {{ totalItems }} entries
+                </div>
+                <div class="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    :disabled="currentPage === 1"
+                    @click="handlePageChange(currentPage - 1)"
+                  >
+                    <ChevronLeft class="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <div class="text-sm font-medium">Page {{ currentPage }}</div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    :disabled="currentPage * pageSize >= totalItems"
+                    @click="handlePageChange(currentPage + 1)"
+                  >
+                    Next
+                    <ChevronRight class="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </template>
 
-    <!-- Error State -->
     <div v-else-if="executionsStore.error" class="py-12 text-center">
-      <p class="text-destructive">{{ executionsStore.error }}</p>
-      <Button @click="loadExecutionData()" variant="outline" class="mt-4">
+      <p class="text-destructive mb-4">{{ executionsStore.error }}</p>
+      <Button @click="loadExecutionData()" variant="outline">
         Retry
       </Button>
     </div>
+
+    <!-- Detail Dialog -->
+    <Dialog :open="isDialogOpen" @update:open="isDialogOpen = $event">
+      <DialogContent class="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Field Details: {{ selectedItemTitle }}</DialogTitle>
+          <DialogDescription>
+            Full content of the selected field.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="mt-4">
+          <pre class="bg-muted p-4 rounded-md overflow-x-auto text-xs">{{ JSON.stringify(selectedItemData, null, 2) }}</pre>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
-

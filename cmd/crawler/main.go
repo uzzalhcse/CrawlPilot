@@ -170,6 +170,10 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	executions.Get("/:execution_id/stats", executionHandler.GetQueueStats)
 	executions.Get("/:execution_id/data", executionHandler.GetExtractedData)
 
+	// Stream route
+	streamHandler := handlers.NewStreamHandler(executionHandler)
+	api.Get("/executions/:id/stream", streamHandler.StreamExecutionEvents)
+
 	// Analytics/Visualization routes
 	analyticsHandler.RegisterRoutes(api)
 

@@ -33,6 +33,68 @@ type Executor struct {
 	nodeExecRepo       *storage.NodeExecutionRepository
 	executionRepo      *storage.ExecutionRepository
 	registry           *NodeRegistry // NEW: Plugin registry for extensible node execution
+	eventBroadcaster   *EventBroadcaster
+}
+
+// ExecutionEvent represents a real-time event during workflow execution
+type ExecutionEvent struct {
+	Type        string                 `json:"type"`
+	ExecutionID string                 `json:"execution_id"`
+	Timestamp   time.Time              `json:"timestamp"`
+	Data        map[string]interface{} `json:"data"`
+}
+
+// EventBroadcaster handles distributing events to subscribers
+type EventBroadcaster struct {
+	subscribers map[chan ExecutionEvent]bool
+	register    chan chan ExecutionEvent
+	unregister  chan chan ExecutionEvent
+	broadcast   chan ExecutionEvent
+}
+
+func NewEventBroadcaster() *EventBroadcaster {
+	eb := &EventBroadcaster{
+		subscribers: make(map[chan ExecutionEvent]bool),
+		register:    make(chan chan ExecutionEvent),
+		unregister:  make(chan chan ExecutionEvent),
+		broadcast:   make(chan ExecutionEvent),
+	}
+	go eb.run()
+	return eb
+}
+
+func (eb *EventBroadcaster) run() {
+	for {
+		select {
+		case sub := <-eb.register:
+			eb.subscribers[sub] = true
+		case sub := <-eb.unregister:
+			delete(eb.subscribers, sub)
+			close(sub)
+		case event := <-eb.broadcast:
+			for sub := range eb.subscribers {
+				select {
+				case sub <- event:
+				default:
+					// Skip if subscriber is blocked to prevent holding up the broadcaster
+				}
+			}
+		}
+	}
+}
+
+func (eb *EventBroadcaster) Subscribe() chan ExecutionEvent {
+	ch := make(chan ExecutionEvent, 100) // Buffer to prevent blocking
+	eb.register <- ch
+	return ch
+}
+
+func (eb *EventBroadcaster) Unsubscribe(ch chan ExecutionEvent) {
+	eb.unregister <- ch
+}
+
+func (eb *EventBroadcaster) Publish(event ExecutionEvent) {
+	eb.broadcast <- event
 }
 
 func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedItemsRepo *storage.ExtractedItemsRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository) *Executor {
@@ -50,7 +112,29 @@ func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, ext
 		nodeExecRepo:       nodeExecRepo,
 		executionRepo:      executionRepo,
 		registry:           registry,
+		eventBroadcaster:   NewEventBroadcaster(),
 	}
+}
+
+// GetEventBroadcaster returns the event broadcaster instance
+func (e *Executor) GetEventBroadcaster() *EventBroadcaster {
+	return e.eventBroadcaster
+}
+
+// PublishEvent publishes a new execution event
+func (e *Executor) PublishEvent(executionID, eventType string, data map[string]interface{}) {
+	if e.eventBroadcaster == nil {
+		return
+	}
+
+	event := ExecutionEvent{
+		Type:        eventType,
+		ExecutionID: executionID,
+		Timestamp:   time.Now(),
+		Data:        data,
+	}
+
+	e.eventBroadcaster.Publish(event)
 }
 
 // ExecuteWorkflow executes a complete workflow
@@ -76,6 +160,12 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 		LastUpdate:      time.Now(),
 	}
 
+	// Publish execution started event
+	e.PublishEvent(executionID, "execution_started", map[string]interface{}{
+		"workflow_id": workflow.ID,
+		"start_urls":  len(workflow.Config.StartURLs),
+	})
+
 	// Enqueue start URLs
 	for _, startURL := range workflow.Config.StartURLs {
 		item := &models.URLQueueItem{
@@ -89,6 +179,10 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 			logger.Error("Failed to enqueue start URL", zap.Error(err), zap.String("url", startURL))
 		} else {
 			stats.URLsDiscovered++
+			e.PublishEvent(executionID, "url_discovered", map[string]interface{}{
+				"url":  startURL,
+				"type": "start",
+			})
 		}
 	}
 
@@ -100,6 +194,9 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 	for {
 		select {
 		case <-ctx.Done():
+			e.PublishEvent(executionID, "execution_failed", map[string]interface{}{
+				"error": ctx.Err().Error(),
+			})
 			return ctx.Err()
 		case <-updateTicker.C:
 			// Update execution stats
@@ -128,6 +225,12 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 					logger.Error("Failed to update execution stats", zap.Error(err))
 				}
 			}
+
+			// Publish stats update event
+			e.PublishEvent(executionID, "stats_updated", map[string]interface{}{
+				"stats": stats,
+			})
+
 		default:
 			// Dequeue next URL
 			item, err := e.urlQueue.Dequeue(ctx, executionID)
@@ -180,6 +283,10 @@ func (e *Executor) ExecuteWorkflow(ctx context.Context, workflow *models.Workflo
 					zap.Int("items_extracted", stats.ItemsExtracted),
 					zap.Int("nodes_executed", stats.NodesExecuted),
 				)
+
+				e.PublishEvent(executionID, "execution_completed", map[string]interface{}{
+					"stats": stats,
+				})
 				return nil
 			}
 
@@ -274,10 +381,26 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		zap.String("phase_type", string(phaseToExecute.Type)),
 		zap.Int("node_count", len(phaseToExecute.Nodes)))
 
+	e.PublishEvent(executionID, "phase_started", map[string]interface{}{
+		"phase_id":   phaseToExecute.ID,
+		"phase_name": phaseToExecute.Name,
+		"phase_type": phaseToExecute.Type,
+		"url":        item.URL,
+	})
+
 	if err := e.executeNodeGroup(ctx, phaseToExecute.Nodes, browserCtx, &execCtx, executionID, item); err != nil {
 		logger.Error("Phase execution failed",
 			zap.String("phase_id", phaseToExecute.ID),
 			zap.Error(err))
+
+		e.PublishEvent(executionID, "phase_failed", map[string]interface{}{
+			"phase_id": phaseToExecute.ID,
+			"error":    err.Error(),
+		})
+	} else {
+		e.PublishEvent(executionID, "phase_completed", map[string]interface{}{
+			"phase_id": phaseToExecute.ID,
+		})
 	}
 
 	// Save extracted data if this is an extraction phase
@@ -459,6 +582,12 @@ func (e *Executor) executeNodeGroup(ctx context.Context, nodes []models.Node, br
 func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
 	logger.Debug("Executing node", zap.String("node_id", node.ID), zap.String("type", string(node.Type)))
 
+	e.PublishEvent(executionID, "node_started", map[string]interface{}{
+		"node_id":   node.ID,
+		"node_type": node.Type,
+		"node_name": node.Name,
+	})
+
 	// Create node execution record
 	var nodeExecID string
 	if e.nodeExecRepo != nil {
@@ -571,6 +700,18 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 			// Re-execute the node (simplified - should recursively call executeNode)
 			break
 		}
+	}
+
+	if err != nil {
+		e.PublishEvent(executionID, "node_failed", map[string]interface{}{
+			"node_id": node.ID,
+			"error":   err.Error(),
+		})
+	} else {
+		e.PublishEvent(executionID, "node_completed", map[string]interface{}{
+			"node_id": node.ID,
+			"result":  result,
+		})
 	}
 
 	return err
@@ -759,6 +900,11 @@ func (e *Executor) saveExtractedData(ctx context.Context, executionID, urlID, sc
 		Data:            string(dataJSON),
 		ExtractedAt:     time.Now(),
 	}
+
+	e.PublishEvent(executionID, "item_extracted", map[string]interface{}{
+		"item_id": item.ID,
+		"data":    result,
+	})
 
 	return e.extractedItemsRepo.Create(ctx, item)
 }

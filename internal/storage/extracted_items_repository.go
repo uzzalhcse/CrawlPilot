@@ -90,17 +90,18 @@ func (r *ExtractedItemsRepository) CreateBatch(ctx context.Context, items []*mod
 	return nil
 }
 
-// GetByExecutionID retrieves all extracted items for an execution
-func (r *ExtractedItemsRepository) GetByExecutionID(ctx context.Context, executionID string) ([]*models.ExtractedItem, error) {
+// GetByExecutionID retrieves extracted items for an execution with pagination
+func (r *ExtractedItemsRepository) GetByExecutionID(ctx context.Context, executionID string, limit, offset int) ([]*models.ExtractedItem, error) {
 	query := `
 		SELECT id, execution_id, url_id, node_execution_id, schema_name,
 			   data, extracted_at
 		FROM extracted_items
 		WHERE execution_id = $1
 		ORDER BY extracted_at DESC
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.Pool.Query(ctx, query, executionID)
+	rows, err := r.db.Pool.Query(ctx, query, executionID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query extracted items: %w", err)
 	}
