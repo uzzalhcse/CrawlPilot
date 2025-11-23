@@ -487,9 +487,6 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		}
 	}
 
-	interactionEngine := browser.NewInteractionEngine(browserCtx)
-	extractionEngine := extraction.NewExtractionEngine(browserCtx.Page)
-
 	var result interface{}
 	var err error
 
@@ -535,137 +532,12 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 			logger.Warn("Failed to get executor from registry", zap.String("type", string(node.Type)), zap.Error(regErr))
 		}
 	} else {
-		// FALLBACK TO LEGACY SWITCH - For backward compatibility and special nodes
-		switch node.Type {
-		case models.NodeTypeClick:
-			selector := getStringParam(node.Params, "selector")
-			err = interactionEngine.Click(selector)
-
-		case models.NodeTypeScroll:
-			x := getIntParam(node.Params, "x")
-			y := getIntParam(node.Params, "y")
-			err = interactionEngine.Scroll(x, y)
-
-		case models.NodeTypeType:
-			selector := getStringParam(node.Params, "selector")
-			text := getStringParam(node.Params, "text")
-			delay := time.Duration(getIntParam(node.Params, "delay")) * time.Millisecond
-			err = interactionEngine.Type(selector, text, delay)
-
-		case models.NodeTypeWait:
-			duration := time.Duration(getIntParam(node.Params, "duration")) * time.Millisecond
-			err = interactionEngine.Wait(duration)
-
-		case models.NodeTypeWaitFor:
-			selector := getStringParam(node.Params, "selector")
-			timeout := time.Duration(getIntParam(node.Params, "timeout")) * time.Millisecond
-			state := getStringParam(node.Params, "state")
-			err = interactionEngine.WaitForSelector(selector, timeout, state)
-
-		case models.NodeTypeExtract:
-			var config extraction.ExtractConfig
-			configBytes, _ := json.Marshal(node.Params)
-			json.Unmarshal(configBytes, &config)
-
-			// Handle field-based extraction (when fields are defined but no top-level selector)
-			if len(config.Fields) > 0 && config.Selector == "" {
-				// For field-based extraction, we extract individual fields and combine results
-				fieldResults := make(map[string]interface{})
-
-				for fieldName, fieldConfigRaw := range config.Fields {
-					var fieldConfig extraction.ExtractConfig
-
-					// Convert field config to ExtractConfig
-					fieldConfigBytes, _ := json.Marshal(fieldConfigRaw)
-					if err := json.Unmarshal(fieldConfigBytes, &fieldConfig); err != nil {
-						logger.Warn("Failed to parse field config", zap.String("field", fieldName), zap.Error(err))
-						continue
-					}
-
-					// Extract field value
-					fieldValue, fieldErr := extractionEngine.Extract(fieldConfig)
-					if fieldErr != nil {
-						logger.Debug("Field extraction failed", zap.String("field", fieldName), zap.Error(fieldErr))
-						// Use default value if extraction fails and it's defined
-						if fieldConfig.DefaultValue != nil {
-							fieldResults[fieldName] = fieldConfig.DefaultValue
-						} else if defaultVal, ok := fieldConfigRaw.(map[string]interface{})["default"]; ok {
-							// Handle "default" key for backward compatibility
-							fieldResults[fieldName] = defaultVal
-						}
-						// Note: We still store the field with default value, not skip it
-					} else {
-						fieldResults[fieldName] = fieldValue
-					}
-				}
-
-				result = fieldResults
-				err = nil
-
-				// Debug: Log extracted fields
-				logger.Debug("Field extraction completed",
-					zap.Int("fields_extracted", len(fieldResults)),
-					zap.Any("field_results", fieldResults))
-
-				// Track which fields were extracted so they can be saved to database
-				extractedFieldNames := make([]string, 0, len(fieldResults))
-				for fieldName, fieldValue := range fieldResults {
-					execCtx.Set(fieldName, fieldValue)
-					extractedFieldNames = append(extractedFieldNames, fieldName)
-				}
-				// Set marker to indicate these fields should be saved
-				execCtx.Set("__extracted_fields__", extractedFieldNames)
-				logger.Debug("Set extracted fields marker",
-					zap.Strings("field_names", extractedFieldNames))
-			} else {
-				// Normal extraction with top-level selector
-				result, err = extractionEngine.Extract(config)
-			}
-
-			// Store schema name if present for later use
-			if schema, ok := node.Params["schema"].(string); ok && schema != "" {
-				execCtx.Set("_schema", schema)
-			}
-
-		case models.NodeTypeExtractLinks:
-			selector := getStringParam(node.Params, "selector")
-			if selector == "" {
-				selector = "a"
-			}
-			// Get limit parameter if specified (0 means no limit)
-			limit := getIntParam(node.Params, "limit")
-
-			links, linkErr := extractionEngine.ExtractLinks(selector, limit)
-			if linkErr == nil {
-				result = links
-				// Enqueue discovered URLs with hierarchy tracking
-				if err := e.enqueueLinks(ctx, executionID, item, links, node.Params, node.ID, nodeExecID); err != nil {
-					logger.Error("Failed to enqueue links", zap.Error(err))
-				} else if e.nodeExecRepo != nil && nodeExecID != "" {
-					// Update node execution with URLs discovered count
-					if nodeExec, getErr := e.nodeExecRepo.GetByID(ctx, nodeExecID); getErr == nil {
-						nodeExec.URLsDiscovered = len(links)
-						e.nodeExecRepo.Update(ctx, nodeExec)
-					}
-				}
-			}
-			err = linkErr
-
-		case models.NodeTypeNavigate:
-			targetURL := getStringParam(node.Params, "url")
-			_, err = browserCtx.Navigate(targetURL)
-
-		case models.NodeTypeHover:
-			selector := getStringParam(node.Params, "selector")
-			err = interactionEngine.Hover(selector)
-
-		case models.NodeTypePaginate:
-			// Pagination node - handles both click-based and link-based pagination
-			result, err = e.executePagination(ctx, node, browserCtx, extractionEngine, executionID, item)
-
-		default:
-			logger.Warn("Unknown node type", zap.String("type", string(node.Type)))
-		}
+		// Node type not registered in plugin system
+		// All built-in node types should be registered via RegisterDefaultNodes()
+		err = fmt.Errorf("node type '%s' not registered in plugin system", node.Type)
+		logger.Error("Unregistered node type",
+			zap.String("type", string(node.Type)),
+			zap.String("node_id", node.ID))
 	}
 
 	// Store extracted data directly in context (only for non-extraction nodes)
