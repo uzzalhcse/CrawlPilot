@@ -3,7 +3,6 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkflowsStore } from '@/stores/workflows'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import {
   Table,
@@ -20,9 +19,11 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { Plus, Play, Pencil, Trash2, MoreVertical, Loader2 } from 'lucide-vue-next'
+import { Plus, Play, Pencil, Trash2, Loader2 } from 'lucide-vue-next'
 import WorkflowDialog from '@/components/workflows/WorkflowDialog.vue'
 import DeleteDialog from '@/components/workflows/DeleteDialog.vue'
+
+import { toast } from 'vue-sonner'
 
 const router = useRouter()
 const workflowsStore = useWorkflowsStore()
@@ -32,6 +33,7 @@ const showEditDialog = ref(false)
 const showDeleteDialog = ref(false)
 const selectedWorkflow = ref<any>(null)
 const statusFilter = ref<string>('all')
+const updatingStatus = ref<string | null>(null)
 
 const filteredWorkflows = computed(() => {
   if (statusFilter.value === 'all') {
@@ -40,18 +42,7 @@ const filteredWorkflows = computed(() => {
   return workflowsStore.workflows.filter(w => w.status === statusFilter.value)
 })
 
-const getStatusVariant = (status: string) => {
-  switch (status) {
-    case 'active':
-      return 'success'
-    case 'draft':
-      return 'secondary'
-    case 'inactive':
-      return 'outline'
-    default:
-      return 'default'
-  }
-}
+
 
 const handleCreateWorkflow = () => {
   router.push('/workflows/create')
@@ -73,6 +64,29 @@ const handleExecuteWorkflow = async (id: string) => {
     router.push(`/executions/${result.execution_id}`)
   } catch (error) {
     console.error('Failed to execute workflow:', error)
+    toast.error('Failed to execute workflow')
+  }
+}
+
+const handleStatusUpdate = async (workflow: any, newStatus: string) => {
+  if (workflow.status === newStatus) return
+  
+  updatingStatus.value = workflow.id
+  try {
+    // User requested to use PUT /api/v1/workflows/{id}
+    // We need to send the full object
+    await workflowsStore.updateWorkflow(workflow.id, {
+      name: workflow.name,
+      description: workflow.description,
+      config: workflow.config,
+      status: newStatus
+    })
+    toast.success(`Workflow status updated to ${newStatus}`)
+  } catch (error) {
+    console.error('Failed to update status:', error)
+    toast.error('Failed to update status')
+  } finally {
+    updatingStatus.value = null
   }
 }
 
@@ -198,10 +212,33 @@ onMounted(async () => {
               >
                 {{ workflow.description }}
               </TableCell>
-              <TableCell @click="handleViewDetails(workflow.id)">
-                <Badge :variant="getStatusVariant(workflow.status)">
-                  {{ workflow.status }}
-                </Badge>
+              <TableCell>
+                <div @click.stop>
+                  <Select 
+                    :model-value="workflow.status" 
+                    @update:model-value="(val) => handleStatusUpdate(workflow, val as string)"
+                    :disabled="updatingStatus === workflow.id"
+                  >
+                    <SelectTrigger class="w-[110px] h-8">
+                      <div class="flex items-center gap-2">
+                        <div 
+                          class="w-2 h-2 rounded-full"
+                          :class="{
+                            'bg-green-500': workflow.status === 'active',
+                            'bg-yellow-500': workflow.status === 'draft',
+                            'bg-gray-500': workflow.status === 'inactive'
+                          }"
+                        ></div>
+                        <SelectValue />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </TableCell>
               <TableCell 
                 @click="handleViewDetails(workflow.id)"

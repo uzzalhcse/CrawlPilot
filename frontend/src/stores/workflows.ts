@@ -11,15 +11,15 @@ export const useWorkflowsStore = defineStore('workflows', () => {
   const error = ref<string | null>(null)
 
   // Computed
-  const activeWorkflows = computed(() => 
+  const activeWorkflows = computed(() =>
     workflows.value.filter(w => w.status === 'active')
   )
 
-  const draftWorkflows = computed(() => 
+  const draftWorkflows = computed(() =>
     workflows.value.filter(w => w.status === 'draft')
   )
 
-  const inactiveWorkflows = computed(() => 
+  const inactiveWorkflows = computed(() =>
     workflows.value.filter(w => w.status === 'inactive')
   )
 
@@ -54,7 +54,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     }
   }
 
-  async function createWorkflow(data: { name: string; description: string; config: any }) {
+  async function createWorkflow(data: { name: string; description: string; status?: 'draft' | 'active'; config: any }) {
     loading.value = true
     error.value = null
     try {
@@ -131,7 +131,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     try {
       const response = await workflowsApi.execute(id)
       const workflow = workflows.value.find(w => w.id === id)
-      
+
       // Track the execution
       if (workflow) {
         recentExecutions.value.unshift({
@@ -149,13 +149,13 @@ export const useWorkflowsStore = defineStore('workflows', () => {
             items_extracted: 0
           }
         })
-        
+
         // Keep only last 50 executions
         if (recentExecutions.value.length > 50) {
           recentExecutions.value = recentExecutions.value.slice(0, 50)
         }
       }
-      
+
       return response.data
     } catch (e: any) {
       error.value = e.response?.data?.error || 'Failed to execute workflow'

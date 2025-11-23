@@ -4,6 +4,7 @@ import type { Workflow, WorkflowConfig } from '@/types'
 export interface CreateWorkflowRequest {
   name: string
   description: string
+  status?: 'draft' | 'active' | 'inactive'
   config: WorkflowConfig
 }
 
