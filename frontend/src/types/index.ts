@@ -100,6 +100,11 @@ export interface NodeData {
   outputKey?: string
   optional?: boolean
   retry?: RetryConfig
+  // Nested node support
+  phaseId?: string
+  parentId?: string
+  level?: number
+  branch?: 'true' | 'false'
 }
 
 export interface WorkflowEdge {
@@ -108,6 +113,7 @@ export interface WorkflowEdge {
   target: string
   type?: string
   animated?: boolean
+  style?: Record<string, any>
 }
 
 export interface RetryConfig {

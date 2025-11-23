@@ -122,6 +122,87 @@ function toggleMode() {
   }
 }
 
+// Helper function to recursively expand nodes with nested steps
+function expandNode(node: any, phaseId: string, level: number = 0, parentId?: string): any[] {
+  const expandedNodes: any[] = []
+  
+  // Add the current node
+  expandedNodes.push({ 
+    ...node, 
+    phaseId, 
+    parentId,
+    level // Track nesting level for visual positioning
+  })
+  
+  // Expand nested steps for sequence nodes
+  if (node.type === 'sequence' && node.params?.steps) {
+    node.params.steps.forEach((step: any, index: number) => {
+      const childId = step.id || `${node.id}_step_${index}`
+      const childNode = {
+        id: childId,
+        type: step.type,
+        name: step.name || `${step.type} (${index + 1})`,
+        params: step.params || {},
+        optional: step.optional,
+        dependencies: index === 0 ? [] : [`${node.id}_step_${index - 1}`] // Chain steps sequentially
+      }
+      // Recursively expand if child also has nested steps
+      expandedNodes.push(...expandNode(childNode, phaseId, level + 1, node.id))
+    })
+  }
+  
+  // Expand conditional branches
+  if (node.type === 'conditional') {
+    let branchIndex = 0
+    
+    // Expand if_true branch
+    if (node.params?.if_true) {
+      node.params.if_true.forEach((step: any, index: number) => {
+        const childId = step.id || `${node.id}_true_${index}`
+        const childNode = {
+          id: childId,
+          type: step.type,
+          name: step.name || `${step.type} (✓ true)`,
+          params: step.params || {},
+          branch: 'true'
+        }
+        expandedNodes.push(...expandNode(childNode, phaseId, level + 1, node.id))
+        branchIndex++
+      })
+    }
+    
+    // Expand if_false branch
+    if (node.params?.if_false) {
+      node.params.if_false.forEach((step: any, index: number) => {
+        const childId = step.id || `${node.id}_false_${index}`
+        const childNode = {
+          id: childId,
+          type: step.type,
+          name: step.name || `${step.type} (✗ false)`,
+          params: step.params || {},
+          branch: 'false'
+        }
+        expandedNodes.push(...expandNode(childNode, phaseId, level + 1, node.id))
+        branchIndex++
+      })
+    }
+    
+    // Expand then branch (legacy support)
+    if (node.params?.then) {
+      const childId = node.params.then.id || `${node.id}_then`
+      const childNode = {
+        id: childId,
+        type: node.params.then.type,
+        name: node.params.then.name || node.params.then.type,
+        params: node.params.then.params || {}
+      }
+      expandedNodes.push(...expandNode(childNode, phaseId, level + 1, node.id))
+    }
+  }
+  
+  return expandedNodes
+}
+
 // Load workflow into the builder
 function loadWorkflow(workflow: Workflow) {
   workflowName.value = workflow.name
@@ -140,34 +221,82 @@ function loadWorkflow(workflow: Workflow) {
   
   // Support both phase-based and legacy formats
   if (workflow.config.phases && workflow.config.phases.length > 0) {
-    // NEW: Phase-based format
-    workflow.config.phases.forEach((phase: any) => {
+    // NEW: Phase-based format with nested node expansion
+    workflow.config.phases.forEach((phase: any, phaseIndex: number) => {
       if (phase.nodes) {
-        const phaseNodes = phase.nodes.map((n: any) => {
-          // Add phaseId to node data so we can preserve it
-          return { ...n, phaseId: phase.id }
+        phaseNodeIds.push([]) // Initialize array for this phase
+        
+        phase.nodes.forEach((node: any) => {
+          // Recursively expand nodes (handles sequence, conditional, etc.)
+          const expanded = expandNode(node, phase.id, 0)
+          allNodes = [...allNodes, ...expanded]
+          
+          // Track all node IDs in this phase (including expanded children)
+          phaseNodeIds[phaseIndex].push(...expanded.map((n: any) => n.id))
         })
-        phaseNodeIds.push(phaseNodes.map((n: any) => n.id))
-        allNodes = [...allNodes, ...phaseNodes]
       }
     })
   } else {
     // LEGACY: Old url_discovery/data_extraction format
     allNodes = [
-      ...(workflow.config.url_discovery || []).map(n => ({ ...n, phaseId: 'discovery_phase' })),
-      ...(workflow.config.data_extraction || []).map(n => ({ ...n, phaseId: 'extraction_phase' }))
+      ...(workflow.config.url_discovery || []).map(n => ({ ...n, phaseId: 'discovery_phase', level: 0 })),
+      ...(workflow.config.data_extraction || []).map(n => ({ ...n, phaseId: 'extraction_phase', level: 0 }))
     ]
   }
 
-  // Create nodes with positions
+
+  // Create nodes with hierarchical tree-based positions
+  // First, organize nodes by parent-child relationships
+  const nodePositions = new Map<string, { x: number; y: number }>()
+  let currentY = 100 // Starting Y position
+  
+  // Position nodes hierarchically
+  function positionNodeTree(node: any, startX: number, startY: number, level: number): number {
+    const nodeHeight = 120
+    const verticalGap = 150
+    const horizontalIndent = 60
+    
+    // Position this node
+    const x = startX + (level * horizontalIndent)
+    nodePositions.set(node.id, { x, y: startY })
+    
+    let currentChildY = startY + nodeHeight + verticalGap
+    
+    // Position all children of this node
+    const children = allNodes.filter((n: any) => n.parentId === node.id)
+    children.forEach((child: any) => {
+      const childBottomY = positionNodeTree(child, startX, currentChildY, level + 1)
+      currentChildY = childBottomY + verticalGap
+    })
+    
+    // Return the bottom Y coordinate of this subtree
+    return currentChildY > startY + nodeHeight ? currentChildY - verticalGap : startY + nodeHeight
+  }
+  
+  // Position top-level nodes (those without parents) phase by phase
+  const topLevelNodes = allNodes.filter((n: any) => !n.parentId)
+  let currentPhaseId: string | null = null
+  
+  topLevelNodes.forEach((node: any) => {
+    // Add extra spacing between phases
+    if (currentPhaseId && currentPhaseId !== node.phaseId) {
+      currentY += 100 // Extra gap between phases
+    }
+    currentPhaseId = node.phaseId
+    
+    // Position this node and its children
+    const bottomY = positionNodeTree(node, 100, currentY, 0)
+    currentY = bottomY + 200 // Space before next top-level node
+  })
+
+  // Create WorkflowNode objects with calculated positions
   allNodes.forEach((node, index) => {
-    const row = Math.floor(index / 3)
-    const col = index % 3
+    const position = nodePositions.get(node.id) || { x: 100, y: 100 + index * 200 }
 
     loadedNodes.push({
       id: node.id,
       type: 'custom',
-      position: { x: 100 + col * 300, y: 100 + row * 200 },
+      position,
       data: {
         label: node.name,
         nodeType: node.type as any,
@@ -176,7 +305,10 @@ function loadWorkflow(workflow: Workflow) {
         outputKey: (node as any).output_key,
         optional: (node as any).optional,
         retry: (node as any).retry,
-        phaseId: node.phaseId // Preserve phase ID
+        phaseId: node.phaseId,
+        parentId: node.parentId,
+        level: node.level,
+        branch: node.branch
       }
     })
 
@@ -190,6 +322,25 @@ function loadWorkflow(workflow: Workflow) {
           animated: true
         })
       })
+    }
+    
+    // Create parent-child edge for nested nodes
+    if (node.parentId) {
+      const edgeId = `parent_${node.parentId}-${node.id}`
+      // Only add if not already added by dependencies
+      if (!loadedEdges.some(e => e.id === edgeId)) {
+        loadedEdges.push({
+          id: edgeId,
+          source: node.parentId,
+          target: node.id,
+          animated: false,
+          style: { 
+            strokeDasharray: '5,5', // Dashed line for parent-child
+            stroke: node.branch === 'true' ? '#10b981' : node.branch === 'false' ? '#ef4444' : '#8b5cf6',
+            strokeWidth: 2
+          }
+        })
+      }
     }
   })
 
