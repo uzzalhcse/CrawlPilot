@@ -442,10 +442,50 @@ export const nodeTemplates: NodeTemplate[] = [
     ]
   },
 
+  {
+    type: 'screenshot',
+    label: 'Screenshot',
+    description: 'Capture screenshot of page or element',
+    category: 'Interaction',
+    defaultParams: {
+      selector: '',
+      filename: '',
+      path: 'screenshots',
+      full_page: true
+    },
+    paramSchema: [
+      {
+        key: 'selector',
+        label: 'CSS Selector (Optional)',
+        type: 'text',
+        placeholder: '.product-image, #main-content',
+        description: 'Capture specific element (leave empty for full page)'
+      },
+      {
+        key: 'filename',
+        label: 'Filename',
+        type: 'text',
+        placeholder: 'product_screenshot.png',
+        description: 'Screenshot filename (auto-generated if empty)'
+      },
+      {
+        key: 'path',
+        label: 'Directory Path',
+        type: 'text',
+        defaultValue: 'screenshots',
+        placeholder: 'screenshots, evidence/errors',
+        description: 'Directory to save screenshot'
+      },
+      {
+        key: 'full_page',
+        label: 'Full Page Screenshot',
+        type: 'boolean',
+        defaultValue: true,
+        description: 'Capture entire scrollable page (only for full page, not element)'
+      }
+    ]
+  },
 
-
-
-  // Control Flow Nodes
   {
     type: 'sequence',
     label: 'Sequence',
