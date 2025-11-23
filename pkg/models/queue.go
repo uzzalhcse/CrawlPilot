@@ -17,7 +17,9 @@ type URLQueueItem struct {
 	Status           QueueItemStatus `json:"status" db:"status"`
 	ParentURLID      *string         `json:"parent_url_id,omitempty" db:"parent_url_id"`
 	DiscoveredByNode *string         `json:"discovered_by_node,omitempty" db:"discovered_by_node"`
-	URLType          string          `json:"url_type" db:"url_type"`
+	URLType          string          `json:"url_type" db:"url_type"` // Deprecated, use Marker
+	Marker           string          `json:"marker" db:"marker"`     // NEW: Phase marker for URL filtering
+	PhaseID          string          `json:"phase_id" db:"phase_id"` // NEW: Which phase should process this URL
 	RetryCount       int             `json:"retry_count" db:"retry_count"`
 	Error            string          `json:"error,omitempty" db:"error"`
 	Metadata         string          `json:"metadata,omitempty" db:"metadata"`

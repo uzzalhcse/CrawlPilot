@@ -41,19 +41,22 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 		metadata = item.Metadata
 	}
 
-	query := `
-		INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, metadata, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-		ON CONFLICT (execution_id, url_hash) DO NOTHING
-		RETURNING created_at
-	`
-
-	// Don't set default url_type - let it remain empty if not provided
-	// The executor will set it appropriately based on the node
+	const query = `
+		INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, marker, phase_id, metadata, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+		ON CONFLICT (execution_id, url_hash) DO UPDATE SET
+			priority = GREATEST(url_queue.priority, EXCLUDED.priority),
+			status = CASE
+				WHEN url_queue.status = 'failed' THEN 'pending'
+				ELSE url_queue.status
+			END
+		RETURNING id
+	` // The executor will set it appropriately based on the node
 	// if item.URLType == "" {
 	// 	item.URLType = "page"
 	// }
 
+	var returnedID string
 	err := q.db.Pool.QueryRow(ctx, query,
 		item.ID,
 		item.ExecutionID,
@@ -65,8 +68,10 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 		item.ParentURLID,
 		item.DiscoveredByNode,
 		item.URLType,
+		item.Marker,
+		item.PhaseID,
 		metadata,
-	).Scan(&item.CreatedAt)
+	).Scan(&returnedID)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -76,6 +81,9 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 		return fmt.Errorf("failed to enqueue URL: %w", err)
 	}
 
+	// If an item was returned, it means it was inserted or updated.
+	// We don't need to update item.CreatedAt here as it's not returned.
+	// The ID is returned, but item.ID is already set.
 	return nil
 }
 
@@ -107,11 +115,18 @@ func (q *URLQueue) EnqueueBatch(ctx context.Context, items []*models.URLQueueIte
 		// 	item.URLType = "page"
 		// }
 
-		batch.Queue(`
-			INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, metadata, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-			ON CONFLICT (execution_id, url_hash) DO NOTHING
-		`,
+		const query = `
+			INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, marker, phase_id, metadata, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+			ON CONFLICT (execution_id, url_hash) DO UPDATE SET
+				priority = GREATEST(url_queue.priority, EXCLUDED.priority),
+				status = CASE
+					WHEN url_queue.status = 'failed' THEN 'pending'
+					ELSE url_queue.status
+				END
+			RETURNING id
+		`
+		batch.Queue(query,
 			item.ID,
 			item.ExecutionID,
 			item.URL,
@@ -122,6 +137,8 @@ func (q *URLQueue) EnqueueBatch(ctx context.Context, items []*models.URLQueueIte
 			item.ParentURLID,
 			item.DiscoveredByNode,
 			item.URLType,
+			item.Marker,
+			item.PhaseID,
 			metadata,
 		)
 	}
@@ -154,7 +171,7 @@ func (q *URLQueue) Dequeue(ctx context.Context, executionID string) (*models.URL
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, retry_count, error, metadata, created_at, processed_at, locked_at, locked_by
+		RETURNING id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, marker, phase_id, retry_count, error, metadata, created_at, processed_at, locked_at, locked_by
 	`
 
 	var item models.URLQueueItem
@@ -175,6 +192,8 @@ func (q *URLQueue) Dequeue(ctx context.Context, executionID string) (*models.URL
 		&item.ParentURLID,
 		&item.DiscoveredByNode,
 		&item.URLType,
+		&item.Marker,
+		&item.PhaseID,
 		&item.RetryCount,
 		&errorVal,
 		&metadataVal,

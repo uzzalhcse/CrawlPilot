@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS url_queue (
     parent_url_id UUID REFERENCES url_queue(id) ON DELETE SET NULL,
     discovered_by_node VARCHAR(255),
     url_type VARCHAR(50) DEFAULT 'page',
+    
+    -- Phase-based workflow fields
+    marker VARCHAR(100) DEFAULT '',
+    phase_id VARCHAR(100) DEFAULT '',
 
     -- Processing metadata
     retry_count INTEGER DEFAULT 0,
@@ -73,6 +77,8 @@ COMMENT ON TABLE url_queue IS 'URL queue with hierarchy tracking';
 COMMENT ON COLUMN url_queue.parent_url_id IS 'Parent URL that discovered this URL (for hierarchy tracking)';
 COMMENT ON COLUMN url_queue.discovered_by_node IS 'Workflow node name that discovered this URL';
 COMMENT ON COLUMN url_queue.url_type IS 'Type of URL: seed, category, product, pagination, page';
+COMMENT ON COLUMN url_queue.marker IS 'Marker for phase-based routing (e.g. category, product)';
+COMMENT ON COLUMN url_queue.phase_id IS 'Assigned phase ID for this URL';
 COMMENT ON COLUMN url_queue.status IS 'Status: pending, processing, completed, failed';
 
 -- Optimized indexes for url_queue
@@ -82,6 +88,8 @@ CREATE INDEX idx_url_queue_parent ON url_queue(parent_url_id) WHERE parent_url_i
 CREATE INDEX idx_url_queue_type ON url_queue(execution_id, url_type);
 CREATE INDEX idx_url_queue_discovered_by ON url_queue(discovered_by_node) WHERE discovered_by_node IS NOT NULL;
 CREATE INDEX idx_url_queue_url_hash ON url_queue(url_hash);
+CREATE INDEX idx_url_queue_marker ON url_queue(marker);
+CREATE INDEX idx_url_queue_phase_id ON url_queue(phase_id);
 
 -- Node executions table with enhanced debugging
 CREATE TABLE IF NOT EXISTS node_executions (

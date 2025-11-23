@@ -48,17 +48,26 @@ func (p *Parser) Validate(config *models.WorkflowConfig) error {
 		return fmt.Errorf("workflow must have at least one start URL")
 	}
 
-	// Validate URL discovery nodes
-	if err := p.validateNodes(config.URLDiscovery); err != nil {
-		return fmt.Errorf("url_discovery validation failed: %w", err)
+	if len(config.Phases) == 0 {
+		return fmt.Errorf("workflow must have at least one phase")
 	}
 
-	// Validate data extraction nodes
-	if err := p.validateNodes(config.DataExtraction); err != nil {
-		return fmt.Errorf("data_extraction validation failed: %w", err)
+	// Validate each phase
+	for i, phase := range config.Phases {
+		if phase.ID == "" {
+			return fmt.Errorf("phase %d must have an ID", i)
+		}
+		if phase.Type == "" {
+			return fmt.Errorf("phase '%s' must have a type", phase.ID)
+		}
+
+		// Validate nodes in this phase
+		if err := p.validateNodes(phase.Nodes); err != nil {
+			return fmt.Errorf("phase '%s' validation failed: %w", phase.ID, err)
+		}
 	}
 
-	// Check for circular dependencies
+	// Check for circular dependencies across all phases
 	if err := p.checkCircularDependencies(config); err != nil {
 		return err
 	}
@@ -126,6 +135,7 @@ func (p *Parser) isValidNodeType(nodeType models.NodeType) bool {
 		models.NodeTypeFilter,
 		models.NodeTypeMap,
 		models.NodeTypeValidate,
+		models.NodeTypeSequence, // NEW
 		models.NodeTypeConditional,
 		models.NodeTypeLoop,
 		models.NodeTypeParallel,
@@ -141,7 +151,11 @@ func (p *Parser) isValidNodeType(nodeType models.NodeType) bool {
 
 // checkCircularDependencies checks for circular dependencies in the DAG
 func (p *Parser) checkCircularDependencies(config *models.WorkflowConfig) error {
-	allNodes := append(config.URLDiscovery, config.DataExtraction...)
+	// Collect all nodes from all phases
+	var allNodes []models.Node
+	for _, phase := range config.Phases {
+		allNodes = append(allNodes, phase.Nodes...)
+	}
 
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)

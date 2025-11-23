@@ -1,0 +1,121 @@
+{
+    "name": "Product Scraper - Phase-Based Workflow",
+    "description": "Complete workflow using new phase-based architecture with sequence and conditional nodes",
+    "config": {
+        "start_urls": [
+            "https://sandbox.oxylabs.io/products"
+        ],
+        "max_depth": 3,
+        "rate_limit_delay": 1000,
+        "phases": [
+            {
+                "id": "discover_products",
+                "type": "discovery",
+                "name": "Discover Product URLs",
+                "nodes": [
+                    {
+                        "id": "extract_product_links",
+                        "type": "extract_links",
+                        "name": "Extract Product Links",
+                        "params": {
+                            "selector": ".product-card a",
+                            "marker": "product"
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "extract_data"
+                }
+            },
+            {
+                "id": "extract_data",
+                "type": "extraction",
+                "name": "Extract Product Details",
+                "nodes": [
+                    {
+                        "id": "wait_and_extract",
+                        "type": "sequence",
+                        "name": "Wait Then Extract",
+                        "params": {
+                            "steps": [
+                                {
+                                    "type": "wait_for",
+                                    "params": {
+                                        "selector": ".product-title",
+                                        "timeout": 5000,
+                                        "state": "visible"
+                                    }
+                                },
+                                {
+                                    "type": "extract",
+                                    "params": {
+                                        "fields": {
+                                            "name": {
+                                                "selector": ".product-title",
+                                                "type": "text",
+                                                "transform": "trim"
+                                            },
+                                            "price": {
+                                                "selector": ".price",
+                                                "type": "text",
+                                                "transform": "extract_price"
+                                            },
+                                            "description": {
+                                                "selector": ".description",
+                                                "type": "text",
+                                                "transform": "trim"
+                                            },
+                                            "specifications": {
+                                                "extractions": [
+                                                    {
+                                                        "key_selector": ".specs dt",
+                                                        "value_selector": ".specs dd",
+                                                        "key_type": "text",
+                                                        "value_type": "text",
+                                                        "transform": "trim"
+                                                    }
+                                                ],
+                                                "output_format": "object"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        "output_key": "product"
+                    },
+                    {
+                        "id": "check_stock_and_screenshot",
+                        "type": "conditional",
+                        "name": "Screenshot If Out of Stock",
+                        "params": {
+                            "condition": "element_exists",
+                            "selector": ".out-of-stock",
+                            "then": {
+                                "type": "screenshot",
+                                "params": {
+                                    "filename": "out_of_stock.png"
+                                }
+                            }
+                        },
+                        "optional": true
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "product"
+                    ]
+                }
+            }
+        ],
+        "storage": {
+            "type": "database",
+            "table_name": "products"
+        }
+    },
+    "status": "active"
+}

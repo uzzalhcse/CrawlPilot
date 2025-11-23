@@ -19,8 +19,7 @@ type Workflow struct {
 // WorkflowConfig contains the workflow execution configuration
 type WorkflowConfig struct {
 	StartURLs      []string          `json:"start_urls" yaml:"start_urls"`
-	URLDiscovery   []Node            `json:"url_discovery" yaml:"url_discovery"`
-	DataExtraction []Node            `json:"data_extraction" yaml:"data_extraction"`
+	Phases         []WorkflowPhase   `json:"phases" yaml:"phases"` // NEW: Phase-based workflow
 	MaxDepth       int               `json:"max_depth" yaml:"max_depth"`
 	RateLimitDelay int               `json:"rate_limit_delay" yaml:"rate_limit_delay"`
 	Headers        map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
@@ -75,6 +74,7 @@ const (
 	NodeTypeValidate  NodeType = "validate"
 
 	// Control flow nodes
+	NodeTypeSequence    NodeType = "sequence" // NEW: Execute nodes in sequence
 	NodeTypeConditional NodeType = "conditional"
 	NodeTypeLoop        NodeType = "loop"
 	NodeTypeParallel    NodeType = "parallel"

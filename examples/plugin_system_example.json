@@ -1,0 +1,79 @@
+{
+  "_comment": "Example workflow demonstrating the new plugin-based node system with enhanced key-value extraction",
+  "name": "Product Scraper - Plugin System Example",
+  "description": "Demonstrates URL discovery and data extraction using the new plugin-based architecture",
+  "config": {
+    "start_urls": [
+      "https://sandbox.oxylabs.io/products"
+    ],
+    "max_depth": 2,
+    "rate_limit_delay": 1000,
+    "url_discovery": [
+      {
+        "id": "extract_product_links",
+        "type": "extract_links",
+        "name": "Discover Product Pages",
+        "params": {
+          "selector": ".product-card a",
+          "url_type": "product",
+          "limit": 10
+        }
+      }
+    ],
+    "data_extraction": [
+      {
+        "id": "wait_for_content",
+        "type": "wait_for",
+        "name": "Wait for Product Content",
+        "params": {
+          "selector": ".product-title",
+          "timeout": 5000,
+          "state": "visible"
+        }
+      },
+      {
+        "id": "extract_product_data",
+        "type": "extract",
+        "name": "Extract Product Details",
+        "params": {
+          "fields": {
+            "name": {
+              "selector": ".product-title",
+              "type": "text",
+              "transform": "trim"
+            },
+            "price": {
+              "selector": ".price",
+              "type": "text",
+              "transform": "extract_price"
+            },
+            "description": {
+              "selector": ".description",
+              "type": "text",
+              "transform": "trim"
+            },
+            "specifications": {
+              "extractions": [
+                {
+                  "key_selector": ".specs dt",
+                  "value_selector": ".specs dd",
+                  "key_type": "text",
+                  "value_type": "text",
+                  "transform": "trim"
+                }
+              ],
+              "output_format": "object"
+            }
+          }
+        },
+        "output_key": "product",
+        "dependencies": ["wait_for_content"]
+      }
+    ],
+    "storage": {
+      "type": "database",
+      "table_name": "products"
+    }
+  },
+  "status": "active"
+}
