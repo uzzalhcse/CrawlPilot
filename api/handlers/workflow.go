@@ -31,6 +31,7 @@ func (h *WorkflowHandler) CreateWorkflow(c *fiber.Ctx) error {
 		Name        string                `json:"name"`
 		Description string                `json:"description"`
 		Config      models.WorkflowConfig `json:"config"`
+		Status      models.WorkflowStatus `json:"status"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -46,12 +47,17 @@ func (h *WorkflowHandler) CreateWorkflow(c *fiber.Ctx) error {
 		})
 	}
 
+	status := req.Status
+	if status == "" {
+		status = models.WorkflowStatusDraft
+	}
+
 	workflow := &models.Workflow{
 		ID:          uuid.New().String(),
 		Name:        req.Name,
 		Description: req.Description,
 		Config:      req.Config,
-		Status:      models.WorkflowStatusDraft,
+		Status:      status,
 	}
 
 	if err := h.repo.Create(context.Background(), workflow); err != nil {
