@@ -82,14 +82,7 @@ type ExtractedItem struct {
 	ExecutionID     string    `json:"execution_id" db:"execution_id"`
 	URLID           string    `json:"url_id" db:"url_id"`
 	NodeExecutionID *string   `json:"node_execution_id,omitempty" db:"node_execution_id"`
-	ItemType        string    `json:"item_type" db:"item_type"`
 	SchemaName      *string   `json:"schema_name,omitempty" db:"schema_name"`
-	Title           *string   `json:"title,omitempty" db:"title"`
-	Price           *float64  `json:"price,omitempty" db:"price"`
-	Currency        *string   `json:"currency,omitempty" db:"currency"`
-	Availability    *string   `json:"availability,omitempty" db:"availability"`
-	Rating          *float64  `json:"rating,omitempty" db:"rating"`
-	ReviewCount     *int      `json:"review_count,omitempty" db:"review_count"`
-	Attributes      JSONMap   `json:"attributes,omitempty" db:"attributes"`
+	Data            string    `json:"data" db:"data"` // JSONB stored as string
 	ExtractedAt     time.Time `json:"extracted_at" db:"extracted_at"`
 }

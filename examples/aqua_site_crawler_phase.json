@@ -23,7 +23,7 @@
                         "params": {
                             "selector": "ul.Header_Navigation_List_Item_Sub_Group_Inner a",
                             "marker": "category",
-                            "limit": 5
+                            "limit": 2
                         }
                     }
                 ],
@@ -47,7 +47,7 @@
                         "params": {
                             "selector": "div.CategoryTop_Series_Item_Content_List a",
                             "marker": "product",
-                            "limit": 10
+                            "limit": 1
                         }
                     }
                 ],
@@ -132,8 +132,7 @@
                                     "output_format": "array"
                                 }
                             }
-                        },
-                        "output_key": "product_data"
+                        }
                     }
                 ],
                 "url_filter": {

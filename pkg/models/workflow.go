@@ -36,7 +36,6 @@ type Node struct {
 	Name         string                 `json:"name" yaml:"name"`
 	Params       map[string]interface{} `json:"params" yaml:"params"`
 	Dependencies []string               `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	OutputKey    string                 `json:"output_key,omitempty" yaml:"output_key,omitempty"`
 	Optional     bool                   `json:"optional,omitempty" yaml:"optional,omitempty"`
 	Retry        RetryConfig            `json:"retry,omitempty" yaml:"retry,omitempty"`
 }

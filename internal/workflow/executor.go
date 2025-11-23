@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/internal/browser"
 	"github.com/uzzalhcse/crawlify/internal/extraction"
 	"github.com/uzzalhcse/crawlify/internal/logger"
@@ -284,7 +285,8 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		if e.extractedItemsRepo != nil {
 			extractedData := e.collectExtractedData(&execCtx)
 			if len(extractedData) > 0 {
-				if err := e.saveExtractedItem(ctx, executionID, item.ID, item.URL, extractedData, ""); err != nil {
+				schemaName := phaseToExecute.ID
+				if err := e.saveExtractedData(ctx, executionID, item.ID, schemaName, nil, extractedData); err != nil {
 					logger.Error("Failed to save extracted data", zap.Error(err))
 				} else {
 					logger.Info("Saved extracted data",
@@ -642,14 +644,13 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		}
 	}
 
-	// Store result in context
-	if result != nil {
-		if node.OutputKey != "" {
-			// Use specified output key
-			execCtx.Set(node.OutputKey, result)
-		} else if node.Type == models.NodeTypeExtract {
-			// For extraction nodes without output key, store result with node ID
-			execCtx.Set(node.ID, result)
+	// Store extracted data directly in context (only for non-extraction nodes)
+	// Extraction nodes handle their own context storage
+	if node.Type != models.NodeTypeExtract {
+		if resultMap, ok := result.(map[string]interface{}); ok {
+			for k, v := range resultMap {
+				execCtx.Set(k, v)
+			}
 		}
 	}
 
@@ -818,114 +819,22 @@ func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[st
 	return data
 }
 
-// saveExtractedItem saves extracted data to database as ExtractedItem
-func (e *Executor) saveExtractedItem(ctx context.Context, executionID, urlID, url string, data map[string]interface{}, nodeExecID string) error {
-	if len(data) == 0 {
-		return nil
-	}
-
-	// Extract common fields from data
-	var title *string
-	var price *float64
-	var currency *string
-	var availability *string
-	var rating *float64
-	var reviewCount *int
-	var schemaName *string
-
-	// Set default item type
-	itemType := "item"
-
-	// Try to extract schema name from data
-	if schema, ok := data["_schema"].(string); ok {
-		schemaName = &schema
-		itemType = schema
-		delete(data, "_schema")
-	} else if schema, ok := data["schema"].(string); ok {
-		schemaName = &schema
-		itemType = schema
-		delete(data, "schema")
-	}
-
-	// Extract title
-	if t, ok := data["title"].(string); ok {
-		title = &t
-	}
-
-	// Extract price
-	if p, ok := data["price"].(string); ok {
-		// Try to parse as float
-		if pf, err := parsePrice(p); err == nil {
-			price = &pf
-		}
-	} else if p, ok := data["price"].(float64); ok {
-		price = &p
-	} else if p, ok := data["price"].(int); ok {
-		pf := float64(p)
-		price = &pf
-	}
-
-	// Extract currency
-	if c, ok := data["currency"].(string); ok {
-		currency = &c
-	} else {
-		defaultCurrency := "USD"
-		currency = &defaultCurrency
-	}
-
-	// Extract availability
-	if a, ok := data["availability"].(string); ok {
-		availability = &a
-	}
-
-	// Extract rating
-	if r, ok := data["rating"].(string); ok {
-		if rf, err := parseRating(r); err == nil {
-			rating = &rf
-		}
-	} else if r, ok := data["rating"].(float64); ok {
-		rating = &r
-	}
-
-	// Extract review count
-	if rc, ok := data["review_count"].(string); ok {
-		if rci, err := parseInt(rc); err == nil {
-			reviewCount = &rci
-		}
-	} else if rc, ok := data["review_count"].(int); ok {
-		reviewCount = &rc
-	} else if rc, ok := data["review_count"].(float64); ok {
-		rci := int(rc)
-		reviewCount = &rci
-	}
-
-	// Store remaining data in attributes
-	attributes := make(models.JSONMap)
-	for k, v := range data {
-		// Skip already extracted fields
-		if k != "title" && k != "price" && k != "currency" && k != "availability" && k != "rating" && k != "review_count" {
-			attributes[k] = v
-		}
-	}
-
-	var nodeExecIDPtr *string
-	if nodeExecID != "" {
-		nodeExecIDPtr = &nodeExecID
+// saveExtractedData saves extracted data to storage
+func (e *Executor) saveExtractedData(ctx context.Context, executionID, urlID, schemaName string, nodeExecID *string, result interface{}) error {
+	// Marshal entire result to JSON
+	dataJSON, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("failed to marshal extracted data: %w", err)
 	}
 
 	item := &models.ExtractedItem{
+		ID:              uuid.New().String(),
 		ExecutionID:     executionID,
 		URLID:           urlID,
-		NodeExecutionID: nodeExecIDPtr,
-		ItemType:        itemType,
-		SchemaName:      schemaName,
-		Title:           title,
-		Price:           price,
-		Currency:        currency,
-		Availability:    availability,
-		Rating:          rating,
-		ReviewCount:     reviewCount,
-		Attributes:      attributes,
+		NodeExecutionID: nodeExecID,
+		SchemaName:      &schemaName,
+		Data:            string(dataJSON),
+		ExtractedAt:     time.Now(),
 	}
 
 	return e.extractedItemsRepo.Create(ctx, item)

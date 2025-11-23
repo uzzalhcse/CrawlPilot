@@ -136,49 +136,35 @@ CREATE INDEX idx_node_exec_status ON node_executions(status) WHERE status != 'co
 CREATE INDEX idx_node_exec_type ON node_executions(execution_id, node_type);
 CREATE INDEX idx_node_exec_node_id ON node_executions(execution_id, node_id);
 
--- Extracted items table - structured data
+-- Extracted items table - fully dynamic structure
 CREATE TABLE IF NOT EXISTS extracted_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
     url_id UUID NOT NULL REFERENCES url_queue(id) ON DELETE CASCADE,
     node_execution_id UUID REFERENCES node_executions(id) ON DELETE SET NULL,
 
-    -- Item classification
-    item_type VARCHAR(100) NOT NULL,
+    -- Optional categorization for workflow tracking
     schema_name VARCHAR(255),
 
-    -- Common structured fields for fast queries
-    title TEXT,
-    price DECIMAL(10,2),
-    currency VARCHAR(10) DEFAULT 'USD',
-    availability VARCHAR(50),
-    rating DECIMAL(3,2),
-    review_count INTEGER,
-
-    -- Flexible additional data
-    attributes JSONB,
+    -- All extracted data (fully dynamic)
+    data JSONB NOT NULL,
 
     -- Metadata
     extracted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT unique_extracted_item_per_url_schema UNIQUE(execution_id, url_id, schema_name)
+    CONSTRAINT unique_extracted_item_per_url UNIQUE(execution_id, url_id, schema_name)
 );
 
-COMMENT ON TABLE extracted_items IS 'Structured extracted data (products, items, articles, etc.)';
-COMMENT ON COLUMN extracted_items.item_type IS 'Type of item: book, product, article, listing, etc.';
-COMMENT ON COLUMN extracted_items.schema_name IS 'Name of extraction schema used';
-COMMENT ON COLUMN extracted_items.attributes IS 'Additional flexible attributes as JSONB';
+COMMENT ON TABLE extracted_items IS 'Dynamic extracted data from any source';
+COMMENT ON COLUMN extracted_items.schema_name IS 'Optional schema/workflow identifier';
+COMMENT ON COLUMN extracted_items.data IS 'All extracted fields as JSONB (fully flexible)';
 
 -- Optimized indexes for extracted_items
 CREATE INDEX idx_extracted_items_execution ON extracted_items(execution_id);
 CREATE INDEX idx_extracted_items_url ON extracted_items(url_id);
 CREATE INDEX idx_extracted_items_node_exec ON extracted_items(node_execution_id) WHERE node_execution_id IS NOT NULL;
-CREATE INDEX idx_extracted_items_type ON extracted_items(item_type);
-CREATE INDEX idx_extracted_items_schema ON extracted_items(schema_name);
-CREATE INDEX idx_extracted_items_price ON extracted_items(price) WHERE price IS NOT NULL;
-CREATE INDEX idx_extracted_items_rating ON extracted_items(rating) WHERE rating IS NOT NULL;
-CREATE INDEX idx_extracted_items_title_search ON extracted_items USING gin(to_tsvector('english', title)) WHERE title IS NOT NULL;
-CREATE INDEX idx_extracted_items_attrs ON extracted_items USING gin(attributes);
+CREATE INDEX idx_extracted_items_schema ON extracted_items(schema_name) WHERE schema_name IS NOT NULL;
+CREATE INDEX idx_extracted_items_data ON extracted_items USING gin(data);
 
 -- ============================================================================
 -- STEP 2: Create helpful views
