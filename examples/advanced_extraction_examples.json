@@ -1,0 +1,325 @@
+{
+    "name": "Advanced Extraction Examples",
+    "description": "Examples showing complex extraction scenarios with dialogs, scrolling, and sequences",
+    "start_urls": [
+        "https://example.com"
+    ],
+    "phases": [
+        {
+            "id": "extract_with_dialog",
+            "type": "extraction",
+            "name": "Extract Data with Dialog Interaction",
+            "description": "Click to open dialog, extract data, then close",
+            "nodes": [
+                {
+                    "id": "extract_product_details",
+                    "type": "sequence",
+                    "name": "Full Product Extraction Flow",
+                    "params": {
+                        "steps": [
+                            {
+                                "type": "wait",
+                                "params": {
+                                    "selector": "button.view-details",
+                                    "state": "visible",
+                                    "timeout": 5000
+                                },
+                                "optional": false
+                            },
+                            {
+                                "type": "click",
+                                "params": {
+                                    "selector": "button.view-details"
+                                }
+                            },
+                            {
+                                "type": "wait",
+                                "params": {
+                                    "selector": "div.modal-content",
+                                    "state": "visible",
+                                    "timeout": 5000
+                                }
+                            },
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "detailed_description": {
+                                            "selector": "div.modal-content .full-description",
+                                            "type": "text",
+                                            "transform": "clean_html"
+                                        },
+                                        "specifications": {
+                                            "selector": "div.modal-content .specs-table",
+                                            "type": "text"
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "click",
+                                "params": {
+                                    "selector": "button.close-modal"
+                                },
+                                "optional": true
+                            }
+                        ]
+                    }
+                }
+            ],
+            "url_filter": {
+                "markers": [
+                    "product"
+                ]
+            }
+        },
+        {
+            "id": "extract_with_scroll",
+            "type": "extraction",
+            "name": "Extract Data After Scrolling",
+            "description": "Scroll to load lazy-loaded content then extract",
+            "nodes": [
+                {
+                    "id": "scroll_and_extract",
+                    "type": "sequence",
+                    "name": "Scroll to Load Then Extract",
+                    "params": {
+                        "steps": [
+                            {
+                                "type": "scroll",
+                                "params": {
+                                    "x": 0,
+                                    "y": 1000
+                                }
+                            },
+                            {
+                                "type": "wait",
+                                "params": {
+                                    "duration": 2000
+                                }
+                            },
+                            {
+                                "type": "wait",
+                                "params": {
+                                    "selector": ".reviews-section",
+                                    "state": "visible",
+                                    "timeout": 10000
+                                }
+                            },
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "reviews": {
+                                            "selector": ".review-item",
+                                            "type": "list",
+                                            "item": {
+                                                "rating": {
+                                                    "selector": ".rating",
+                                                    "type": "text"
+                                                },
+                                                "comment": {
+                                                    "selector": ".comment-text",
+                                                    "type": "text"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "url_filter": {
+                "markers": [
+                    "product"
+                ]
+            }
+        },
+        {
+            "id": "extract_tabs_data",
+            "type": "extraction",
+            "name": "Extract From Multiple Tabs",
+            "description": "Click through tabs to extract all data",
+            "nodes": [
+                {
+                    "id": "extract_from_tabs",
+                    "type": "sequence",
+                    "name": "Extract All Tabs Content",
+                    "params": {
+                        "steps": [
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "basic_info": {
+                                            "selector": "#tab-1-content .product-info",
+                                            "type": "text"
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "click",
+                                "params": {
+                                    "selector": "a[data-tab='tab-2']"
+                                }
+                            },
+                            {
+                                "type": "wait",
+                                "params": {
+                                    "selector": "#tab-2-content",
+                                    "state": "visible",
+                                    "timeout": 3000
+                                }
+                            },
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "shipping_info": {
+                                            "selector": "#tab-2-content .shipping-details",
+                                            "type": "text"
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "type": "click",
+                                "params": {
+                                    "selector": "a[data-tab='tab-3']"
+                                }
+                            },
+                            {
+                                "type": "wait",
+                                "params": {
+                                    "selector": "#tab-3-content",
+                                    "state": "visible",
+                                    "timeout": 3000
+                                }
+                            },
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "return_policy": {
+                                            "selector": "#tab-3-content .policy-text",
+                                            "type": "text"
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "url_filter": {
+                "markers": [
+                    "product"
+                ]
+            }
+        },
+        {
+            "id": "extract_with_hover",
+            "type": "extraction",
+            "name": "Extract After Hover Tooltip",
+            "description": "Hover to show tooltip, then extract",
+            "nodes": [
+                {
+                    "id": "hover_and_extract",
+                    "type": "sequence",
+                    "name": "Hover To Show Data",
+                    "params": {
+                        "steps": [
+                            {
+                                "type": "hover",
+                                "params": {
+                                    "selector": ".size-guide-icon"
+                                }
+                            },
+                            {
+                                "type": "wait",
+                                "params": {
+                                    "selector": ".tooltip-content",
+                                    "state": "visible",
+                                    "timeout": 2000
+                                }
+                            },
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "size_guide": {
+                                            "selector": ".tooltip-content",
+                                            "type": "text"
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "url_filter": {
+                "markers": [
+                    "product"
+                ]
+            }
+        },
+        {
+            "id": "extract_with_conditional",
+            "type": "extraction",
+            "name": "Extract With Conditional Logic",
+            "description": "Check if element exists before extracting",
+            "nodes": [
+                {
+                    "id": "conditional_extraction",
+                    "type": "conditional",
+                    "name": "Extract If Sale Badge Exists",
+                    "params": {
+                        "condition": {
+                            "type": "element_exists",
+                            "selector": ".sale-badge"
+                        },
+                        "if_true": [
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "discount_percentage": {
+                                            "selector": ".sale-badge .discount",
+                                            "type": "text"
+                                        },
+                                        "original_price": {
+                                            "selector": ".original-price",
+                                            "type": "text"
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        "if_false": [
+                            {
+                                "type": "extract",
+                                "params": {
+                                    "fields": {
+                                        "regular_price": {
+                                            "selector": ".price",
+                                            "type": "text"
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "url_filter": {
+                "markers": [
+                    "product"
+                ]
+            }
+        }
+    ]
+}
