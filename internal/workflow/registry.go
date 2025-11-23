@@ -110,6 +110,9 @@ func (r *NodeRegistry) RegisterDefaultNodes() error {
 	if err := r.Register(interaction.NewWaitForExecutor()); err != nil {
 		return fmt.Errorf("failed to register wait_for: %w", err)
 	}
+	if err := r.Register(interaction.NewScreenshotExecutor()); err != nil {
+		return fmt.Errorf("failed to register screenshot: %w", err)
+	}
 
 	// Advanced nodes (need registry reference)
 	if err := r.Register(interaction.NewSequenceExecutor(r)); err != nil {
