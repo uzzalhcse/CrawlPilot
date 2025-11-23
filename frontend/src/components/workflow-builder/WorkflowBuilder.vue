@@ -8,7 +8,7 @@ import { useWorkflowsStore } from '@/stores/workflows'
 import type { WorkflowNode, WorkflowEdge, NodeTemplate, Workflow, WorkflowConfig } from '@/types'
 import CustomNode from './CustomNode.vue'
 import NodePalette from './NodePalette.vue'
-import NodeConfigPanel from './NodeConfigPanel.vue'
+import NodeConfigModal from './NodeConfigModal.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -722,15 +722,13 @@ const nodeTypes = {
           </div>
         </div>
 
-        <!-- Configuration Panel -->
-        <div v-if="showConfigPanel" class="w-96">
-          <NodeConfigPanel
-            :node="selectedNode"
-            @update:node="handleNodeUpdate"
-            @close="showConfigPanel = false"
-            @delete="handleNodeDelete"
-          />
-        </div>
+        <!-- Node Configuration Modal -->
+        <NodeConfigModal
+          v-model:open="showConfigPanel"
+          :node="selectedNode"
+          @save="handleNodeUpdate"
+          @delete="handleNodeDelete"
+        />
       </template>
 
       <!-- JSON MODE -->

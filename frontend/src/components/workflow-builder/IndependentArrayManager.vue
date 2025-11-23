@@ -24,19 +24,27 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const extractions = ref<ExtractionPair[]>(props.modelValue || [])
+const extractions = ref<ExtractionPair[]>(
+  Array.isArray(props.modelValue) ? props.modelValue : []
+)
 
 // Watch for prop changes and update local state
 watch(() => props.modelValue, (newValue) => {
   console.log('🔄 [IndependentArrayManager] Props changed, updating local state')
   console.log('  - Old extractions count:', extractions.value.length)
-  console.log('  - New extractions count:', newValue?.length || 0)
   console.log('  - New value:', newValue)
+  console.log('  - New value type:', typeof newValue, Array.isArray(newValue))
   
-  if (newValue) {
-    extractions.value = [...newValue] // Create new array for reactivity
-    console.log('  - ✅ Local state updated')
+  // Handle non-array values (empty string, null, undefined)
+  if (!newValue || !Array.isArray(newValue)) {
+    console.log('  - ⚠️ Non-array value received, initializing as empty array')
+    extractions.value = []
+    return
   }
+  
+  console.log('  - New extractions count:', newValue.length)
+  extractions.value = [...newValue] // Create new array for reactivity
+  console.log('  - ✅ Local state updated')
 }, { deep: true, immediate: true })
 
 function addExtraction() {
@@ -89,14 +97,14 @@ const transforms = [
 <template>
   <div class="space-y-4">
     <!-- Help Banner -->
-    <div class="p-3 bg-orange-50 border-2 border-orange-200 rounded-lg">
-      <div class="text-sm font-semibold text-orange-900 mb-2">⚡ Independent Array Extraction</div>
-      <div class="text-xs text-orange-700">
+    <div class="p-3 bg-orange-50 dark:bg-orange-950/30 border-2 border-orange-200 dark:border-orange-800 rounded-lg">
+      <div class="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">⚡ Independent Array Extraction</div>
+      <div class="text-xs text-orange-700 dark:text-orange-300">
         <div class="mb-1">Extract key-value pairs from <strong>separate independent lists</strong> that are paired by index position.</div>
-        <div class="mt-2 p-2 bg-white rounded border border-orange-300">
-          <strong>Example:</strong> Keys in <code class="bg-orange-50 px-1 py-0.5 rounded">.spec-label</code> + 
-          Values in <code class="bg-orange-50 px-1 py-0.5 rounded">.spec-value</code> → 
-          <code class="bg-orange-50 px-1 py-0.5 rounded">[{"key": "color", "value": "black"}]</code>
+        <div class="mt-2 p-2 bg-background border border-orange-300 dark:border-orange-700 rounded">
+          <strong>Example:</strong> Keys in <code class="bg-orange-100 dark:bg-orange-900/50 px-1 py-0.5 rounded">.spec-label</code> + 
+          Values in <code class="bg-orange-100 dark:bg-orange-900/50 px-1 py-0.5 rounded">.spec-value</code> → 
+          <code class="bg-orange-100 dark:bg-orange-900/50 px-1 py-0.5 rounded">[{"key": "color", "value": "black"}]</code>
         </div>
       </div>
     </div>
@@ -106,11 +114,11 @@ const transforms = [
       <div
         v-for="(extraction, index) in extractions"
         :key="index"
-        class="border-2 border-orange-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow"
+        class="border-2 border-orange-200 dark:border-orange-800 rounded-lg p-4 bg-card hover:shadow-md transition-shadow"
       >
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <div class="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 text-orange-700 text-xs font-semibold">
+            <div class="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-xs font-semibold">
               {{ index + 1 }}
             </div>
             <span class="font-semibold text-sm">Extraction Pair {{ index + 1 }}</span>
@@ -129,7 +137,7 @@ const transforms = [
         <div class="grid gap-4">
           <!-- Key Selector -->
           <div class="space-y-2">
-            <Label :for="`key-selector-${index}`" class="text-xs font-medium text-orange-900">
+            <Label :for="`key-selector-${index}`" class="text-xs font-medium text-orange-900 dark:text-orange-100">
               Key Selector <span class="text-red-500">*</span>
             </Label>
             <Input
@@ -144,7 +152,7 @@ const transforms = [
 
           <!-- Value Selector -->
           <div class="space-y-2">
-            <Label :for="`value-selector-${index}`" class="text-xs font-medium text-orange-900">
+            <Label :for="`value-selector-${index}`" class="text-xs font-medium text-orange-900 dark:text-orange-100">
               Value Selector <span class="text-red-500">*</span>
             </Label>
             <Input
@@ -262,7 +270,7 @@ const transforms = [
       variant="outline"
       size="sm"
       @click="addExtraction"
-      class="w-full border-2 border-dashed border-orange-300 hover:bg-orange-50 hover:border-orange-400 text-orange-700"
+      class="w-full border-2 border-dashed border-orange-300 dark:border-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/30 hover:border-orange-400 dark:hover:border-orange-600 text-orange-700 dark:text-orange-300"
     >
       <Plus class="h-4 w-4 mr-2" />
       Add Extraction Pair
@@ -271,11 +279,11 @@ const transforms = [
     <!-- Empty State -->
     <div
       v-if="extractions.length === 0"
-      class="text-center py-8 border-2 border-dashed border-orange-200 rounded-lg bg-orange-50/30"
+      class="text-center py-8 border-2 border-dashed border-orange-200 dark:border-orange-800 rounded-lg bg-orange-50/30 dark:bg-orange-950/20"
     >
-      <div class="text-orange-600 text-4xl mb-2">⚡</div>
-      <p class="text-sm font-medium text-orange-900">No extraction pairs defined</p>
-      <p class="text-xs text-orange-700 mt-1">Click "Add Extraction Pair" to start configuring independent array extraction</p>
+      <div class="text-orange-600 dark:text-orange-400 text-4xl mb-2">⚡</div>
+      <p class="text-sm font-medium text-orange-900 dark:text-orange-100">No extraction pairs defined</p>
+      <p class="text-xs text-orange-700 dark:text-orange-300 mt-1">Click "Add Extraction Pair" to start configuring independent array extraction</p>
     </div>
   </div>
 </template>
