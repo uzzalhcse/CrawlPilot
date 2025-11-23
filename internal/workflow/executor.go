@@ -286,7 +286,14 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 			extractedData := e.collectExtractedData(&execCtx)
 			if len(extractedData) > 0 {
 				schemaName := phaseToExecute.ID
-				if err := e.saveExtractedData(ctx, executionID, item.ID, schemaName, nil, extractedData); err != nil {
+				// Get node execution ID from context (set by the last extraction node)
+				var nodeExecIDPtr *string
+				if nodeExecID, ok := execCtx.Get("_node_exec_id"); ok {
+					if nodeExecIDStr, ok := nodeExecID.(string); ok {
+						nodeExecIDPtr = &nodeExecIDStr
+					}
+				}
+				if err := e.saveExtractedData(ctx, executionID, item.ID, schemaName, nodeExecIDPtr, extractedData); err != nil {
 					logger.Error("Failed to save extracted data", zap.Error(err))
 				} else {
 					logger.Info("Saved extracted data",
@@ -471,6 +478,8 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 			logger.Error("Failed to create node execution record", zap.Error(err))
 		} else {
 			nodeExecID = nodeExec.ID
+			// Store in context for later retrieval (e.g., when saving extracted data)
+			execCtx.Set("_node_exec_id", nodeExecID)
 		}
 	}
 
