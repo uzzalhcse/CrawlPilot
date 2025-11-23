@@ -23,7 +23,7 @@
                         "params": {
                             "selector": "ul.block-header-gnav li a",
                             "marker": "category",
-                            "limit": 2
+                            "limit": 1
                         }
                     }
                 ],
@@ -45,13 +45,13 @@
                         "type": "paginate",
                         "name": "Paginate Through Product Listings",
                         "params": {
-                            "selector": "ul.block-thumbnail-t--items a",
-                            "next_selector": "div.direction_.next_ a.btn_",
-                            "link_selector": "div.pagination_ ul.number_ li a",
-                            "max_pages": 20,
-                            "type": "auto",
-                            "wait_after": 2000,
-                            "marker": "product"
+                          "selector": "div.direction_.next_ a.btn_",
+                          "link_selector": "ul.block-thumbnail-t--items a",
+                          "max_pages": 1,
+                          "type": "auto",
+                          "wait_after": 2000,
+                          "marker": "product",
+                          "limit": 1
                         }
                     }
                 ],
@@ -70,6 +70,16 @@
                 "type": "extraction",
                 "name": "Extract Product Details",
                 "nodes": [
+                    {
+                        "id": "wait_for_product_content",
+                        "type": "wait",
+                        "name": "Wait for Product Content to Load",
+                        "params": {
+                            "selector": "h1.block-goods-name--text",
+                            "state": "visible",
+                            "timeout": 30000
+                        }
+                    },
                     {
                         "id": "extract_columbia_product_data",
                         "type": "extract",
@@ -94,13 +104,16 @@
                                     "transform": "clean_html"
                                 },
                                 "price": {
-                                    "selector": ".block-goods-price--price .price",
+                                    "selector": ".block-goods-price--price.price.js-enhanced-ecommerce-goods-price",
                                     "type": "text",
                                     "transform": "trim",
                                     "default": "0"
                                 }
                             }
-                        }
+                        },
+                        "dependencies": [
+                            "wait_for_product_content"
+                        ]
                     }
                 ],
                 "url_filter": {

@@ -264,9 +264,9 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 
 	// Create execution context
 	execCtx := models.NewExecutionContext()
-	execCtx.Set("url", item.URL)
-	execCtx.Set("depth", item.Depth)
-	execCtx.Set("phase_id", phaseToExecute.ID)
+	execCtx.Set("_url", item.URL)
+	execCtx.Set("_depth", item.Depth)
+	execCtx.Set("_phase_id", phaseToExecute.ID)
 
 	// Execute phase nodes
 	logger.Info("Executing phase nodes",
@@ -284,6 +284,10 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 	if phaseToExecute.Type == models.PhaseTypeExtraction {
 		if e.extractedItemsRepo != nil {
 			extractedData := e.collectExtractedData(&execCtx)
+			// Debug: Log what was collected
+			logger.Debug("Collected extracted data",
+				zap.Int("field_count", len(extractedData)),
+				zap.Any("data", extractedData))
 			if len(extractedData) > 0 {
 				schemaName := phaseToExecute.ID
 				// Get node execution ID from context (set by the last extraction node)
@@ -598,10 +602,21 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 				result = fieldResults
 				err = nil
 
-				// Always store field-based extraction results in context for database saving
+				// Debug: Log extracted fields
+				logger.Debug("Field extraction completed",
+					zap.Int("fields_extracted", len(fieldResults)),
+					zap.Any("field_results", fieldResults))
+
+				// Track which fields were extracted so they can be saved to database
+				extractedFieldNames := make([]string, 0, len(fieldResults))
 				for fieldName, fieldValue := range fieldResults {
 					execCtx.Set(fieldName, fieldValue)
+					extractedFieldNames = append(extractedFieldNames, fieldName)
 				}
+				// Set marker to indicate these fields should be saved
+				execCtx.Set("__extracted_fields__", extractedFieldNames)
+				logger.Debug("Set extracted fields marker",
+					zap.Strings("field_names", extractedFieldNames))
 			} else {
 				// Normal extraction with top-level selector
 				result, err = extractionEngine.Extract(config)
@@ -813,15 +828,37 @@ func containsString(s, substr string) bool {
 }
 
 // collectExtractedData collects all extracted data from execution context
+// Only data set by extract nodes should be saved - all other node outputs are metadata
 func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[string]interface{} {
 	data := make(map[string]interface{})
 
-	// Get all values from execution context, excluding internal fields
-	contextData := execCtx.GetAll()
-	for key, value := range contextData {
-		// Skip internal/metadata fields - these are not extracted data
-		if key != "url" && key != "depth" && key != "phase_id" && key != "_node_exec_id" {
-			data[key] = value
+	// Check if this context has any extracted fields marker
+	// Extract nodes set a special marker to indicate they have extracted data
+	extractedFields, hasExtractedData := execCtx.Get("__extracted_fields__")
+	if !hasExtractedData {
+		// No extract node was executed, return empty
+		return data
+	}
+
+	// Get the list of field names that were extracted
+	fieldNames, ok := extractedFields.([]string)
+	if !ok {
+		// Fallback: if marker is not a list, collect all non-internal fields
+		// This handles backward compatibility
+		contextData := execCtx.GetAll()
+		for key, value := range contextData {
+			// Skip fields starting with '_' or '__' (internal/metadata convention)
+			if len(key) > 0 && key[0] != '_' {
+				data[key] = value
+			}
+		}
+		return data
+	}
+
+	// Collect only the fields that were explicitly extracted
+	for _, fieldName := range fieldNames {
+		if value, exists := execCtx.Get(fieldName); exists {
+			data[fieldName] = value
 		}
 	}
 

@@ -95,9 +95,13 @@ func (e *ExtractExecutor) Execute(ctx context.Context, input *nodes.ExecutionInp
 		}
 
 		// Store in execution context
+		extractedFieldNames := make([]string, 0, len(fieldResults))
 		for fieldName, fieldValue := range fieldResults {
 			input.ExecutionContext.Set(fieldName, fieldValue)
+			extractedFieldNames = append(extractedFieldNames, fieldName)
 		}
+		// Set marker to indicate these fields should be saved
+		input.ExecutionContext.Set("__extracted_fields__", extractedFieldNames)
 
 		return &nodes.ExecutionOutput{
 			Result: fieldResults,
