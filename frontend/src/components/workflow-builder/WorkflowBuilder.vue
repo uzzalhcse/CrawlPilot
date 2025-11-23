@@ -245,49 +245,44 @@ function loadWorkflow(workflow: Workflow) {
   }
 
 
-  // Create nodes with hierarchical tree-based positions
-  // First, organize nodes by parent-child relationships
+
+  // Create nodes with horizontal grid-based positions for cleaner hierarchy
   const nodePositions = new Map<string, { x: number; y: number }>()
-  let currentY = 100 // Starting Y position
+  const nodeWidth = 320
+  const horizontalGap = 120  // Increased from 60
+  const levelVerticalGap = 250  // Increased from 200
   
-  // Position nodes hierarchically
-  function positionNodeTree(node: any, startX: number, startY: number, level: number): number {
-    const nodeHeight = 120
-    const verticalGap = 150
-    const horizontalIndent = 60
+  // Group nodes by level
+  const nodesByLevel: Map<number, any[]> = new Map()
+  allNodes.forEach((node: any) => {
+    const level = node.level || 0
+    if (!nodesByLevel.has(level)) {
+      nodesByLevel.set(level, [])
+    }
+    nodesByLevel.get(level)!.push(node)
+  })
+  
+  // Position nodes level by level
+  let currentY = 100
+  
+  for (let level = 0; level <= Math.max(...Array.from(nodesByLevel.keys())); level++) {
+    const nodesAtLevel = nodesByLevel.get(level) || []
     
-    // Position this node
-    const x = startX + (level * horizontalIndent)
-    nodePositions.set(node.id, { x, y: startY })
+    if (nodesAtLevel.length === 0) continue
     
-    let currentChildY = startY + nodeHeight + verticalGap
+    // Calculate total width needed for this level
+    const totalWidth = (nodesAtLevel.length * nodeWidth) + ((nodesAtLevel.length - 1) * horizontalGap)
+    const startX = Math.max(100, (1200 - totalWidth) / 2) // Center nodes, but min 100px from left
     
-    // Position all children of this node
-    const children = allNodes.filter((n: any) => n.parentId === node.id)
-    children.forEach((child: any) => {
-      const childBottomY = positionNodeTree(child, startX, currentChildY, level + 1)
-      currentChildY = childBottomY + verticalGap
+    // Position each node at this level
+    nodesAtLevel.forEach((node: any, index: number) => {
+      const x = startX + (index * (nodeWidth + horizontalGap))
+      const y = currentY
+      nodePositions.set(node.id, { x, y })
     })
     
-    // Return the bottom Y coordinate of this subtree
-    return currentChildY > startY + nodeHeight ? currentChildY - verticalGap : startY + nodeHeight
+    currentY += levelVerticalGap
   }
-  
-  // Position top-level nodes (those without parents) phase by phase
-  const topLevelNodes = allNodes.filter((n: any) => !n.parentId)
-  let currentPhaseId: string | null = null
-  
-  topLevelNodes.forEach((node: any) => {
-    // Add extra spacing between phases
-    if (currentPhaseId && currentPhaseId !== node.phaseId) {
-      currentY += 100 // Extra gap between phases
-    }
-    currentPhaseId = node.phaseId
-    
-    // Position this node and its children
-    const bottomY = positionNodeTree(node, 100, currentY, 0)
-    currentY = bottomY + 200 // Space before next top-level node
-  })
 
   // Create WorkflowNode objects with calculated positions
   allNodes.forEach((node, index) => {
