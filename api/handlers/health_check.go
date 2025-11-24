@@ -94,6 +94,77 @@ func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 	})
 }
 
+// SetBaseline marks a health check report as the baseline
+func (h *HealthCheckHandler) SetBaseline(c *fiber.Ctx) error {
+	reportID := c.Params("report_id")
+	ctx := context.Background()
+
+	baselineService := healthcheck.NewBaselineService(h.healthCheckRepo)
+	err := baselineService.SetAsBaseline(ctx, reportID)
+
+	if err != nil {
+		logger.Error("Failed to set baseline",
+			zap.String("report_id", reportID),
+			zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to set baseline",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "Baseline set successfully",
+	})
+}
+
+// GetBaseline retrieves the baseline report for a workflow
+func (h *HealthCheckHandler) GetBaseline(c *fiber.Ctx) error {
+	workflowID := c.Params("id")
+	ctx := context.Background()
+
+	baselineService := healthcheck.NewBaselineService(h.healthCheckRepo)
+	baseline, err := baselineService.GetBaseline(ctx, workflowID)
+
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "No baseline found for this workflow",
+		})
+	}
+
+	return c.JSON(baseline)
+}
+
+// CompareWithBaseline compares a report with the baseline
+func (h *HealthCheckHandler) CompareWithBaseline(c *fiber.Ctx) error {
+	reportID := c.Params("report_id")
+	ctx := context.Background()
+
+	// Get current report
+	current, err := h.healthCheckRepo.GetByID(ctx, reportID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Report not found",
+		})
+	}
+
+	// Get baseline
+	baselineService := healthcheck.NewBaselineService(h.healthCheckRepo)
+	baseline, err := baselineService.GetBaseline(ctx, current.WorkflowID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "No baseline found for comparison",
+		})
+	}
+
+	// Compare
+	comparisons := baselineService.CompareWithBaseline(current, baseline)
+
+	return c.JSON(fiber.Map{
+		"current":     current,
+		"baseline":    baseline,
+		"comparisons": comparisons,
+	})
+}
+
 // GetHealthCheckReport retrieves a health check report by ID
 func (h *HealthCheckHandler) GetHealthCheckReport(c *fiber.Ctx) error {
 	ctx := context.Background()

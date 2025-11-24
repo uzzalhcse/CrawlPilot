@@ -39,14 +39,14 @@ const router = createRouter({
           component: () => import('@/views/ExecutionDetailView.vue')
         },
         {
-          path: 'workflows/:id/health-checks',
-          name: 'health-checks',
-          component: () => import('@/views/HealthCheckView.vue')
-        },
-        {
           path: 'health-checks',
           name: 'health-checks-overview',
           component: () => import('@/views/HealthChecksOverview.vue')
+        },
+        {
+          path: 'health-checks/:id',
+          name: 'health-checks',
+          component: () => import('@/views/HealthCheckView.vue')
         },
         {
           path: 'analytics',

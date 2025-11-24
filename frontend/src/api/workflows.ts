@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { Workflow, WorkflowConfig } from '@/types'
+import type { Workflow, WorkflowConfig, HealthCheckSchedule, NotificationConfig, HealthCheckReport, ComparisonResponse } from '@/types'
 
 export interface CreateWorkflowRequest {
   name: string
@@ -72,5 +72,35 @@ export const workflowsApi = {
   // Get specific health check report
   getHealthCheckReport(reportId: string) {
     return apiClient.get<any>(`/health-checks/${reportId}`)
+  },
+
+  // Phase 2: Schedule Management
+  getSchedule(workflowId: string) {
+    return apiClient.get<HealthCheckSchedule>(`/workflows/${workflowId}/schedule`)
+  },
+
+  createSchedule(workflowId: string, data: Partial<HealthCheckSchedule>) {
+    return apiClient.post<HealthCheckSchedule>(`/workflows/${workflowId}/schedule`, data)
+  },
+
+  deleteSchedule(workflowId: string) {
+    return apiClient.delete(`/workflows/${workflowId}/schedule`)
+  },
+
+  testNotification(workflowId: string, config: NotificationConfig) {
+    return apiClient.post(`/workflows/${workflowId}/test-notification`, { notification_config: config })
+  },
+
+  // Baseline Management
+  setBaseline(reportId: string) {
+    return apiClient.post(`/health-checks/${reportId}/set-baseline`)
+  },
+
+  getBaseline(workflowId: string) {
+    return apiClient.get<HealthCheckReport>(`/workflows/${workflowId}/baseline`)
+  },
+
+  compareWithBaseline(reportId: string) {
+    return apiClient.get<ComparisonResponse>(`/health-checks/${reportId}/compare`)
   }
 }

@@ -145,6 +145,44 @@ export interface HealthCheckConfig {
   skip_data_storage: boolean
 }
 
+// Phase 2: Scheduling and Notifications
+export interface HealthCheckSchedule {
+  id: string
+  workflow_id: string
+  schedule: string
+  enabled: boolean
+  last_run_at?: string
+  next_run_at?: string
+  notification_config?: NotificationConfig
+  created_at: string
+  updated_at: string
+}
+
+export interface NotificationConfig {
+  slack?: SlackConfig
+  only_on_failure: boolean
+  only_on_change?: boolean
+}
+
+export interface SlackConfig {
+  webhook_url: string
+  channel?: string
+}
+
+export interface BaselineComparison {
+  metric: string
+  baseline: any
+  current: any
+  change_percent?: number
+  status: 'improved' | 'degraded' | 'unchanged'
+}
+
+export interface ComparisonResponse {
+  current: HealthCheckReport
+  baseline: HealthCheckReport
+  comparisons: BaselineComparison[]
+}
+
 // Vue Flow related types
 export interface WorkflowNode {
   id: string

@@ -15,6 +15,7 @@ import (
 	"github.com/uzzalhcse/crawlify/api/handlers"
 	"github.com/uzzalhcse/crawlify/internal/browser"
 	"github.com/uzzalhcse/crawlify/internal/config"
+	"github.com/uzzalhcse/crawlify/internal/healthcheck"
 	"github.com/uzzalhcse/crawlify/internal/logger"
 	"github.com/uzzalhcse/crawlify/internal/queue"
 	"github.com/uzzalhcse/crawlify/internal/storage"
@@ -109,8 +110,21 @@ func main() {
 	}
 	healthCheckHandler := handlers.NewHealthCheckHandler(workflowRepo, healthCheckRepo, browserPool, nodeRegistry)
 
+	// Initialize schedule repository and handler
+	scheduleRepo := storage.NewHealthCheckScheduleRepository(db)
+
+	// Create health check orchestrator for scheduler
+	healthCheckOrchestrator := healthcheck.NewOrchestrator(browserPool, nodeRegistry, nil)
+
+	// Create and start scheduler service
+	schedulerService := healthcheck.NewSchedulerService(scheduleRepo, healthCheckRepo, workflowRepo, healthCheckOrchestrator)
+	go schedulerService.Start()
+	logger.Info("Health check scheduler started")
+
+	scheduleHandler := handlers.NewScheduleHandler(scheduleRepo, schedulerService)
+
 	// Routes
-	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler)
+	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler, scheduleHandler)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -149,6 +163,10 @@ func main() {
 		if err := app.ShutdownWithContext(ctx); err != nil {
 			logger.Error("Server shutdown error", zap.Error(err))
 		}
+
+		// Stop scheduler
+		schedulerService.Stop()
+		logger.Info("Health check scheduler stopped")
 	}()
 
 	if err := app.Listen(addr); err != nil {
@@ -156,7 +174,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler, scheduleHandler *handlers.ScheduleHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -178,6 +196,17 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	// Health check reports (by ID)
 	healthChecks := api.Group("/health-checks")
 	healthChecks.Get("/:report_id", healthCheckHandler.GetHealthCheckReport)
+	healthChecks.Post("/:report_id/set-baseline", healthCheckHandler.SetBaseline)
+	healthChecks.Get("/:report_id/compare", healthCheckHandler.CompareWithBaseline)
+
+	// Baseline routes
+	workflows.Get("/:id/baseline", healthCheckHandler.GetBaseline)
+
+	// Schedule routes
+	workflows.Get("/:id/schedule", scheduleHandler.GetSchedule)
+	workflows.Post("/:id/schedule", scheduleHandler.CreateSchedule)
+	workflows.Delete("/:id/schedule", scheduleHandler.DeleteSchedule)
+	workflows.Post("/:id/test-notification", scheduleHandler.TestNotification)
 
 	executions := api.Group("/executions")
 	executions.Get("/", executionHandler.ListExecutions)

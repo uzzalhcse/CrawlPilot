@@ -89,3 +89,47 @@ type HealthCheckSummary struct {
 	WarningNodes   int               `json:"warning_nodes"`
 	CriticalIssues []ValidationIssue `json:"critical_issues"`
 }
+
+// HealthCheckSchedule represents a scheduled health check configuration
+type HealthCheckSchedule struct {
+	ID                 string              `json:"id" db:"id"`
+	WorkflowID         string              `json:"workflow_id" db:"workflow_id"`
+	Schedule           string              `json:"schedule" db:"schedule"` // cron format
+	Enabled            bool                `json:"enabled" db:"enabled"`
+	LastRunAt          *time.Time          `json:"last_run_at,omitempty" db:"last_run_at"`
+	NextRunAt          *time.Time          `json:"next_run_at,omitempty" db:"next_run_at"`
+	NotificationConfig *NotificationConfig `json:"notification_config,omitempty" db:"-"`
+	NotificationJSON   []byte              `json:"-" db:"notification_config"`
+	CreatedAt          time.Time           `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time           `json:"updated_at" db:"updated_at"`
+}
+
+// NotificationConfig defines how to notify on health check results
+type NotificationConfig struct {
+	Slack         *SlackConfig `json:"slack,omitempty"`
+	OnlyOnFailure bool         `json:"only_on_failure"`
+	OnlyOnChange  bool         `json:"only_on_change"` // Only notify if status changed
+}
+
+// SlackConfig for Slack webhook notifications
+type SlackConfig struct {
+	WebhookURL string `json:"webhook_url"`
+	Channel    string `json:"channel,omitempty"`
+}
+
+// BaselineComparison represents a comparison between current and baseline metrics
+type BaselineComparison struct {
+	Metric        string           `json:"metric"`
+	Baseline      interface{}      `json:"baseline"`
+	Current       interface{}      `json:"current"`
+	ChangePercent float64          `json:"change_percent,omitempty"`
+	Status        ComparisonStatus `json:"status"`
+}
+
+type ComparisonStatus string
+
+const (
+	ComparisonImproved  ComparisonStatus = "improved"
+	ComparisonDegraded  ComparisonStatus = "degraded"
+	ComparisonUnchanged ComparisonStatus = "unchanged"
+)

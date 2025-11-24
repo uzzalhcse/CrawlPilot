@@ -137,3 +137,54 @@ func (r *HealthCheckRepository) ListByWorkflow(ctx context.Context, workflowID s
 
 	return reports, nil
 }
+
+// SetAsBaseline marks a report as the baseline for its workflow
+func (r *HealthCheckRepository) SetAsBaseline(ctx context.Context, reportID string) error {
+	query := `UPDATE health_check_reports SET is_baseline = true WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, reportID)
+	return err
+}
+
+// UnsetBaseline removes baseline status from all reports in a workflow
+func (r *HealthCheckRepository) UnsetBaseline(ctx context.Context, workflowID string) error {
+	query := `UPDATE health_check_reports SET is_baseline = false WHERE workflow_id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, workflowID)
+	return err
+}
+
+// GetBaseline retrieves the baseline report for a workflow
+func (r *HealthCheckRepository) GetBaseline(ctx context.Context, workflowID string) (*models.HealthCheckReport, error) {
+	query := `
+		SELECT 
+			id, workflow_id, status, started_at, completed_at, 
+			duration_ms, results, summary, config
+		FROM health_check_reports
+		WHERE workflow_id = $1 AND is_baseline = true
+		LIMIT 1
+	`
+
+	report := &models.HealthCheckReport{}
+	var resultsJSON, summaryJSON, configJSON []byte
+
+	err := r.db.Pool.QueryRow(ctx, query, workflowID).Scan(
+		&report.ID,
+		&report.WorkflowID,
+		&report.Status,
+		&report.StartedAt,
+		&report.CompletedAt,
+		&report.Duration,
+		&resultsJSON,
+		&summaryJSON,
+		&configJSON,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	json.Unmarshal(resultsJSON, &report.Results)
+	json.Unmarshal(summaryJSON, &report.Summary)
+	json.Unmarshal(configJSON, &report.Config)
+
+	return report, nil
+}

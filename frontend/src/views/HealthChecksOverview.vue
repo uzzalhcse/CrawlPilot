@@ -19,7 +19,7 @@ const activeWorkflows = computed(() =>
 )
 
 const viewHealthChecks = (workflowId: string) => {
-  router.push(`/workflows/${workflowId}/health-checks`)
+  router.push(`/health-checks/${workflowId}`)
 }
 
 const formatDate = (dateStr: string) => {
