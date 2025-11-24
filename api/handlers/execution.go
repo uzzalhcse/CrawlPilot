@@ -24,6 +24,7 @@ type ExecutionHandler struct {
 	urlQueue           *queue.URLQueue
 	executor           *workflow.Executor
 	executions         sync.Map // Track running executions
+	executionCancels   sync.Map // Map[executionID]context.CancelFunc - NEW for pause support
 }
 
 func NewExecutionHandler(
@@ -96,7 +97,14 @@ func (h *ExecutionHandler) StartExecution(c *fiber.Ctx) error {
 
 	// Start execution in background
 	go func() {
-		ctx := context.Background()
+		// Create cancellable context for this execution
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Store cancel function for pause support
+		h.executionCancels.Store(executionID, cancel)
+		defer h.executionCancels.Delete(executionID)
+
 		h.executions.Store(executionID, true)
 		defer h.executions.Delete(executionID)
 
@@ -106,10 +114,17 @@ func (h *ExecutionHandler) StartExecution(c *fiber.Ctx) error {
 		)
 
 		if err := h.executor.ExecuteWorkflow(ctx, wf, executionID); err != nil {
-			logger.Error("Workflow execution failed",
-				zap.Error(err),
-				zap.String("execution_id", executionID),
-			)
+			// Check if it was a context cancellation (pause)
+			if err == context.Canceled {
+				logger.Info("Workflow execution paused",
+					zap.String("execution_id", executionID),
+				)
+			} else {
+				logger.Error("Workflow execution failed",
+					zap.Error(err),
+					zap.String("execution_id", executionID),
+				)
+			}
 		} else {
 			logger.Info("Workflow execution completed",
 				zap.String("execution_id", executionID),
@@ -180,10 +195,144 @@ func (h *ExecutionHandler) StopExecution(c *fiber.Ctx) error {
 	// Remove from running executions
 	h.executions.Delete(executionID)
 
+	// Also cancel if there's a cancel function
+	if cancelFn, exists := h.executionCancels.Load(executionID); exists {
+		cancelFn.(context.CancelFunc)()
+		h.executionCancels.Delete(executionID)
+	}
+
 	logger.Info("Execution stopped", zap.String("execution_id", executionID))
 
 	return c.JSON(fiber.Map{
 		"message":      "Execution stopped",
+		"execution_id": executionID,
+	})
+}
+
+// PauseExecution pauses a running execution
+func (h *ExecutionHandler) PauseExecution(c *fiber.Ctx) error {
+	ctx := context.Background()
+	executionID := c.Params("execution_id")
+
+	// Check if execution exists and is running
+	execution, err := h.executionRepo.GetByID(ctx, executionID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Execution not found",
+		})
+	}
+
+	if execution.Status != models.ExecutionStatusRunning {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Execution is not running",
+		})
+	}
+
+	// Signal executor to stop via context cancellation
+	if cancelFn, exists := h.executionCancels.Load(executionID); exists {
+		cancelFn.(context.CancelFunc)()
+	}
+
+	// Update status to paused in database
+	err = h.executionRepo.UpdateStatus(ctx, executionID, models.ExecutionStatusPaused, "")
+	if err != nil {
+		logger.Error("Failed to update execution status to paused", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to pause execution",
+		})
+	}
+
+	logger.Info("Execution paused", zap.String("execution_id", executionID))
+
+	return c.JSON(fiber.Map{
+		"message":      "Execution paused",
+		"execution_id": executionID,
+	})
+}
+
+// ResumeExecution resumes a paused execution
+func (h *ExecutionHandler) ResumeExecution(c *fiber.Ctx) error {
+	ctx := context.Background()
+	executionID := c.Params("execution_id")
+
+	// Check if execution exists and is paused
+	execution, err := h.executionRepo.GetByID(ctx, executionID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Execution not found",
+		})
+	}
+
+	if execution.Status != models.ExecutionStatusPaused && execution.Status != models.ExecutionStatusRunning {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Execution cannot be resumed (must be paused or running after restart)",
+		})
+	}
+
+	// Check if already running in memory
+	if _, running := h.executions.Load(executionID); running {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Execution is already running",
+		})
+	}
+
+	// Get workflow
+	wf, err := h.workflowRepo.GetByID(ctx, execution.WorkflowID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Workflow not found",
+		})
+	}
+
+	// Reset any stale URLs stuck in 'processing' state
+	if err := h.urlQueue.ResetProcessingURLs(ctx, executionID); err != nil {
+		logger.Error("Failed to reset processing URLs", zap.Error(err))
+	}
+
+	// Start execution in background
+	go func() {
+		// Create cancellable context for this execution
+		bgCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Store cancel function for pause support
+		h.executionCancels.Store(executionID, cancel)
+		defer h.executionCancels.Delete(executionID)
+
+		h.executions.Store(executionID, true)
+		defer h.executions.Delete(executionID)
+
+		// Update status to running
+		h.executionRepo.UpdateStatus(bgCtx, executionID, models.ExecutionStatusRunning, "")
+
+		logger.Info("Resuming workflow execution",
+			zap.String("workflow_id", execution.WorkflowID),
+			zap.String("execution_id", executionID),
+		)
+
+		if err := h.executor.ExecuteWorkflow(bgCtx, wf, executionID); err != nil {
+			// Check if it was a context cancellation (pause)
+			if err == context.Canceled {
+				logger.Info("Workflow execution paused",
+					zap.String("execution_id", executionID),
+				)
+			} else {
+				logger.Error("Workflow execution failed",
+					zap.Error(err),
+					zap.String("execution_id", executionID),
+				)
+			}
+		} else {
+			logger.Info("Workflow execution completed",
+				zap.String("execution_id", executionID),
+			)
+		}
+	}()
+
+	logger.Info("Execution resumed", zap.String("execution_id", executionID))
+
+	return c.JSON(fiber.Map{
+		"message":      "Execution resumed",
 		"execution_id": executionID,
 	})
 }

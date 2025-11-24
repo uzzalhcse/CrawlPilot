@@ -88,6 +88,16 @@ export const executionsApi = {
     return apiClient.delete(`/executions/${id}`)
   },
 
+  // Pause execution
+  pause(id: string) {
+    return apiClient.post(`/executions/${id}/pause`)
+  },
+
+  // Resume execution
+  resume(id: string) {
+    return apiClient.post(`/executions/${id}/resume`)
+  },
+
   // Get execution timeline
   getTimeline(id: string) {
     return apiClient.get<ExecutionTimeline[]>(`/executions/${id}/timeline`)

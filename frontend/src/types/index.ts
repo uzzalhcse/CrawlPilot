@@ -59,7 +59,7 @@ export interface StorageConfig {
 export interface Execution {
   id: string
   workflow_id: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'stopped'
+  status: 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
   started_at: string
   completed_at?: string
   error?: string

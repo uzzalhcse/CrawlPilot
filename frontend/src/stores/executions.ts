@@ -140,6 +140,46 @@ export const useExecutionsStore = defineStore('executions', () => {
     }
   }
 
+  async function pauseExecution(id: string) {
+    loading.value = true
+    error.value = null
+    try {
+      await executionsApi.pause(id)
+      if (currentExecution.value?.id === id) {
+        currentExecution.value.status = 'paused'
+      }
+      const index = executions.value.findIndex(e => e.id === id)
+      if (index !== -1) {
+        executions.value[index].status = 'paused'
+      }
+    } catch (e: any) {
+      error.value = e.response?.data?.error || 'Failed to pause execution'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function resumeExecution(id: string) {
+    loading.value = true
+    error.value = null
+    try {
+      await executionsApi.resume(id)
+      if (currentExecution.value?.id === id) {
+        currentExecution.value.status = 'running'
+      }
+      const index = executions.value.findIndex(e => e.id === id)
+      if (index !== -1) {
+        executions.value[index].status = 'running'
+      }
+    } catch (e: any) {
+      error.value = e.response?.data?.error || 'Failed to resume execution'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function fetchTimeline(id: string) {
     loading.value = true
     error.value = null
@@ -258,6 +298,8 @@ export const useExecutionsStore = defineStore('executions', () => {
     fetchExecutionStats,
     fetchExtractedData,
     stopExecution,
+    pauseExecution,
+    resumeExecution,
     fetchTimeline,
     fetchHierarchy,
     fetchPerformance,

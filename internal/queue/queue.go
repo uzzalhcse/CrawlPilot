@@ -481,3 +481,30 @@ func (q *URLQueue) UpdatePhaseID(ctx context.Context, id string, phaseID string)
 
 	return nil
 }
+
+// ResetProcessingURLs resets all processing URLs back to pending for an execution
+// This is used when resuming a paused/crashed execution
+func (q *URLQueue) ResetProcessingURLs(ctx context.Context, executionID string) error {
+	query := `
+		UPDATE url_queue
+		SET status = $1, locked_at = NULL, locked_by = NULL
+		WHERE execution_id = $2 AND status = $3
+	`
+
+	result, err := q.db.Pool.Exec(ctx, query,
+		models.QueueItemStatusPending,
+		executionID,
+		models.QueueItemStatusProcessing,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to reset processing URLs: %w", err)
+	}
+
+	resetCount := result.RowsAffected()
+	if resetCount > 0 {
+		fmt.Printf("Reset %d processing URLs to pending for execution %s\n", resetCount, executionID)
+	}
+
+	return nil
+}

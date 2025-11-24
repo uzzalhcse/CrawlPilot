@@ -167,6 +167,8 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	executions.Get("/", executionHandler.ListExecutions)
 	executions.Get("/:execution_id", executionHandler.GetExecutionStatus)
 	executions.Delete("/:execution_id", executionHandler.StopExecution)
+	executions.Post("/:execution_id/pause", executionHandler.PauseExecution)   // NEW
+	executions.Post("/:execution_id/resume", executionHandler.ResumeExecution) // NEW
 	executions.Get("/:execution_id/stats", executionHandler.GetQueueStats)
 	executions.Get("/:execution_id/data", executionHandler.GetExtractedData)
 

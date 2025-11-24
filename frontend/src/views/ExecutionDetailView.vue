@@ -39,6 +39,7 @@ import {
   Download,
   RefreshCw,
   Play,
+  Pause,
   FileJson,
   ChevronLeft,
   ChevronRight,
@@ -152,6 +153,8 @@ const getStatusVariant = (status: string) => {
   switch (status) {
     case 'running':
       return 'default'
+    case 'paused':
+      return 'secondary'
     case 'completed':
       return 'default'
     case 'failed':
@@ -165,6 +168,8 @@ const getStatusIcon = (status: string) => {
   switch (status) {
     case 'running':
       return Loader2
+    case 'paused':
+      return Pause
     case 'completed':
       return CheckCircle
     case 'failed':
@@ -189,6 +194,24 @@ const handleStop = async () => {
     await loadExecutionData()
   } catch (error) {
     console.error('Failed to stop execution:', error)
+  }
+}
+
+const handlePause = async () => {
+  try {
+    await executionsStore.pauseExecution(executionId)
+    await loadExecutionData()
+  } catch (error) {
+    console.error('Failed to pause execution:', error)
+  }
+}
+
+const handleResume = async () => {
+  try {
+    await executionsStore.resumeExecution(executionId)
+    await loadExecutionData()
+  } catch (error) {
+    console.error('Failed to resume execution:', error)
   }
 }
 
@@ -276,13 +299,31 @@ onUnmounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <Button 
+          v-if="execution?.status === 'paused'" 
+          variant="default" 
+          @click="handleResume"
+          size="sm"
+        >
+          <Play class="mr-2 h-4 w-4" />
+          Resume
+        </Button>
+        <Button 
+          v-if="execution?.status === 'running'" 
+          variant="outline" 
+          @click="handlePause"
+          size="sm"
+        >
+          <Pause class="mr-2 h-4 w-4" />
+          Pause
+        </Button>
+        <Button 
           v-if="execution?.status === 'running'" 
           variant="destructive" 
           @click="handleStop"
           size="sm"
         >
           <StopCircle class="mr-2 h-4 w-4" />
-          Stop Execution
+          Stop
         </Button>
       </div>
     </div>
@@ -334,11 +375,11 @@ onUnmounted(() => {
       <!-- Main Content -->
       <Tabs v-model="activeTab" class="space-y-4">
         <TabsList>
-          <TabsTrigger value="live" v-if="execution.status === 'running'">Live View</TabsTrigger>
+          <TabsTrigger value="live" v-if="execution.status === 'running' || execution.status === 'paused'">Live View</TabsTrigger>
           <TabsTrigger value="data">Extracted Data</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="live" v-if="execution.status === 'running'" class="space-y-4">
+        <TabsContent value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="space-y-4">
           <ExecutionLiveView 
             :execution-id="executionId" 
             :workflow-config="execution.workflow_config || {}" 
