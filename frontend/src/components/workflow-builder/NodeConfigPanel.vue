@@ -146,10 +146,11 @@ function addFieldArrayItem(key: string) {
   fields[newFieldName] = {
     selector: '',
     type: 'text',
-    transform: 'none',
     attribute: '',
+    transform: 'none',
     default_value: '',
     multiple: false,
+    required: true, // NEW: Default to required
     limit: 0,
     fields: '',
     extractions: ''
@@ -463,6 +464,7 @@ function importFieldsFromVisualSelector(key: string, selectedFields: SelectedFie
         transform: 'none',
         default_value: '',
         multiple: field.multiple || false,
+        required: true, // NEW: Default to required
         limit: 0,
         fields: '',
         extractions: ''

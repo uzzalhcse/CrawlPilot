@@ -45,9 +45,9 @@ func (r *SnapshotRepository) Create(ctx context.Context, snapshot *models.Health
 		INSERT INTO health_check_snapshots (
 			report_id, node_id, phase_name, url, page_title, status_code,
 			screenshot_path, dom_snapshot_path, console_logs,
-			selector_type, selector_value, elements_found, error_message, metadata
+			selector_type, selector_value, elements_found, error_message, metadata, field_required
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		) RETURNING id, created_at
 	`
 
@@ -57,7 +57,7 @@ func (r *SnapshotRepository) Create(ctx context.Context, snapshot *models.Health
 		snapshot.PageTitle, snapshot.StatusCode, snapshot.ScreenshotPath,
 		snapshot.DOMSnapshotPath, snapshot.ConsoleLogs, snapshot.SelectorType,
 		snapshot.SelectorValue, snapshot.ElementsFound, snapshot.ErrorMessage,
-		snapshot.Metadata,
+		snapshot.Metadata, snapshot.FieldRequired,
 	).Scan(&snapshot.ID, &snapshot.CreatedAt)
 
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *SnapshotRepository) GetByID(ctx context.Context, id string) (*models.He
 	query := `
 		SELECT id, report_id, node_id, phase_name, created_at, url, page_title,
 		       status_code, screenshot_path, dom_snapshot_path, console_logs,
-		       selector_type, selector_value, elements_found, error_message, metadata
+		       selector_type, selector_value, elements_found, error_message, metadata, field_required
 		FROM health_check_snapshots
 		WHERE id = $1
 	`
@@ -83,7 +83,7 @@ func (r *SnapshotRepository) GetByID(ctx context.Context, id string) (*models.He
 		&snapshot.CreatedAt, &snapshot.URL, &snapshot.PageTitle, &snapshot.StatusCode,
 		&snapshot.ScreenshotPath, &snapshot.DOMSnapshotPath, &snapshot.ConsoleLogs,
 		&snapshot.SelectorType, &snapshot.SelectorValue, &snapshot.ElementsFound,
-		&snapshot.ErrorMessage, &snapshot.Metadata,
+		&snapshot.ErrorMessage, &snapshot.Metadata, &snapshot.FieldRequired,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get snapshot: %w", err)
@@ -111,7 +111,7 @@ func (r *SnapshotRepository) GetByReportID(ctx context.Context, reportID string)
 	query := `
 		SELECT id, report_id, node_id, phase_name, created_at, url, page_title,
 		       status_code, screenshot_path, dom_snapshot_path, console_logs,
-		       selector_type, selector_value, elements_found, error_message, metadata
+		       selector_type, selector_value, elements_found, error_message, metadata, field_required
 		FROM health_check_snapshots
 		WHERE report_id = $1
 		ORDER BY created_at DESC
@@ -131,7 +131,7 @@ func (r *SnapshotRepository) GetByReportID(ctx context.Context, reportID string)
 			&snapshot.CreatedAt, &snapshot.URL, &snapshot.PageTitle, &snapshot.StatusCode,
 			&snapshot.ScreenshotPath, &snapshot.DOMSnapshotPath, &snapshot.ConsoleLogs,
 			&snapshot.SelectorType, &snapshot.SelectorValue, &snapshot.ElementsFound,
-			&snapshot.ErrorMessage, &snapshot.Metadata,
+			&snapshot.ErrorMessage, &snapshot.Metadata, &snapshot.FieldRequired,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan snapshot: %w", err)

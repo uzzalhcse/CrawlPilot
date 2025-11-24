@@ -205,6 +205,7 @@ func (o *Orchestrator) validatePhase(ctx context.Context, wf *models.Workflow, p
 					phase.Name,
 					&nodeResult,
 					browserCtx, // Pass browser context for screenshot/DOM capture
+					&node,      // Pass node for field requirement determination
 				); err != nil {
 					logger.Warn("Failed to capture snapshot",
 						zap.String("node_id", nodeResult.NodeID),

@@ -37,6 +37,7 @@ func (s *SnapshotService) CaptureSnapshot(
 	workflowID, reportID, nodeID, phaseName string,
 	validationResult *models.NodeValidationResult,
 	browserCtx *browser.BrowserContext,
+	node *models.Node, // NEW: Pass node to determine field requirement
 ) (*models.HealthCheckSnapshot, error) {
 	s.logger.Info("Capturing snapshot for failed validation",
 		zap.String("node_id", nodeID),
@@ -114,6 +115,42 @@ func (s *SnapshotService) CaptureSnapshot(
 
 			errorMsg := issue.Message
 			snapshot.ErrorMessage = &errorMsg
+
+			// Determine if this field is required
+			// Default to true for backward compatibility
+			isRequired := true
+
+			// Check if selector is for a field with required flag
+			if fields, ok := node.Params["fields"].(map[string]interface{}); ok {
+				for _, fieldConfig := range fields {
+					if configMap, ok := fieldConfig.(map[string]interface{}); ok {
+						// Check if this is the failing selector
+						if sel, ok := configMap["selector"].(string); ok && sel == issue.Selector {
+							// Check if 'required' is specified
+							if req, exists := configMap["required"]; exists {
+								if reqBool, ok := req.(bool); ok {
+									isRequired = reqBool
+								}
+							}
+							break
+						}
+					}
+				}
+			} else if topLevelSelector, ok := node.Params["selector"].(string); ok && topLevelSelector == issue.Selector {
+				// Top-level selector - check for top-level required flag
+				if req, exists := node.Params["required"]; exists {
+					if reqBool, ok := req.(bool); ok {
+						isRequired = reqBool
+					}
+				}
+			}
+
+			snapshot.FieldRequired = &isRequired
+
+			s.logger.Debug("Determined field requirement status",
+				zap.String("selector", issue.Selector),
+				zap.Bool("required", isRequired))
+
 			break // Take first selector issue
 		}
 	}

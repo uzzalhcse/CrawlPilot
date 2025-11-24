@@ -152,7 +152,8 @@ type HealthCheckSnapshot struct {
 	SelectorValue   *string                `json:"selector_value,omitempty" db:"selector_value"`
 	ElementsFound   int                    `json:"elements_found" db:"elements_found"`
 	ErrorMessage    *string                `json:"error_message,omitempty" db:"error_message"`
-	Metadata        []byte                 `json:"-" db:"metadata"` // JSONB
+	FieldRequired   *bool                  `json:"field_required,omitempty" db:"field_required"` // NEW: Indicates if this field is required
+	Metadata        []byte                 `json:"-" db:"metadata"`                              // JSONB
 	MetadataData    map[string]interface{} `json:"metadata,omitempty" db:"-"`
 }
 

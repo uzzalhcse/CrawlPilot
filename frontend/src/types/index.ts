@@ -200,6 +200,7 @@ export interface HealthCheckSnapshot {
   selector_value?: string
   elements_found?: number
   error_message?: string
+  field_required?: boolean  // NEW: Whether the failed field is required
   metadata?: Record<string, any>
 }
 
@@ -350,6 +351,7 @@ export interface FieldConfig {
   limit?: number
   transform?: string | TransformConfig[]
   default_value?: any
+  required?: boolean  // NEW: Mark field as required (default: true)
   fields?: Record<string, FieldConfig>
   extractions?: ExtractionPair[]
 }

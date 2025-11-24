@@ -166,11 +166,27 @@
                       <div class="detail-section">
                         <h4 class="section-title">Error Details</h4>
                         <div class="detail-item" v-if="snapshot.selector_value">
-                          <span class="detail-label">Selector:</span>
-                          <code class="detail-value code">{{ snapshot.selector_value }}</code>
+                          <span class="detail-label">Selector</span>
+                          <div class="flex items-center gap-2">
+                            <code class="detail-value code">{{ snapshot.selector_value }}</code>
+                            <!-- Required/Optional Badge -->
+                            <span 
+                              v-if="snapshot.field_required !== undefined"
+                              :class="[
+                                'text-xs px-2 py-0.5 rounded-full font-medium',
+                                snapshot.field_required 
+                                  ? 'bg-red-100 text-red-700 border border-red-300' 
+                                  : 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                              ]"
+                              :title="snapshot.field_required ? 'This is a required field - missing it causes health check failure' : 'This is an optional field - missing it only triggers a warning'"
+                            >
+                              {{ snapshot.field_required ? '🔴 REQUIRED' : '🟡 OPTIONAL' }}
+                            </span>
+                          </div>
                         </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Elements Found:</span>
+
+                        <div class="detail-item" v-if="snapshot.elements_found !== undefined">
+                          <span class="detail-label">Elements Found</span>
                           <span class="detail-value">{{ snapshot.elements_found }}</span>
                         </div>
                         <div class="detail-item" v-if="snapshot.error_message">

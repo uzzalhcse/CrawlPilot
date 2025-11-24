@@ -178,6 +178,13 @@ export const nodeTemplates: NodeTemplate[] = [
             description: 'Extract array of values instead of single value'
           },
           {
+            key: 'required',
+            label: 'Required Field',
+            type: 'boolean',
+            defaultValue: true,
+            description: 'Mark this field as required. Missing required fields will cause health check failure, while missing optional fields only trigger warnings.'
+          },
+          {
             key: 'limit',
             label: 'Array Limit',
             type: 'number',
