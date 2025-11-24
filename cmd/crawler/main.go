@@ -18,6 +18,7 @@ import (
 	"github.com/uzzalhcse/crawlify/internal/logger"
 	"github.com/uzzalhcse/crawlify/internal/queue"
 	"github.com/uzzalhcse/crawlify/internal/storage"
+	"github.com/uzzalhcse/crawlify/internal/workflow"
 	"go.uber.org/zap"
 )
 
@@ -48,11 +49,10 @@ func main() {
 	// Initialize repositories
 	workflowRepo := storage.NewWorkflowRepository(db)
 	executionRepo := storage.NewExecutionRepository(db)
-	nodeExecRepo := storage.NewNodeExecutionRepository(db)
 	extractedItemsRepo := storage.NewExtractedItemsRepository(db)
-
-	// Initialize URL queue
+	nodeExecRepo := storage.NewNodeExecutionRepository(db)
 	urlQueue := queue.NewURLQueue(db)
+	healthCheckRepo := storage.NewHealthCheckRepository(db)
 
 	// Initialize browser pool
 	browserPool, err := browser.NewBrowserPool(&cfg.Browser)
@@ -102,8 +102,15 @@ func main() {
 	analyticsHandler := handlers.NewAnalyticsHandler(nodeExecRepo, extractedItemsRepo, urlQueue)
 	selectorHandler := handlers.NewSelectorHandler(browserPool)
 
+	// Create a node registry for health checks
+	nodeRegistry := workflow.NewNodeRegistry()
+	if err := nodeRegistry.RegisterDefaultNodes(); err != nil {
+		logger.Warn("Failed to register default nodes for health checks", zap.Error(err))
+	}
+	healthCheckHandler := handlers.NewHealthCheckHandler(workflowRepo, healthCheckRepo, browserPool, nodeRegistry)
+
 	// Routes
-	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler)
+	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -149,7 +156,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -163,6 +170,11 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 
 	// Execution routes
 	workflows.Post("/:id/execute", executionHandler.StartExecution)
+
+	// Health Check routes
+	workflows.Post("/:id/health-check", healthCheckHandler.RunHealthCheck)
+	workflows.Get("/:id/health-checks", healthCheckHandler.ListHealthChecks)
+
 	executions := api.Group("/executions")
 	executions.Get("/", executionHandler.ListExecutions)
 	executions.Get("/:execution_id", executionHandler.GetExecutionStatus)

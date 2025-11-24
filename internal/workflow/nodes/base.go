@@ -19,6 +19,19 @@ type NodeExecutor interface {
 	Type() models.NodeType
 }
 
+// IHealthCheckValidator interface for nodes that support health check validation
+type IHealthCheckValidator interface {
+	ValidateForHealthCheck(ctx context.Context, input *ValidationInput) (*models.NodeValidationResult, error)
+}
+
+// ValidationInput contains input for health check validation
+type ValidationInput struct {
+	BrowserContext   *browser.BrowserContext
+	ExecutionContext *models.ExecutionContext
+	Params           map[string]interface{}
+	Config           *models.HealthCheckConfig
+}
+
 // ExecutionInput contains everything a node needs to execute
 type ExecutionInput struct {
 	BrowserContext   *browser.BrowserContext

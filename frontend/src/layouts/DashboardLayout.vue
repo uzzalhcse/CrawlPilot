@@ -7,6 +7,7 @@ import {
   Workflow,
   PlayCircle,
   BarChart3,
+  Activity,
   Settings,
   Moon,
   Sun,
@@ -22,6 +23,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', route: '/' },
   { icon: Workflow, label: 'Workflows', route: '/workflows' },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
+  { icon: Activity, label: 'Health Checks', route: '/health-checks' },
   { icon: BarChart3, label: 'Analytics', route: '/analytics' }
 ]
 

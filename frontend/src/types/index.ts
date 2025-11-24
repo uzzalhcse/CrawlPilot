@@ -86,6 +86,65 @@ export interface ExtractedData {
   extracted_at: string
 }
 
+// Health Check types
+export interface HealthCheckReport {
+  id: string
+  workflow_id: string
+  workflow_name?: string
+  status: 'running' | 'healthy' | 'degraded' | 'failed'
+  started_at: string
+  completed_at?: string
+  duration_ms?: number
+  phase_results?: Record<string, PhaseValidationResult>
+  summary?: HealthCheckSummary
+  config?: HealthCheckConfig
+}
+
+export interface PhaseValidationResult {
+  phase_id: string
+  phase_name: string
+  node_results: NodeValidationResult[]
+  navigation_error?: string
+  has_critical_issues: boolean
+}
+
+export interface NodeValidationResult {
+  node_id: string
+  node_name: string
+  node_type: string
+  status: 'pass' | 'fail' | 'warning' | 'skip'
+  metrics: Record<string, any>
+  issues: ValidationIssue[]
+  duration_ms: number
+}
+
+export interface ValidationIssue {
+  severity: string
+  code: string
+  message: string
+  selector?: string
+  expected?: any
+  actual?: any
+  suggestion?: string
+}
+
+export interface HealthCheckSummary {
+  total_phases: number
+  total_nodes: number
+  passed_nodes: number
+  failed_nodes: number
+  warning_nodes: number
+  critical_issues: ValidationIssue[]
+}
+
+export interface HealthCheckConfig {
+  max_urls_per_phase: number
+  max_pagination_pages: number
+  max_depth: number
+  timeout_seconds: number
+  skip_data_storage: boolean
+}
+
 // Vue Flow related types
 export interface WorkflowNode {
   id: string

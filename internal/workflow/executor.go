@@ -121,6 +121,11 @@ func (e *Executor) GetEventBroadcaster() *EventBroadcaster {
 	return e.eventBroadcaster
 }
 
+// GetNodeRegistry returns the node registry instance
+func (e *Executor) GetNodeRegistry() *NodeRegistry {
+	return e.registry
+}
+
 // PublishEvent publishes a new execution event
 func (e *Executor) PublishEvent(executionID, eventType string, data map[string]interface{}) {
 	if e.eventBroadcaster == nil {

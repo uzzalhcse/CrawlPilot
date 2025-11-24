@@ -55,5 +55,22 @@ export const workflowsApi = {
   // Execute workflow
   execute(id: string) {
     return apiClient.post<{ execution_id: string }>(`/workflows/${id}/execute`)
+  },
+
+  // Run health check
+  runHealthCheck(id: string, config?: any) {
+    return apiClient.post<{ message: string; workflow_id: string }>(`/workflows/${id}/health-check`, config || {})
+  },
+
+  // Get health check reports for a workflow
+  getHealthChecks(id: string, limit?: number) {
+    return apiClient.get<{ workflow_id: string; reports: any[]; total: number }>(`/workflows/${id}/health-checks`, {
+      params: { limit: limit || 10 }
+    })
+  },
+
+  // Get specific health check report
+  getHealthCheckReport(reportId: string) {
+    return apiClient.get<any>(`/health-checks/${reportId}`)
   }
 }

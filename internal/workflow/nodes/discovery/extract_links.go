@@ -51,3 +51,74 @@ func (e *ExtractLinksExecutor) Execute(ctx context.Context, input *nodes.Executi
 		},
 	}, nil
 }
+
+// ValidateForHealthCheck performs health check validation for extract_links
+func (e *ExtractLinksExecutor) ValidateForHealthCheck(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
+	result := &models.NodeValidationResult{
+		NodeType: string(models.NodeTypeExtractLinks),
+		Status:   models.ValidationStatusPass,
+		Metrics:  make(map[string]interface{}),
+		Issues:   []models.ValidationIssue{},
+	}
+
+	// Get selector (defaults to "a")
+	selector := nodes.GetStringParam(input.Params, "selector", "a")
+
+	page := input.BrowserContext.Page
+	locator := page.Locator(selector)
+	count, _ := locator.Count()
+
+	// Check if elements have valid href attributes
+	validHrefs := 0
+	sampleUrls := []string{}
+	allDiscoveredURLs := []string{}
+
+	// Check all elements (up to a reasonable limit)
+	maxToCheck := min(count, 50)
+	for i := 0; i < maxToCheck; i++ {
+		href, _ := locator.Nth(i).GetAttribute("href")
+		if href != "" && href != "#" {
+			validHrefs++
+			allDiscoveredURLs = append(allDiscoveredURLs, href)
+			if len(sampleUrls) < 3 {
+				sampleUrls = append(sampleUrls, href)
+			}
+		}
+	}
+
+	// Validate results
+	if count == 0 {
+		result.Issues = append(result.Issues, models.ValidationIssue{
+			Severity:   "critical",
+			Code:       "SELECTOR_NOT_FOUND",
+			Message:    fmt.Sprintf("Selector '%s' returned no elements", selector),
+			Selector:   selector,
+			Suggestion: "Check if the selector is correct and elements exist on the page",
+		})
+		result.Status = models.ValidationStatusFail
+	} else if validHrefs == 0 {
+		result.Issues = append(result.Issues, models.ValidationIssue{
+			Severity:   "critical",
+			Code:       "NO_VALID_HREFS",
+			Message:    "Elements found but none have valid href attributes",
+			Selector:   selector,
+			Suggestion: "Check if selector targets the correct link elements",
+		})
+		result.Status = models.ValidationStatusFail
+	}
+
+	// Add metrics
+	result.Metrics["element_count"] = count
+	result.Metrics["valid_hrefs"] = validHrefs
+	result.Metrics["sample_urls"] = sampleUrls
+	result.Metrics["discovered_urls"] = allDiscoveredURLs // For phase chaining
+
+	return result, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
