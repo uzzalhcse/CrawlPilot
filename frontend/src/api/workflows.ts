@@ -123,5 +123,30 @@ export const workflowsApi = {
 
   deleteSnapshot(snapshotId: string) {
     return apiClient.delete(`/snapshots/${snapshotId}`)
+  },
+
+  // AI Auto-fix methods
+  analyzeSnapshot(snapshotId: string) {
+    return apiClient.post(`/snapshots/${snapshotId}/analyze`)
+  },
+
+  getSuggestions(snapshotId: string) {
+    return apiClient.get(`/snapshots/${snapshotId}/suggestions`)
+  },
+
+  approveSuggestion(suggestionId: string) {
+    return apiClient.post(`/suggestions/${suggestionId}/approve`)
+  },
+
+  rejectSuggestion(suggestionId: string) {
+    return apiClient.post(`/suggestions/${suggestionId}/reject`)
+  },
+
+  applySuggestion(suggestionId: string) {
+    return apiClient.post(`/suggestions/${suggestionId}/apply`)
+  },
+
+  revertSuggestion(suggestionId: string) {
+    return apiClient.post(`/suggestions/${suggestionId}/revert`)
   }
 }

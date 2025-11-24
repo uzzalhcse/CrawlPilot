@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/uzzalhcse/crawlify/api/handlers"
+	"github.com/uzzalhcse/crawlify/internal/ai"
 	"github.com/uzzalhcse/crawlify/internal/browser"
 	"github.com/uzzalhcse/crawlify/internal/config"
 	"github.com/uzzalhcse/crawlify/internal/healthcheck"
@@ -49,6 +50,7 @@ func main() {
 
 	// Initialize repositories
 	workflowRepo := storage.NewWorkflowRepository(db)
+	workflowVersionRepo := storage.NewWorkflowVersionRepository(db) // NEW
 	executionRepo := storage.NewExecutionRepository(db)
 	extractedItemsRepo := storage.NewExtractedItemsRepository(db)
 	nodeExecRepo := storage.NewNodeExecutionRepository(db)
@@ -99,6 +101,7 @@ func main() {
 
 	// Initialize handlers
 	workflowHandler := handlers.NewWorkflowHandler(workflowRepo)
+	workflowVersionHandler := handlers.NewWorkflowVersionHandler(workflowVersionRepo, workflowRepo) // NEW
 	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedItemsRepo, nodeExecRepo, browserPool, urlQueue)
 	analyticsHandler := handlers.NewAnalyticsHandler(nodeExecRepo, extractedItemsRepo, urlQueue)
 	selectorHandler := handlers.NewSelectorHandler(browserPool)
@@ -132,11 +135,54 @@ func main() {
 	// Initialize snapshot handler
 	snapshotHandler := handlers.NewSnapshotHandler(snapshotService)
 
+	// Initialize AI services for auto-fix with key rotation
+	zapLogger, _ := zap.NewProduction()
+
+	// Initialize key repository and manager
+	aiKeyRepo := storage.NewAIKeyRepository(db, zapLogger)
+	keyManager := ai.NewAIKeyManager(aiKeyRepo, zapLogger)
+
+	// Initialize AI client based on configured provider
+	var aiClient interface {
+		GenerateText(context.Context, string) (string, error)
+		GenerateWithImage(context.Context, string, []byte, string) (string, error)
+		Close() error
+	}
+
+	if cfg.AI.Provider == "openrouter" {
+		aiClient, err = ai.NewOpenRouterClient(keyManager, cfg.AI.OpenRouterModel, zapLogger)
+		if err != nil {
+			logger.Fatal("Failed to initialize OpenRouter client", zap.Error(err))
+		}
+		logger.Info("Using OpenRouter AI provider", zap.String("model", cfg.AI.OpenRouterModel))
+	} else {
+		aiClient, err = ai.NewGeminiClient(keyManager, cfg.AI.GeminiModel, zapLogger)
+		if err != nil {
+			logger.Fatal("Failed to initialize Gemini client", zap.Error(err))
+		}
+		logger.Info("Using Gemini AI provider", zap.String("model", cfg.AI.GeminiModel))
+	}
+	defer aiClient.Close()
+
+	autoFixService := ai.NewAutoFixService(aiClient, zapLogger)
+	fixSuggestionRepo := storage.NewFixSuggestionRepository(db)
+	autoFixHandler := handlers.NewAutoFixHandler(
+		snapshotRepo,
+		fixSuggestionRepo,
+		workflowRepo,        // NEW
+		workflowVersionRepo, // NEW
+		healthCheckRepo,     // NEW
+		autoFixService,
+		snapshotStoragePath,
+	)
+
+	logger.Info("AI auto-fix service initialized with key rotation")
+
 	// Initialize schedule handler
 	scheduleHandler := handlers.NewScheduleHandler(scheduleRepo, schedulerService)
 
 	// Routes
-	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler, scheduleHandler, snapshotHandler)
+	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler, scheduleHandler, snapshotHandler, autoFixHandler)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -186,7 +232,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -197,6 +243,10 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	workflows.Put("/:id", workflowHandler.UpdateWorkflow)
 	workflows.Delete("/:id", workflowHandler.DeleteWorkflow)
 	workflows.Patch("/:id/status", workflowHandler.UpdateWorkflowStatus)
+
+	// Workflow Version routes
+	workflows.Get("/:id/versions", workflowVersionHandler.ListVersions)
+	workflows.Post("/:id/rollback/:version", workflowVersionHandler.RollbackVersion)
 
 	// Execution routes
 	workflows.Post("/:id/execute", executionHandler.StartExecution)
@@ -226,6 +276,16 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	snapshots.Get("/:snapshot_id/screenshot", snapshotHandler.GetScreenshot)
 	snapshots.Get("/:snapshot_id/dom", snapshotHandler.GetDOM)
 	snapshots.Delete("/:snapshot_id", snapshotHandler.DeleteSnapshot)
+
+	// Auto-fix AI routes
+	snapshots.Post("/:id/analyze", autoFixHandler.AnalyzeSnapshot)
+	snapshots.Get("/:id/suggestions", autoFixHandler.GetSuggestions)
+
+	suggestions := api.Group("/suggestions")
+	suggestions.Post("/:id/approve", autoFixHandler.ApproveSuggestion)
+	suggestions.Post("/:id/reject", autoFixHandler.RejectSuggestion)
+	suggestions.Post("/:id/apply", autoFixHandler.ApplySuggestion)
+	suggestions.Post("/:id/revert", autoFixHandler.RevertSuggestion)
 
 	// Snapshots by report
 	healthChecks.Get("/:report_id/snapshots", snapshotHandler.ListSnapshotsByReport)

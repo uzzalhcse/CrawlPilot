@@ -12,6 +12,7 @@ type Workflow struct {
 	Description string         `json:"description" db:"description"`
 	Config      WorkflowConfig `json:"config" db:"config"`
 	Status      WorkflowStatus `json:"status" db:"status"`
+	Version     int            `json:"version" db:"version"`
 	CreatedAt   time.Time      `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at" db:"updated_at"`
 }

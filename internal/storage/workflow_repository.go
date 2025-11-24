@@ -22,9 +22,14 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Workfl
 		workflow.ID = uuid.New().String()
 	}
 
+	// Default version is 1
+	if workflow.Version == 0 {
+		workflow.Version = 1
+	}
+
 	query := `
-		INSERT INTO workflows (id, name, description, config, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+		INSERT INTO workflows (id, name, description, config, status, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 		RETURNING created_at, updated_at
 	`
 
@@ -34,6 +39,7 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Workfl
 		workflow.Description,
 		workflow.Config,
 		workflow.Status,
+		workflow.Version,
 	).Scan(&workflow.CreatedAt, &workflow.UpdatedAt)
 
 	if err != nil {
@@ -45,7 +51,7 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Workfl
 
 func (r *WorkflowRepository) GetByID(ctx context.Context, id string) (*models.Workflow, error) {
 	query := `
-		SELECT id, name, description, config, status, created_at, updated_at
+		SELECT id, name, description, config, status, version, created_at, updated_at
 		FROM workflows
 		WHERE id = $1
 	`
@@ -57,6 +63,7 @@ func (r *WorkflowRepository) GetByID(ctx context.Context, id string) (*models.Wo
 		&workflow.Description,
 		&workflow.Config,
 		&workflow.Status,
+		&workflow.Version,
 		&workflow.CreatedAt,
 		&workflow.UpdatedAt,
 	)
@@ -73,7 +80,7 @@ func (r *WorkflowRepository) GetByID(ctx context.Context, id string) (*models.Wo
 
 func (r *WorkflowRepository) List(ctx context.Context, status models.WorkflowStatus, limit, offset int) ([]*models.Workflow, error) {
 	query := `
-		SELECT id, name, description, config, status, created_at, updated_at
+		SELECT id, name, description, config, status, version, created_at, updated_at
 		FROM workflows
 	`
 	args := []interface{}{}
@@ -113,6 +120,7 @@ func (r *WorkflowRepository) List(ctx context.Context, status models.WorkflowSta
 			&workflow.Description,
 			&workflow.Config,
 			&workflow.Status,
+			&workflow.Version,
 			&workflow.CreatedAt,
 			&workflow.UpdatedAt,
 		)
@@ -126,9 +134,13 @@ func (r *WorkflowRepository) List(ctx context.Context, status models.WorkflowSta
 }
 
 func (r *WorkflowRepository) Update(ctx context.Context, workflow *models.Workflow) error {
+	// Increment version if not explicitly set (or if we want to force increment)
+	// Usually the caller sets the new version, but we can also do it here.
+	// Let's assume caller handles version logic or we just update what's passed.
+
 	query := `
 		UPDATE workflows
-		SET name = $2, description = $3, config = $4, status = $5, updated_at = NOW()
+		SET name = $2, description = $3, config = $4, status = $5, version = $6, updated_at = NOW()
 		WHERE id = $1
 	`
 
@@ -138,6 +150,7 @@ func (r *WorkflowRepository) Update(ctx context.Context, workflow *models.Workfl
 		workflow.Description,
 		workflow.Config,
 		workflow.Status,
+		workflow.Version,
 	)
 
 	if err != nil {

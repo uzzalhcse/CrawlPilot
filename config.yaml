@@ -43,3 +43,9 @@ crawler:
   retry_delay: 1000
   concurrent_workers: 5
   queue_check_interval: 1000
+
+ai:
+  gemini_model: "gemini-2.5-flash"
+  openrouter_model: "google/gemini-2.0-flash-exp:free"
+  provider: "gemini"  # Can be "gemini" or "openrouter"
+  enabled: true

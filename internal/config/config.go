@@ -12,6 +12,7 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	Browser  BrowserConfig  `mapstructure:"browser"`
 	Crawler  CrawlerConfig  `mapstructure:"crawler"`
+	AI       AIConfig       `mapstructure:"ai"`
 }
 
 type ServerConfig struct {
@@ -140,4 +141,19 @@ func setDefaults() {
 	viper.SetDefault("crawler.retry_delay", 1000)
 	viper.SetDefault("crawler.concurrent_workers", 5)
 	viper.SetDefault("crawler.queue_check_interval", 1000)
+
+	// AI defaults
+	viper.SetDefault("ai.enabled", true)
+	viper.SetDefault("ai.gemini_model", "gemini-2.5-flash")
+	viper.SetDefault("ai.openrouter_model", "google/gemini-2.0-flash-exp:free")
+	viper.SetDefault("ai.provider", "gemini")
+}
+
+// AIConfig holds AI service configuration
+type AIConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	GeminiAPIKey    string `mapstructure:"gemini_api_key"`
+	GeminiModel     string `mapstructure:"gemini_model"`
+	OpenRouterModel string `mapstructure:"openrouter_model"`
+	Provider        string `mapstructure:"provider"` // "gemini" or "openrouter"
 }

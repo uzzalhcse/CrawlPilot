@@ -163,3 +163,27 @@ type ConsoleLog struct {
 	Timestamp time.Time `json:"timestamp"`
 	Source    string    `json:"source,omitempty"`
 }
+
+// FixSuggestion represents an AI-generated fix for a failed health check
+type FixSuggestion struct {
+	ID                   string                 `json:"id"`
+	SnapshotID           string                 `json:"snapshot_id"`
+	WorkflowID           string                 `json:"workflow_id"`
+	NodeID               string                 `json:"node_id"`
+	SuggestedSelector    string                 `json:"suggested_selector"`
+	AlternativeSelectors []string               `json:"alternative_selectors,omitempty"`
+	SuggestedNodeConfig  map[string]interface{} `json:"suggested_node_config,omitempty"`
+	FixExplanation       string                 `json:"fix_explanation"`
+	ConfidenceScore      float64                `json:"confidence_score"`
+	Status               string                 `json:"status"` // pending, approved, rejected, applied, reverted
+	ReviewedBy           *string                `json:"reviewed_by,omitempty"`
+	ReviewedAt           *time.Time             `json:"reviewed_at,omitempty"`
+	AppliedAt            *time.Time             `json:"applied_at,omitempty"`
+	RevertedAt           *time.Time             `json:"reverted_at,omitempty"`
+	AIModel              string                 `json:"ai_model"`
+	AIPromptTokens       *int                   `json:"ai_prompt_tokens,omitempty"`
+	AIResponseTokens     *int                   `json:"ai_response_tokens,omitempty"`
+	AIResponseRaw        *string                `json:"ai_response_raw,omitempty"`
+	CreatedAt            time.Time              `json:"created_at"`
+	UpdatedAt            time.Time              `json:"updated_at"`
+}

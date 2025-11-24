@@ -198,9 +198,30 @@ export interface HealthCheckSnapshot {
   console_logs?: ConsoleLog[]
   selector_type?: string
   selector_value?: string
-  elements_found: number
+  elements_found?: number
   error_message?: string
   metadata?: Record<string, any>
+}
+
+// Phase 2: AI Fix Suggestions
+export interface FixSuggestion {
+  id: string
+  snapshot_id: string
+  workflow_id: string
+  node_id: string
+  suggested_selector: string
+  alternative_selectors?: string[]
+  suggested_node_config?: Record<string, any>
+  fix_explanation: string
+  confidence_score: number
+  status: 'pending' | 'approved' | 'rejected' | 'applied' | 'reverted'
+  reviewed_by?: string
+  reviewed_at?: string
+  applied_at?: string
+  reverted_at?: string
+  ai_model: string
+  created_at: string
+  updated_at: string
 }
 
 export interface ConsoleLog {

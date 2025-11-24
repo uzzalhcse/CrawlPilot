@@ -44,7 +44,9 @@ func NewHealthCheckHandler(
 // RunHealthCheck triggers a health check for a workflow
 func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 	ctx := context.Background()
-	workflowID := c.Params("id")
+	// Make a copy of the string to be safe for goroutine usage
+	paramID := c.Params("id")
+	workflowID := string(append([]byte(nil), paramID...))
 
 	// Parse config from request body (optional)
 	config := &models.HealthCheckConfig{

@@ -135,6 +135,12 @@
 
                   <!-- Details Tab -->
                   <div v-if="activeTab === 'details'" class="details-tab">
+                    <!-- AI Auto-Fix Section -->
+                    <div class="autofix-section">
+                      <h3 class="section-title">AI Auto-Fix</h3>
+                      <AutoFixPanel :snapshot="snapshot" />
+                    </div>
+
                     <div class="detail-grid">
                       <!-- Page Info -->
                       <div class="detail-section">
@@ -199,6 +205,7 @@ import { X, Camera, FileCode, Terminal, Info, AlertCircle, AlertTriangle, Eye, D
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 import { workflowsApi } from '@/api/workflows'
 import type { HealthCheckSnapshot } from '@/types'
+import AutoFixPanel from './AutoFixPanel.vue'
 
 interface Props {
   snapshotId: string | null
