@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Copy, Trash2, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import FieldInput from './FieldInput.vue'
 import SelectInput from './SelectInput.vue'
-import IndependentArrayManager from '../IndependentArrayManager.vue'
+import IndependentArrayManager from './IndependentArrayManager.vue'
 
 interface ParamField {
   key: string
