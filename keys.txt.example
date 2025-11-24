@@ -1,0 +1,7 @@
+# Example keys.txt file format
+# One API key per line
+# Lines starting with # are ignored
+# Empty lines are ignored
+
+AIzaSyA25n0gjzppIp2ZoWPopbAlmlqGIiej8-0
+# Add more API keys below, one per line

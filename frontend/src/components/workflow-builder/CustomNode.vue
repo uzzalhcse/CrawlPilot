@@ -55,8 +55,8 @@ const nodeIcon = computed(() => {
 const category = computed(() => getCategoryByNodeType(props.data.nodeType))
 
 const nodeClasses = computed(() => [
-  'rounded-lg border-2 shadow-md hover:shadow-xl min-w-[260px] max-w-[300px] transition-all duration-200 overflow-hidden',
-  props.selected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background shadow-xl scale-105' : 'hover:scale-102'
+  'rounded-lg border-2 shadow-lg hover:shadow-2xl min-w-[260px] max-w-[300px] transition-all duration-200 overflow-hidden',
+  props.selected ? 'ring-2 ring-primary ring-offset-4 ring-offset-background shadow-2xl scale-105 border-primary/50' : 'hover:scale-[1.02] hover:border-primary/30'
 ])
 
 function getCategoryByNodeType(type: string): string {
@@ -144,8 +144,21 @@ const keyParams = computed(() => {
       icon: FileText
     })
   }
+
+  // Preview extraction fields
+  if (props.data.nodeType === 'extract' && params.fields) {
+    const fieldKeys = Object.keys(params.fields)
+    if (fieldKeys.length > 0) {
+      result.push({
+        key: 'fields',
+        label: 'Fields',
+        value: fieldKeys.slice(0, 3).join(', ') + (fieldKeys.length > 3 ? ` +${fieldKeys.length - 3}` : ''),
+        icon: Database
+      })
+    }
+  }
   
-  return result.slice(0, 3)
+  return result.slice(0, 4) // Increased limit to show fields
 })
 </script>
 

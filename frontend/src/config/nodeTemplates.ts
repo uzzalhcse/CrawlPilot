@@ -272,6 +272,21 @@ export const nodeTemplates: NodeTemplate[] = [
       }
     ]
   },
+  {
+    type: 'extractField',
+    label: 'Extraction Field',
+    description: 'Single field extraction (Virtual Node)',
+    category: 'Extraction',
+    defaultParams: {
+      selector: '',
+      type: 'text',
+      transform: 'none',
+      multiple: false,
+      limit: 0,
+      default_value: ''
+    },
+    paramSchema: [] // Schema handled by custom form in PropertiesPanel
+  },
 
   // Interaction Nodes
   {

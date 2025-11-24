@@ -55,11 +55,47 @@ export function convertNodesToWorkflowConfig(
 
         const phaseType = getPhaseType(phaseId)
 
+        // Filter out virtual nodes (extractField) and UI-only nodes (phaseLabel)
+        const realNodes = phaseNodes.filter(n => !n.data.isVirtual && n.type !== 'phaseLabel')
+
+        // Reconstruct fields for extract nodes
+        const extractNodes = realNodes.filter(n => n.data.nodeType === 'extract')
+        extractNodes.forEach(extractNode => {
+            const fieldNodes = phaseNodes.filter(n =>
+                n.data.nodeType === 'extractField' &&
+                n.data.parentId === extractNode.id
+            )
+
+            if (fieldNodes.length > 0) {
+                const fields: Record<string, any> = {}
+                fieldNodes.forEach(fn => {
+                    // fn.data.label is the key (name), fn.data.field is the params
+                    // But wait, in WorkflowBuilder we set:
+                    // name: key (which becomes label)
+                    // params: { ...field } (which becomes data.params or data.field depending on how we mapped it)
+                    // In WorkflowBuilder loadWorkflow:
+                    // field: node.type === 'extractField' ? node.params : undefined
+                    // So we should look at data.field or data.params. 
+                    // Let's check WorkflowBuilder again. 
+                    // We mapped node.params to data.params AND data.field.
+                    // So data.params should hold the field config.
+
+                    if (fn.data.label) {
+                        fields[fn.data.label] = fn.data.params
+                    }
+                })
+
+                // Update the extract node's params
+                if (!extractNode.data.params) extractNode.data.params = {}
+                extractNode.data.params.fields = fields
+            }
+        })
+
         phases.push({
             id: phaseId,
             type: phaseType,
             name: phaseNames[phaseId] || `Phase ${phaseId}`,
-            nodes: phaseNodes.map(node => convertToBackendNode(node, edges, nodes)),
+            nodes: realNodes.map(node => convertToBackendNode(node, edges, nodes)),
             url_filter: getUrlFilterForPhase(phaseId)
         })
     })

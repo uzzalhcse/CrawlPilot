@@ -261,6 +261,7 @@ export interface NodeData {
   parentId?: string
   level?: number
   branch?: 'true' | 'false'
+  isVirtual?: boolean
   // Execution status
   status?: 'pending' | 'running' | 'completed' | 'failed'
   startTime?: string
@@ -314,6 +315,8 @@ export type NodeType =
   | 'conditional'
   | 'loop'
   | 'parallel'
+  // Virtual Nodes
+  | 'extractField'
 
 export interface NodeCategory {
   name: string

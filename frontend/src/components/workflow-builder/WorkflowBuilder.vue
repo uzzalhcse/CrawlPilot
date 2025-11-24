@@ -1,27 +1,17 @@
 <script setup lang="ts">
-import { ref, watch, markRaw } from 'vue'
-import { VueFlow, useVueFlow, Panel } from '@vue-flow/core'
-import { Background } from '@vue-flow/background'
-import { Controls } from '@vue-flow/controls'
-import { MiniMap } from '@vue-flow/minimap'
+import { ref, watch } from 'vue'
 import { useWorkflowsStore } from '@/stores/workflows'
 import type { WorkflowNode, WorkflowEdge, NodeTemplate, Workflow, WorkflowConfig } from '@/types'
-import CustomNode from './CustomNode.vue'
 import NodePalette from './NodePalette.vue'
-import NodeConfigModal from './NodeConfigModal.vue'
+import WorkflowCanvas from './WorkflowCanvas.vue'
+import PropertiesPanel from './PropertiesPanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import MonacoEditor from '@/components/ui/MonacoEditor.vue'
-import { Save, Play, Sparkles, Code, Layout } from 'lucide-vue-next'
+import { Save, Play, Layout, Code } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { convertNodesToWorkflowConfig } from '@/lib/workflow-utils'
-
-// Import Vue Flow styles
-import '@vue-flow/core/dist/style.css'
-import '@vue-flow/core/dist/theme-default.css'
-import '@vue-flow/controls/dist/style.css'
-import '@vue-flow/minimap/dist/style.css'
 
 interface Props {
   workflow?: Workflow | null
@@ -45,20 +35,16 @@ const workflowConfig = ref<Partial<WorkflowConfig>>({})
 // Mode state
 const mode = ref<'builder' | 'json'>('builder')
 const jsonContent = ref('')
-const jsonError = ref('')
 
-// Vue Flow
+// State
 const nodes = ref<WorkflowNode[]>([])
 const edges = ref<WorkflowEdge[]>([])
 const selectedNode = ref<WorkflowNode | null>(null)
-const showConfigPanel = ref(false)
 
 // Generate unique node ID
 function generateNodeId(): string {
   return `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
-
-const { onConnect, addEdges, removeNodes, findNode } = useVueFlow()
 
 // Watch for workflow changes
 watch(
@@ -77,7 +63,6 @@ function toggleMode() {
     // Switch to JSON
     try {
       const config = convertNodesToWorkflowConfig(nodes.value, edges.value, {
-        // Preserve existing config if available, or defaults
         start_urls: workflowConfig.value.start_urls || props.workflow?.config?.start_urls,
         max_depth: workflowConfig.value.max_depth || props.workflow?.config?.max_depth,
         rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow?.config?.rate_limit_delay,
@@ -85,7 +70,6 @@ function toggleMode() {
       })
       jsonContent.value = JSON.stringify(config, null, 2)
       mode.value = 'json'
-      jsonError.value = ''
     } catch (e: any) {
       toast.error('Failed to generate JSON', { description: e.message })
     }
@@ -95,7 +79,6 @@ function toggleMode() {
       let parsed = JSON.parse(jsonContent.value)
       let config = parsed
 
-      // Handle case where user pastes full workflow object
       if (parsed.config && typeof parsed.config === 'object') {
         config = parsed.config
         if (parsed.name) workflowName.value = parsed.name
@@ -103,8 +86,6 @@ function toggleMode() {
         if (parsed.status) workflowStatus.value = parsed.status
       }
 
-      // Create a temporary workflow object to load
-      // We need to mock the Workflow structure as loadWorkflow expects it
       const tempWorkflow = {
         ...props.workflow,
         name: workflowName.value,
@@ -114,9 +95,7 @@ function toggleMode() {
       
       loadWorkflow(tempWorkflow)
       mode.value = 'builder'
-      jsonError.value = ''
     } catch (e: any) {
-      jsonError.value = e.message
       toast.error('Invalid JSON', { description: e.message })
     }
   }
@@ -229,10 +208,37 @@ function loadWorkflow(workflow: Workflow) {
         phase.nodes.forEach((node: any) => {
           // Recursively expand nodes (handles sequence, conditional, etc.)
           const expanded = expandNode(node, phase.id, 0)
-          allNodes = [...allNodes, ...expanded]
           
-          // Track all node IDs in this phase (including expanded children)
-          phaseNodeIds[phaseIndex].push(...expanded.map((n: any) => n.id))
+          // NEW: Explode extract nodes into field nodes
+          const finalNodes: any[] = []
+          expanded.forEach(n => {
+            finalNodes.push(n)
+            
+            if (n.type === 'extract' && n.params?.fields) {
+              const fieldKeys = Object.keys(n.params.fields)
+              fieldKeys.forEach((key, fieldIndex) => {
+                const field = n.params.fields[key]
+                const fieldNodeId = `${n.id}_field_${key}`
+                
+                finalNodes.push({
+                  id: fieldNodeId,
+                  type: 'extractField',
+                  name: key,
+                  params: { ...field }, // Copy field params
+                  parentId: n.id,
+                  phaseId: phase.id,
+                  level: (n.level || 0) + 1,
+                  isVirtual: true, // Mark as virtual so we know to implode it later
+                  fieldKey: key
+                })
+              })
+            }
+          })
+
+          allNodes = [...allNodes, ...finalNodes]
+          
+          // Track all node IDs in this phase
+          phaseNodeIds[phaseIndex].push(...finalNodes.map((n: any) => n.id))
         })
       }
     })
@@ -244,44 +250,90 @@ function loadWorkflow(workflow: Workflow) {
     ]
   }
 
-
-
   // Create nodes with horizontal grid-based positions for cleaner hierarchy
   const nodePositions = new Map<string, { x: number; y: number }>()
   const nodeWidth = 320
-  const horizontalGap = 120  // Increased from 60
-  const levelVerticalGap = 250  // Increased from 200
+  const horizontalGap = 100 // More spacing between nodes in same row
+  const verticalGap = 120 // Tighter vertical spacing for better density
+  const phaseGap = 250 // Optimized gap between phases
+  const phaseLabelHeight = 60 // Reserved space for phase labels
   
-  // Group nodes by level
-  const nodesByLevel: Map<number, any[]> = new Map()
-  allNodes.forEach((node: any) => {
-    const level = node.level || 0
-    if (!nodesByLevel.has(level)) {
-      nodesByLevel.set(level, [])
-    }
-    nodesByLevel.get(level)!.push(node)
-  })
-  
-  // Position nodes level by level
-  let currentY = 100
-  
-  for (let level = 0; level <= Math.max(...Array.from(nodesByLevel.keys())); level++) {
-    const nodesAtLevel = nodesByLevel.get(level) || []
-    
-    if (nodesAtLevel.length === 0) continue
-    
-    // Calculate total width needed for this level
-    const totalWidth = (nodesAtLevel.length * nodeWidth) + ((nodesAtLevel.length - 1) * horizontalGap)
-    const startX = Math.max(100, (1200 - totalWidth) / 2) // Center nodes, but min 100px from left
-    
-    // Position each node at this level
-    nodesAtLevel.forEach((node: any, index: number) => {
-      const x = startX + (index * (nodeWidth + horizontalGap))
-      const y = currentY
-      nodePositions.set(node.id, { x, y })
+  let currentPhaseX = 100
+
+  // Helper to layout a set of nodes (a phase)
+  const layoutPhase = (phaseNodes: any[], startX: number) => {
+    // Group by level within this phase
+    const phaseNodesByLevel = new Map<number, any[]>()
+    let maxLevel = 0
+    let maxNodesInRow = 0
+
+    phaseNodes.forEach(node => {
+      const level = node.level || 0
+      if (!phaseNodesByLevel.has(level)) {
+        phaseNodesByLevel.set(level, [])
+      }
+      phaseNodesByLevel.get(level)!.push(node)
+      maxLevel = Math.max(maxLevel, level)
     })
+
+    // Calculate width of this phase
+    for (let level = 0; level <= maxLevel; level++) {
+      const count = phaseNodesByLevel.get(level)?.length || 0
+      maxNodesInRow = Math.max(maxNodesInRow, count)
+    }
     
-    currentY += levelVerticalGap
+    const phaseWidth = Math.max(nodeWidth, (maxNodesInRow * nodeWidth) + ((maxNodesInRow - 1) * horizontalGap))
+    
+    // Position nodes below phase label
+    let currentY = 100 + phaseLabelHeight
+    
+    for (let level = 0; level <= maxLevel; level++) {
+      const nodesAtLevel = phaseNodesByLevel.get(level) || []
+      if (nodesAtLevel.length === 0) continue
+
+      // Center nodes in the phase width
+      const rowWidth = (nodesAtLevel.length * nodeWidth) + ((nodesAtLevel.length - 1) * horizontalGap)
+      const rowStartX = startX + (phaseWidth - rowWidth) / 2
+
+      nodesAtLevel.forEach((node, index) => {
+        const x = rowStartX + (index * (nodeWidth + horizontalGap))
+        const y = currentY
+        nodePositions.set(node.id, { x, y })
+      })
+
+      currentY += verticalGap
+    }
+
+    return phaseWidth
+  }
+
+  // Layout each phase
+  if (phaseNodeIds.length > 0) {
+    phaseNodeIds.forEach((ids, index) => {
+      const phaseNodes = allNodes.filter(n => ids.includes(n.id))
+      
+      // Add Phase Label Node
+      const phaseName = props.workflow?.config?.phases?.[index]?.name || `Phase ${index + 1}`
+      const labelId = `phase_label_${index}`
+      
+      // Calculate phase width first
+      const phaseWidth = layoutPhase(phaseNodes, currentPhaseX)
+      
+      // Position label centered above the phase with better spacing
+      loadedNodes.push({
+        id: labelId,
+        type: 'phaseLabel',
+        position: { x: currentPhaseX + (phaseWidth / 2) - 150, y: 20 }, // Better vertical position
+        data: { label: phaseName, index, phaseWidth },
+        draggable: false,
+        selectable: false
+      })
+
+      currentPhaseX += phaseWidth + phaseGap
+    })
+  } else {
+    // Fallback for legacy/flat lists
+    layoutPhase(allNodes, currentPhaseX)
   }
 
   // Create WorkflowNode objects with calculated positions
@@ -290,22 +342,37 @@ function loadWorkflow(workflow: Workflow) {
 
     loadedNodes.push({
       id: node.id,
-      type: 'custom',
+      type: ['extractField', 'phaseLabel'].includes(node.type) ? node.type : 'custom',
       position,
-      data: {
-        label: node.name,
-        nodeType: node.type as any,
-        params: node.params,
-        dependencies: node.dependencies,
-        outputKey: (node as any).output_key,
-        optional: (node as any).optional,
-        retry: (node as any).retry,
-        phaseId: node.phaseId,
-        parentId: node.parentId,
-        level: node.level,
-        branch: node.branch
+        data: {
+          label: node.name,
+          nodeType: node.type as any,
+          params: node.params,
+          dependencies: node.dependencies,
+          outputKey: (node as any).output_key,
+          optional: (node as any).optional,
+          retry: (node as any).retry,
+          phaseId: node.phaseId,
+          parentId: node.parentId,
+          level: node.level,
+          branch: node.branch,
+          // For field nodes
+          field: node.type === 'extractField' ? node.params : undefined,
+          isVirtual: (node as any).isVirtual
+        }
+      })
+
+      // Create edges for virtual field nodes
+      if (node.type === 'extractField' && node.parentId) {
+        loadedEdges.push({
+          id: `${node.parentId}-${node.id}`,
+          source: node.parentId,
+          target: node.id,
+          type: 'smoothstep',
+          animated: false,
+          style: { strokeDasharray: '5,5', stroke: '#94a3b8' }
+        })
       }
-    })
 
     // Create edges based on dependencies (if they exist)
     if (node.dependencies && node.dependencies.length > 0) {
@@ -386,107 +453,187 @@ function handleAddNode(template: NodeTemplate) {
       label: template.label,
       nodeType: template.type,
       params: { ...template.defaultParams }
-      // phaseId will be assigned by heuristic on save/convert if not set
     }
   }
 
   nodes.value.push(newNode)
+  // Auto-select the new node
+  selectedNode.value = newNode
 }
 
 // Handle node selection
-function handleNodeClick(event: any) {
-  const node = findNode(event.node.id)
-  if (node) {
-    selectedNode.value = node as WorkflowNode
-    showConfigPanel.value = true
-  }
+function handleNodeClick(node: WorkflowNode) {
+  selectedNode.value = node
 }
 
-// Update node configuration
+// Handle node updates from panel
 function handleNodeUpdate(updatedNode: WorkflowNode) {
+  console.log('🔄 [WorkflowBuilder] handleNodeUpdate called for node:', updatedNode.id, updatedNode.data.nodeType)
+  
   const index = nodes.value.findIndex(n => n.id === updatedNode.id)
   if (index !== -1) {
-    // Create a new array to trigger reactivity
-    nodes.value = [
-      ...nodes.value.slice(0, index),
-      updatedNode,
-      ...nodes.value.slice(index + 1)
-    ]
+    // Special handling for extract nodes - regenerate extractField nodes
+    if (updatedNode.data.nodeType === 'extract') {
+      console.log('🔄 [Extract Node] Updating extract node and regenerating field nodes:', updatedNode.id)
+      
+      const newFields = updatedNode.data.params?.fields
+      
+      // Always regenerate extractField nodes to ensure they are in sync
+      // First, capture positions of existing field nodes to preserve them
+      const existingFieldPositions = new Map<string, { x: number, y: number }>()
+      nodes.value.forEach(n => {
+        if (n.data.nodeType === 'extractField' && 
+            (n.data.parentId === updatedNode.id || n.data.params?.parentId === updatedNode.id)) {
+          existingFieldPositions.set(n.data.params?.fieldKey || n.data.label, n.position)
+        }
+      })
+      
+      // Remove old extractField nodes for this extract node
+      nodes.value = nodes.value.filter(n => {
+        const isExtractFieldNode = n.data.nodeType === 'extractField' || n.type === 'extractField'
+        if (!isExtractFieldNode) return true
+        
+        const nodeParentId = n.data.parentId || n.data.params?.parentId
+        return nodeParentId !== updatedNode.id
+      })
+
+      // Also remove old edges connected to these field nodes
+      // We'll regenerate them to ensure everything is clean
+      // Note: We only remove edges where the source is the parent extract node and target is a field node
+      // This might be too aggressive if users manually connected things, but for virtual nodes it's safer
+      edges.value = edges.value.filter(e => e.source !== updatedNode.id || !e.target.includes('_field_'))
+      
+      // Generate new extractField nodes and edges
+      const newExtractFieldNodes: WorkflowNode[] = []
+      const newEdges: any[] = []
+
+      if (newFields) {
+        const fieldKeys = Object.keys(newFields)
+        fieldKeys.forEach((key, index) => {
+          const field = newFields[key]
+          const fieldNodeId = `${updatedNode.id}_field_${key}`
+          
+          // Use existing position if available, otherwise default layout
+          // Default layout: stack them vertically to the right of the parent
+          // Improved layout: Stagger them slightly to avoid complete overlap if many
+          const defaultX = (updatedNode.position?.x || 0) + 350
+          const defaultY = (updatedNode.position?.y || 0) + (index * 120) - ((fieldKeys.length * 120) / 2) + 60
+          
+          const position = existingFieldPositions.get(key) || { x: defaultX, y: defaultY }
+          
+          newExtractFieldNodes.push({
+            id: fieldNodeId,
+            type: 'extractField',
+            position: position,
+            data: {
+              label: key,
+              nodeType: 'extractField',
+              field: {
+                selector: field.selector || '',
+                type: field.type || 'text',
+                attribute: field.attribute || '',
+                multiple: field.multiple || false,
+                transform: field.transform || 'none',
+                default_value: field.default_value || ''
+              },
+              params: {
+                ...field,
+                parentId: updatedNode.id,
+                fieldKey: key
+              },
+              parentId: updatedNode.id,
+              isVirtual: true
+            }
+          })
+
+          // Create edge from parent to field node
+          newEdges.push({
+            id: `${updatedNode.id}-${fieldNodeId}`,
+            source: updatedNode.id,
+            target: fieldNodeId,
+            animated: true,
+            style: { stroke: '#a855f7' } // Purple edge to match extract theme
+          })
+        })
+      }
+      
+      console.log(`  Regenerated ${newExtractFieldNodes.length} extractField nodes and edges`)
+      
+      // Update the extract node and add new extractField nodes
+      nodes.value = [
+        ...nodes.value.slice(0, index),
+        updatedNode,
+        ...nodes.value.slice(index + 1),
+        ...newExtractFieldNodes
+      ]
+
+      // Add new edges
+      edges.value = [...edges.value, ...newEdges]
+
+    } else {
+      // Regular node update
+      nodes.value = [
+        ...nodes.value.slice(0, index),
+        updatedNode,
+        ...nodes.value.slice(index + 1)
+      ]
+    }
+    
     selectedNode.value = updatedNode
   }
 }
 
+
 // Delete node
 function handleNodeDelete() {
   if (selectedNode.value) {
-    removeNodes([selectedNode.value.id])
+    // Remove the node from the array
+    nodes.value = nodes.value.filter(n => n.id !== selectedNode.value!.id)
+    // Also remove any connected edges
+    edges.value = edges.value.filter(e => e.source !== selectedNode.value!.id && e.target !== selectedNode.value!.id)
+    
     selectedNode.value = null
-    showConfigPanel.value = false
   }
 }
 
 // Handle edge connection
-onConnect((params) => {
+function handleConnect(params: any) {
   // Prevent self-connections
   if (params.source === params.target) return
 
-  // Check for cycles
+  // Check for cycles (simple DFS)
+  const wouldCreateCycle = (source: string, target: string) => {
+    const visited = new Set<string>()
+    const dfs = (nodeId: string): boolean => {
+      if (nodeId === source) return true
+      if (visited.has(nodeId)) return false
+      visited.add(nodeId)
+      const outgoing = edges.value.filter(e => e.source === nodeId)
+      return outgoing.some(e => dfs(e.target))
+    }
+    return dfs(target)
+  }
+
   if (wouldCreateCycle(params.source, params.target)) {
-    toast.error('Cannot create cycle', {
-      description: 'Workflows cannot have circular dependencies'
-    })
+    toast.error('Cannot create cycle', { description: 'Workflows cannot have circular dependencies' })
     return
   }
 
-  addEdges([{
+  edges.value.push({
     id: `${params.source}-${params.target}`,
     source: params.source!,
     target: params.target!,
     animated: true
-  }])
-})
-
-// Check if adding an edge would create a cycle
-function wouldCreateCycle(sourceId: string, targetId: string): boolean {
-  const visited = new Set<string>()
-
-  function dfs(nodeId: string): boolean {
-    if (nodeId === sourceId) return true
-    if (visited.has(nodeId)) return false
-
-    visited.add(nodeId)
-
-    const outgoingEdges = edges.value.filter(e => e.source === nodeId)
-    for (const edge of outgoingEdges) {
-      if (dfs(edge.target)) return true
-    }
-
-    return false
-  }
-
-  return dfs(targetId)
+  })
 }
-
-// Dismiss the saving toast (called from parent after save completes)
-function dismissSavingToast() {
-  toast.dismiss('save-workflow')
-}
-
-// Expose for parent components
-defineExpose({
-  dismissSavingToast
-})
 
 // Save workflow
 function handleSave() {
   if (!workflowName.value.trim()) {
-    toast.error('Workflow name required', {
-      description: 'Please enter a name for your workflow'
-    })
+    toast.error('Workflow name required')
     return
   }
 
-  // Show a brief "saving" toast
   toast.loading('Saving workflow...', { id: 'save-workflow' })
 
   let config: WorkflowConfig | undefined
@@ -494,16 +641,13 @@ function handleSave() {
   if (mode.value === 'json') {
     try {
       const parsed = JSON.parse(jsonContent.value)
-      // Handle case where user pastes full workflow object
       if (parsed.config && typeof parsed.config === 'object') {
         config = parsed.config
-        // Note: We use the name/description from the inputs, not the JSON, 
-        // unless the user switched modes which would have synced them.
       } else {
         config = parsed
       }
     } catch (e) {
-      toast.error('Invalid JSON', { description: 'Please fix JSON errors before saving' })
+      toast.error('Invalid JSON')
       return
     }
   } else {
@@ -521,7 +665,7 @@ function handleSave() {
     status: workflowStatus.value,
     nodes: nodes.value,
     edges: edges.value,
-    config // Pass the generated config
+    config
   })
 }
 
@@ -534,17 +678,14 @@ function handleExecute() {
 async function handleToggleStatus() {
   const newStatus = workflowStatus.value === 'active' ? 'draft' : 'active'
   
-  // If it's a new workflow (no ID), just toggle local state
   if (!props.workflow?.id) {
     workflowStatus.value = newStatus
     return
   }
 
-  // If existing workflow, save and update status
   try {
     toast.loading(`Updating status to ${newStatus}...`, { id: 'update-status' })
     
-    // Generate config
     const config = convertNodesToWorkflowConfig(nodes.value, edges.value, {
       start_urls: workflowConfig.value.start_urls || props.workflow.config.start_urls,
       max_depth: workflowConfig.value.max_depth || props.workflow.config.max_depth,
@@ -564,22 +705,24 @@ async function handleToggleStatus() {
     toast.success(`Workflow ${newStatus === 'active' ? 'published' : 'set to draft'}`)
   } catch (e: any) {
     toast.dismiss('update-status')
-    toast.error('Failed to update status', {
-      description: e.message || 'Unknown error'
-    })
+    toast.error('Failed to update status')
   }
 }
 
-// Custom node types - use markRaw to prevent Vue from making this reactive
-const nodeTypes = {
-  custom: markRaw(CustomNode)
+// Dismiss the saving toast (called from parent after save completes)
+function dismissSavingToast() {
+  toast.dismiss('save-workflow')
 }
+
+defineExpose({
+  dismissSavingToast
+})
 </script>
 
 <template>
   <div class="flex flex-col h-screen bg-background">
     <!-- Top Toolbar -->
-    <div class="bg-card border-b border-border p-4 space-y-3">
+    <div class="bg-card border-b border-border p-4 space-y-3 shrink-0 z-30">
       <div class="flex items-center gap-4">
         <div class="flex-1 space-y-1">
           <Input
@@ -653,97 +796,36 @@ const nodeTypes = {
         <NodePalette @add-node="handleAddNode" />
 
         <!-- Canvas -->
-        <div class="flex-1 relative">
-          <VueFlow
-            v-model:nodes="nodes"
-            v-model:edges="edges"
-            :node-types="nodeTypes"
+        <div class="flex-1 relative h-full">
+          <WorkflowCanvas
+            :nodes="nodes"
+            :edges="edges"
+            @update:nodes="nodes = $event"
+            @update:edges="edges = $event"
             @node-click="handleNodeClick"
-            :default-viewport="{ zoom: 1 }"
-            :min-zoom="0.2"
-            :max-zoom="4"
-            fit-view-on-init
-            class="bg-muted/30"
-          >
-            <Background
-              pattern-color="hsl(var(--border))"
-              :gap="20"
-              :size="1"
-              variant="dots"
-            />
-            <Controls
-              class="!bg-card !border-border !shadow-lg"
-              :show-zoom="true"
-              :show-fit-view="true"
-              :show-interactive="false"
-            />
-            <MiniMap
-              class="!bg-card !border-border !shadow-lg"
-              :node-color="() => 'hsl(var(--primary))'"
-              :mask-color="'hsl(var(--muted))'"
-            />
-
-            <Panel position="top-right" class="space-y-2">
-              <div class="bg-card border border-border rounded-lg p-3 shadow-lg">
-                <div class="text-xs font-medium mb-1">Canvas Stats</div>
-                <div class="flex gap-4 text-xs text-muted-foreground">
-                  <div>Nodes: <span class="font-medium text-foreground">{{ nodes.length }}</span></div>
-                  <div>Edges: <span class="font-medium text-foreground">{{ edges.length }}</span></div>
-                </div>
-              </div>
-            </Panel>
-          </VueFlow>
-
-          <!-- Instructions overlay when empty -->
-          <div
-            v-if="nodes.length === 0"
-            class="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
-          >
-            <div class="bg-card border border-border p-10 rounded-xl shadow-2xl text-center max-w-lg">
-              <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Sparkles class="w-8 h-8 text-primary" />
-              </div>
-              <h3 class="text-2xl font-bold mb-3">Start Building Your Workflow</h3>
-              <p class="text-muted-foreground leading-relaxed">
-                Click on nodes from the left palette to add them to the canvas.
-                Connect nodes by dragging from one node's output handle (green) to another's input handle (blue).
-              </p>
-              <div class="mt-6 flex gap-2 justify-center text-xs text-muted-foreground">
-                <div class="flex items-center gap-1">
-                  <div class="w-3 h-3 rounded-full bg-primary"></div>
-                  <span>Input</span>
-                </div>
-                <div class="flex items-center gap-1">
-                  <div class="w-3 h-3 rounded-full bg-primary"></div>
-                  <span>Output</span>
-                </div>
-              </div>
-            </div>
-          </div>
+            @connect="handleConnect"
+            @pane-click="selectedNode = null"
+          />
         </div>
 
-        <!-- Node Configuration Modal -->
-        <NodeConfigModal
-          v-model:open="showConfigPanel"
+        <!-- Properties Panel -->
+        <PropertiesPanel
           :node="selectedNode"
-          @save="handleNodeUpdate"
+          @update="handleNodeUpdate"
           @delete="handleNodeDelete"
+          @close="selectedNode = null"
         />
       </template>
 
       <!-- JSON MODE -->
       <template v-else>
-        <div class="flex-1 p-4 bg-muted/10 flex flex-col">
-          <div class="flex-1 relative">
-            <MonacoEditor
+        <div class="flex-1 p-6 bg-muted/30">
+          <div class="h-full border rounded-lg overflow-hidden bg-card shadow-sm">
+            <monaco-editor
               v-model="jsonContent"
               language="json"
               theme="vs-dark"
-              class="w-full h-full border border-border rounded-lg"
             />
-            <div v-if="jsonError" class="absolute bottom-4 left-4 right-4 bg-destructive/10 text-destructive p-3 rounded border border-destructive/20 text-sm z-10">
-              {{ jsonError }}
-            </div>
           </div>
         </div>
       </template>
@@ -751,29 +833,3 @@ const nodeTypes = {
     </div>
   </div>
 </template>
-
-<style scoped>
-:deep(.vue-flow__node) {
-  cursor: pointer;
-}
-
-:deep(.vue-flow__edge) {
-  cursor: pointer;
-  stroke: hsl(var(--primary));
-  stroke-width: 2;
-}
-
-:deep(.vue-flow__edge-path) {
-  stroke: hsl(var(--primary));
-}
-
-:deep(.vue-flow__edge.selected .vue-flow__edge-path) {
-  stroke: hsl(var(--primary));
-  stroke-width: 3;
-}
-
-:deep(.vue-flow__handle) {
-  width: 12px;
-  height: 12px;
-}
-</style>
