@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Activity, RefreshCw, Clock, TrendingUp, Settings, GitCompare } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -10,10 +10,11 @@ import HealthCheckButton from '@/components/workflow/HealthCheckButton.vue'
 import HealthCheckReport from '@/components/workflow/HealthCheckReport.vue'
 import ScheduleSettings from '@/components/healthcheck/ScheduleSettings.vue'
 import BaselineComparison from '@/components/healthcheck/BaselineComparison.vue'
+import SnapshotViewer from '@/components/healthcheck/SnapshotViewer.vue'
 import { useHealthCheckStore } from '@/stores/healthcheck'
 import { useWorkflowsStore } from '@/stores/workflows'
 import { workflowsApi } from '@/api/workflows'
-import type { HealthCheckReport as HealthCheckReportType } from '@/types'
+import type { HealthCheckReport as HealthCheckReportType, HealthCheckSnapshot } from '@/types'
 
 const route = useRoute()
 const workflowId = ref(route.params.id as string)
@@ -141,6 +142,50 @@ const setBaseline = async () => {
   } finally {
     settingBaseline.value = false
   }
+}
+
+// Snapshot viewer state
+const snapshots = ref<HealthCheckSnapshot[]>([])
+const selectedSnapshotId = ref<string | null>(null)
+const showSnapshotViewer = ref(false)
+
+// Load snapshots when report changes
+watch(() => selectedReport.value?.id, async (reportId) => {
+  if (!reportId) {
+    snapshots.value = []
+    return
+  }
+  
+  try {
+    const response = await workflowsApi.getSnapshotsByReport(reportId)
+    snapshots.value = response.data.snapshots
+  } catch (err) {
+    console.error('Failed to load snapshots:', err)
+    snapshots.value = []
+  }
+})
+
+// Snapshot methods
+function hasSnapshot(nodeId: string): boolean {
+  if (!snapshots.value || snapshots.value.length === 0) return false
+  return snapshots.value.some(s => s.node_id === nodeId)
+}
+
+function getSnapshotId(nodeId: string): string | null {
+  if (!snapshots.value || snapshots.value.length === 0) return null
+  const snapshot = snapshots.value.find(s => s.node_id === nodeId)
+  return snapshot?.id || null
+}
+
+function openSnapshot(snapshotId: string | null) {
+  if (!snapshotId) return
+  selectedSnapshotId.value = snapshotId
+  showSnapshotViewer.value = true
+}
+
+function closeSnapshotViewer() {
+  showSnapshotViewer.value = false
+  selectedSnapshotId.value = null
 }
 
 onMounted(async () => {
@@ -338,7 +383,12 @@ onMounted(async () => {
                     </Button>
                   </div>
 
-                  <HealthCheckReport :report="selectedReport" />
+                  <HealthCheckReport 
+                    :report="selectedReport" 
+                    :has-snapshot="hasSnapshot"
+                    :get-snapshot-id="getSnapshotId"
+                    :open-snapshot="openSnapshot"
+                  />
                 </div>
               </TabsContent>
 
@@ -367,6 +417,13 @@ onMounted(async () => {
       </div>
     </div>
   </div>
+
+  <!-- Snapshot Viewer Dialog -->
+  <SnapshotViewer
+    :snapshot-id="selectedSnapshotId"
+    :open="showSnapshotViewer"
+    @close="closeSnapshotViewer"
+  />
 </template>
 
 <style scoped>

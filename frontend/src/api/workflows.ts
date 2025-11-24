@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { Workflow, WorkflowConfig, HealthCheckSchedule, NotificationConfig, HealthCheckReport, ComparisonResponse } from '@/types'
+import type { Workflow, WorkflowConfig, HealthCheckSchedule, NotificationConfig, HealthCheckReport, ComparisonResponse, HealthCheckSnapshot } from '@/types'
 
 export interface CreateWorkflowRequest {
   name: string
@@ -102,5 +102,26 @@ export const workflowsApi = {
 
   compareWithBaseline(reportId: string) {
     return apiClient.get<ComparisonResponse>(`/health-checks/${reportId}/compare`)
+  },
+
+  // Snapshot API methods
+  getSnapshotsByReport(reportId: string) {
+    return apiClient.get<{ report_id: string; snapshots: HealthCheckSnapshot[]; total: number }>(`/health-checks/${reportId}/snapshots`)
+  },
+
+  getSnapshot(snapshotId: string) {
+    return apiClient.get<HealthCheckSnapshot>(`/snapshots/${snapshotId}`)
+  },
+
+  getScreenshotUrl(snapshotId: string) {
+    return `/api/v1/snapshots/${snapshotId}/screenshot`
+  },
+
+  getDOMUrl(snapshotId: string) {
+    return `/api/v1/snapshots/${snapshotId}/dom`
+  },
+
+  deleteSnapshot(snapshotId: string) {
+    return apiClient.delete(`/snapshots/${snapshotId}`)
   }
 }

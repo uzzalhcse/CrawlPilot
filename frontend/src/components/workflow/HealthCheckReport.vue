@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CheckCircle2, XCircle, AlertTriangle, Clock } from 'lucide-vue-next'
+import { CheckCircle2, XCircle, AlertTriangle, Clock, Camera } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -8,6 +8,9 @@ import type { HealthCheckReport } from '@/types'
 
 const props = defineProps<{
   report: HealthCheckReport
+  hasSnapshot?: (nodeId: string) => boolean
+  getSnapshotId?: (nodeId: string) => string | null
+  openSnapshot?: (snapshotId: string | null) => void
 }>()
 
 const statusConfig = computed(() => {
@@ -113,7 +116,19 @@ const formatDate = (dateStr: string) => {
                 :class="['h-4 w-4 mt-0.5 flex-shrink-0', nodeStatusConfig(nodeResult.status).color]" 
               />
               <div class="flex-1">
-                <div class="font-medium">{{ nodeResult.node_name || nodeResult.node_id }}</div>
+                <div class="flex items-center justify-between">
+                  <div class="font-medium">{{ nodeResult.node_name || nodeResult.node_id }}</div>
+                  
+                  <!-- Camera icon for failed/warning nodes with snapshots -->
+                  <button
+                    v-if="(nodeResult.status === 'fail' || nodeResult.status === 'warning') && hasSnapshot && hasSnapshot(nodeResult.node_id)"
+                    @click.stop="openSnapshot && openSnapshot(getSnapshotId!(nodeResult.node_id))"
+                    class="snapshot-button"
+                    title="View diagnostic snapshot"
+                  >
+                    <Camera class="w-4 h-4" />
+                  </button>
+                </div>
                 <div class="text-gray-600 text-xs">{{ nodeResult.node_type }} • {{ formatDuration(nodeResult.duration_ms) }}</div>
                 
                 <!-- Node Issues -->
@@ -138,3 +153,15 @@ const formatDate = (dateStr: string) => {
     </CardContent>
   </Card>
 </template>
+
+<style scoped>
+.snapshot-button {
+  @apply p-1.5 rounded-lg transition-all;
+  @apply text-gray-500 hover:text-blue-600;
+  @apply hover:bg-blue-50 dark:hover:bg-blue-900/20;
+}
+
+.snapshot-button:hover {
+  @apply scale-110;
+}
+</style>

@@ -183,6 +183,33 @@ export interface ComparisonResponse {
   comparisons: BaselineComparison[]
 }
 
+// Phase 1: Diagnostic Snapshots
+export interface HealthCheckSnapshot {
+  id: string
+  report_id: string
+  node_id: string
+  phase_name: string
+  created_at: string
+  url: string
+  page_title?: string
+  status_code?: number
+  screenshot_path?: string
+  dom_snapshot_path?: string
+  console_logs?: ConsoleLog[]
+  selector_type?: string
+  selector_value?: string
+  elements_found: number
+  error_message?: string
+  metadata?: Record<string, any>
+}
+
+export interface ConsoleLog {
+  type: string
+  message: string
+  timestamp: string
+  source?: string
+}
+
 // Vue Flow related types
 export interface WorkflowNode {
   id: string

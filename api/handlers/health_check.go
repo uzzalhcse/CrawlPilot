@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/internal/browser"
 	"github.com/uzzalhcse/crawlify/internal/healthcheck"
 	"github.com/uzzalhcse/crawlify/internal/logger"
@@ -19,6 +21,7 @@ type HealthCheckHandler struct {
 	healthCheckRepo *storage.HealthCheckRepository
 	browserPool     *browser.BrowserPool
 	nodeRegistry    *workflow.NodeRegistry
+	snapshotService *healthcheck.SnapshotService
 }
 
 // NewHealthCheckHandler creates a new health check handler
@@ -27,12 +30,14 @@ func NewHealthCheckHandler(
 	healthCheckRepo *storage.HealthCheckRepository,
 	browserPool *browser.BrowserPool,
 	nodeRegistry *workflow.NodeRegistry,
+	snapshotService *healthcheck.SnapshotService,
 ) *HealthCheckHandler {
 	return &HealthCheckHandler{
 		workflowRepo:    workflowRepo,
 		healthCheckRepo: healthCheckRepo,
 		browserPool:     browserPool,
 		nodeRegistry:    nodeRegistry,
+		snapshotService: snapshotService,
 	}
 }
 
@@ -68,17 +73,59 @@ func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 	go func() {
 		bgCtx := context.Background()
 
-		orchestrator := healthcheck.NewOrchestrator(h.browserPool, h.nodeRegistry, config)
-		report, err := orchestrator.RunHealthCheck(bgCtx, wf)
+		// Create orchestrator with snapshot service
+		orchestrator := healthcheck.NewOrchestrator(h.browserPool, h.nodeRegistry, config, h.snapshotService)
 
-		if err != nil {
-			logger.Error("Health check failed", zap.Error(err), zap.String("workflow_id", workflowID))
+		// Create initial report to get ID
+		report := &models.HealthCheckReport{
+			ID:         uuid.New().String(), // Generate UUID
+			WorkflowID: workflowID,
+			Status:     models.HealthCheckStatusRunning,
+			StartedAt:  time.Now(),
+		}
+		logger.Info("Creating initial health check report",
+			zap.String("report_id", report.ID),
+			zap.String("workflow_id", workflowID))
+
+		if err := h.healthCheckRepo.Create(bgCtx, report); err != nil {
+			logger.Error("Failed to create health check report", zap.Error(err))
 			return
 		}
 
-		// Save report
-		if err := h.healthCheckRepo.Create(bgCtx, report); err != nil {
-			logger.Error("Failed to save health check report", zap.Error(err))
+		// Add workflow_id and report_id to context for snapshot capture
+		ctxWithIDs := context.WithValue(bgCtx, "workflowID", workflowID)
+		ctxWithIDs = context.WithValue(ctxWithIDs, "reportID", report.ID)
+
+		logger.Info("Starting health check with context IDs",
+			zap.String("workflow_id", workflowID),
+			zap.String("report_id", report.ID))
+
+		// Run health check with context
+		updatedReport, err := orchestrator.RunHealthCheck(ctxWithIDs, wf)
+
+		if err != nil {
+			logger.Error("Health check failed", zap.Error(err), zap.String("workflow_id", workflowID))
+			// Update report status to failed
+			now := time.Now()
+			report.Status = models.HealthCheckStatusFailed
+			report.CompletedAt = &now
+			if updateErr := h.healthCheckRepo.Update(bgCtx, report); updateErr != nil {
+				logger.Error("Failed to update failed report", zap.Error(updateErr))
+			}
+			return
+		}
+
+		// Copy results from orchestrator's report to our persisted report
+		report.Status = updatedReport.Status
+		report.CompletedAt = updatedReport.CompletedAt
+		report.Duration = updatedReport.Duration
+		report.Results = updatedReport.Results
+		report.Summary = updatedReport.Summary
+
+		// Update the report in database
+		if err := h.healthCheckRepo.Update(bgCtx, report); err != nil {
+			logger.Error("Failed to update health check report", zap.Error(err))
+			return
 		}
 
 		logger.Info("Health check completed",

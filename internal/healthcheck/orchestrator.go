@@ -16,13 +16,14 @@ import (
 
 // Orchestrator manages health check execution
 type Orchestrator struct {
-	browserPool *browser.BrowserPool
-	registry    *workflow.NodeRegistry
-	config      *models.HealthCheckConfig
+	browserPool     *browser.BrowserPool
+	registry        *workflow.NodeRegistry
+	config          *models.HealthCheckConfig
+	snapshotService *SnapshotService
 }
 
 // NewOrchestrator creates a new health check orchestrator
-func NewOrchestrator(browserPool *browser.BrowserPool, registry *workflow.NodeRegistry, config *models.HealthCheckConfig) *Orchestrator {
+func NewOrchestrator(browserPool *browser.BrowserPool, registry *workflow.NodeRegistry, config *models.HealthCheckConfig, snapshotService *SnapshotService) *Orchestrator {
 	if config == nil {
 		config = &models.HealthCheckConfig{
 			MaxURLsPerPhase:    1,
@@ -34,16 +35,30 @@ func NewOrchestrator(browserPool *browser.BrowserPool, registry *workflow.NodeRe
 	}
 
 	return &Orchestrator{
-		browserPool: browserPool,
-		registry:    registry,
-		config:      config,
+		browserPool:     browserPool,
+		registry:        registry,
+		config:          config,
+		snapshotService: snapshotService,
 	}
 }
 
 // RunHealthCheck executes a health check for a workflow
 func (o *Orchestrator) RunHealthCheck(ctx context.Context, wf *models.Workflow) (*models.HealthCheckReport, error) {
+	// Check if report ID is already in context (pre-created by handler)
+	existingReportID := ctx.Value("reportID")
+	existingWorkflowID := ctx.Value("workflowID")
+
+	var reportID string
+	if existingReportID != nil {
+		reportID = existingReportID.(string)
+		logger.Info("Using existing report ID from context", zap.String("report_id", reportID))
+	} else {
+		reportID = uuid.New().String()
+		logger.Info("Creating new report ID", zap.String("report_id", reportID))
+	}
+
 	report := &models.HealthCheckReport{
-		ID:           uuid.New().String(),
+		ID:           reportID,
 		WorkflowID:   wf.ID,
 		WorkflowName: wf.Name,
 		Status:       models.HealthCheckStatusRunning,
@@ -55,6 +70,14 @@ func (o *Orchestrator) RunHealthCheck(ctx context.Context, wf *models.Workflow) 
 	logger.Info("Starting health check",
 		zap.String("workflow_id", wf.ID),
 		zap.String("workflow_name", wf.Name))
+
+	// Only inject into context if not already there
+	if existingWorkflowID == nil {
+		ctx = context.WithValue(ctx, "workflowID", wf.ID)
+	}
+	if existingReportID == nil {
+		ctx = context.WithValue(ctx, "reportID", report.ID)
+	}
 
 	// Track discovered URLs from each phase to use in next phase
 	currentPhaseURLs := wf.Config.StartURLs
@@ -148,9 +171,53 @@ func (o *Orchestrator) validatePhase(ctx context.Context, wf *models.Workflow, p
 		nodeResult := o.validateNode(ctx, &node, browserCtx, &execCtx)
 		result.NodeResults = append(result.NodeResults, nodeResult)
 
-		// Check for critical issues
+		// Check for critical issues and capture snapshot if failed or has issues
 		if nodeResult.Status == models.ValidationStatusFail {
 			result.HasCriticalIssues = true
+		}
+
+		// Capture diagnostic snapshot for failures or warnings with issues (SYNCHRONOUS - must complete before browser closes)
+		shouldCaptureSnapshot := nodeResult.Status == models.ValidationStatusFail ||
+			(nodeResult.Status == models.ValidationStatusWarning && len(nodeResult.Issues) > 0)
+
+		if shouldCaptureSnapshot && o.snapshotService != nil {
+			// Log context values before capture
+			reportID := ctx.Value("reportID")
+			workflowID := ctx.Value("workflowID")
+			logger.Info("Attempting to capture snapshot",
+				zap.String("node_id", nodeResult.NodeID),
+				zap.String("status", string(nodeResult.Status)),
+				zap.Any("report_id_from_context", reportID),
+				zap.Any("workflow_id_from_context", workflowID))
+
+			if reportID != nil && workflowID != nil {
+				logger.Debug("Capturing snapshot synchronously",
+					zap.String("node_id", nodeResult.NodeID),
+					zap.String("report_id", reportID.(string)),
+					zap.String("workflow_id", workflowID.(string)))
+
+				// Capture SYNCHRONOUSLY - wait for completion before browser closes
+				if _, err := o.snapshotService.CaptureSnapshot(
+					ctx,
+					workflowID.(string),
+					reportID.(string),
+					nodeResult.NodeID,
+					phase.Name,
+					&nodeResult,
+					browserCtx, // Pass browser context for screenshot/DOM capture
+				); err != nil {
+					logger.Warn("Failed to capture snapshot",
+						zap.String("node_id", nodeResult.NodeID),
+						zap.Error(err))
+				} else {
+					logger.Info("Snapshot captured successfully",
+						zap.String("node_id", nodeResult.NodeID))
+				}
+			} else {
+				logger.Warn("Missing context values for snapshot",
+					zap.Any("report_id", reportID),
+					zap.Any("workflow_id", workflowID))
+			}
 		}
 
 		// Collect URLs from any node that discovered them

@@ -108,23 +108,35 @@ func main() {
 	if err := nodeRegistry.RegisterDefaultNodes(); err != nil {
 		logger.Warn("Failed to register default nodes for health checks", zap.Error(err))
 	}
-	healthCheckHandler := handlers.NewHealthCheckHandler(workflowRepo, healthCheckRepo, browserPool, nodeRegistry)
+
+	// Initialize snapshot repository and service
+	snapshotRepo := storage.NewSnapshotRepository(db)
+	snapshotStoragePath := "./data/snapshots"
+	var snapshotLogger *zap.Logger
+	snapshotLogger, _ = zap.NewProduction()
+	snapshotService := healthcheck.NewSnapshotService(snapshotRepo, snapshotStoragePath, snapshotLogger)
+
+	healthCheckHandler := handlers.NewHealthCheckHandler(workflowRepo, healthCheckRepo, browserPool, nodeRegistry, snapshotService)
 
 	// Initialize schedule repository and handler
 	scheduleRepo := storage.NewHealthCheckScheduleRepository(db)
 
-	// Create health check orchestrator for scheduler
-	healthCheckOrchestrator := healthcheck.NewOrchestrator(browserPool, nodeRegistry, nil)
+	// Create health check orchestrator for scheduler with snapshot service
+	healthCheckOrchestrator := healthcheck.NewOrchestrator(browserPool, nodeRegistry, nil, snapshotService)
 
 	// Create and start scheduler service
 	schedulerService := healthcheck.NewSchedulerService(scheduleRepo, healthCheckRepo, workflowRepo, healthCheckOrchestrator)
 	go schedulerService.Start()
 	logger.Info("Health check scheduler started")
 
+	// Initialize snapshot handler
+	snapshotHandler := handlers.NewSnapshotHandler(snapshotService)
+
+	// Initialize schedule handler
 	scheduleHandler := handlers.NewScheduleHandler(scheduleRepo, schedulerService)
 
 	// Routes
-	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler, scheduleHandler)
+	setupRoutes(app, workflowHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler, scheduleHandler, snapshotHandler)
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -174,7 +186,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler, scheduleHandler *handlers.ScheduleHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -202,11 +214,21 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	// Baseline routes
 	workflows.Get("/:id/baseline", healthCheckHandler.GetBaseline)
 
-	// Schedule routes
+	// Schedule management routes
 	workflows.Get("/:id/schedule", scheduleHandler.GetSchedule)
 	workflows.Post("/:id/schedule", scheduleHandler.CreateSchedule)
 	workflows.Delete("/:id/schedule", scheduleHandler.DeleteSchedule)
 	workflows.Post("/:id/test-notification", scheduleHandler.TestNotification)
+
+	// Snapshot routes
+	snapshots := api.Group("/snapshots")
+	snapshots.Get("/:snapshot_id", snapshotHandler.GetSnapshot)
+	snapshots.Get("/:snapshot_id/screenshot", snapshotHandler.GetScreenshot)
+	snapshots.Get("/:snapshot_id/dom", snapshotHandler.GetDOM)
+	snapshots.Delete("/:snapshot_id", snapshotHandler.DeleteSnapshot)
+
+	// Snapshots by report
+	healthChecks.Get("/:report_id/snapshots", snapshotHandler.ListSnapshotsByReport)
 
 	executions := api.Group("/executions")
 	executions.Get("/", executionHandler.ListExecutions)

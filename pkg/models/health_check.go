@@ -133,3 +133,33 @@ const (
 	ComparisonDegraded  ComparisonStatus = "degraded"
 	ComparisonUnchanged ComparisonStatus = "unchanged"
 )
+
+// HealthCheckSnapshot stores diagnostic data captured when health check fails
+type HealthCheckSnapshot struct {
+	ID              string                 `json:"id" db:"id"`
+	ReportID        string                 `json:"report_id" db:"report_id"`
+	NodeID          string                 `json:"node_id" db:"node_id"`
+	PhaseName       string                 `json:"phase_name" db:"phase_name"`
+	CreatedAt       time.Time              `json:"created_at" db:"created_at"`
+	URL             string                 `json:"url" db:"url"`
+	PageTitle       *string                `json:"page_title,omitempty" db:"page_title"`
+	StatusCode      *int                   `json:"status_code,omitempty" db:"status_code"`
+	ScreenshotPath  *string                `json:"screenshot_path,omitempty" db:"screenshot_path"`
+	DOMSnapshotPath *string                `json:"dom_snapshot_path,omitempty" db:"dom_snapshot_path"`
+	ConsoleLogs     []byte                 `json:"-" db:"console_logs"` // JSONB
+	ConsoleLogsData []ConsoleLog           `json:"console_logs,omitempty" db:"-"`
+	SelectorType    *string                `json:"selector_type,omitempty" db:"selector_type"`
+	SelectorValue   *string                `json:"selector_value,omitempty" db:"selector_value"`
+	ElementsFound   int                    `json:"elements_found" db:"elements_found"`
+	ErrorMessage    *string                `json:"error_message,omitempty" db:"error_message"`
+	Metadata        []byte                 `json:"-" db:"metadata"` // JSONB
+	MetadataData    map[string]interface{} `json:"metadata,omitempty" db:"-"`
+}
+
+// ConsoleLog represents a browser console log entry
+type ConsoleLog struct {
+	Type      string    `json:"type"` // log, warn, error, info
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+	Source    string    `json:"source,omitempty"`
+}

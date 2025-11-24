@@ -53,6 +53,47 @@ func (r *HealthCheckRepository) Create(ctx context.Context, report *models.Healt
 	return nil
 }
 
+// Update updates an existing health check report
+func (r *HealthCheckRepository) Update(ctx context.Context, report *models.HealthCheckReport) error {
+	resultsJSON, err := json.Marshal(report.Results)
+	if err != nil {
+		return err
+	}
+
+	summaryJSON, err := json.Marshal(report.Summary)
+	if err != nil {
+		return err
+	}
+
+	configJSON, err := json.Marshal(report.Config)
+	if err != nil {
+		return err
+	}
+
+	query := `
+		UPDATE health_check_reports 
+		SET status = $1, completed_at = $2, duration_ms = $3, results = $4, summary = $5, config = $6
+		WHERE id = $7
+	`
+
+	_, err = r.db.Pool.Exec(ctx, query,
+		report.Status,
+		report.CompletedAt,
+		report.Duration,
+		resultsJSON,
+		summaryJSON,
+		configJSON,
+		report.ID,
+	)
+
+	if err != nil {
+		logger.Error("Failed to update health check report", zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
 // GetByID retrieves a health check report by ID
 func (r *HealthCheckRepository) GetByID(ctx context.Context, id string) (*models.HealthCheckReport, error) {
 	query := `
