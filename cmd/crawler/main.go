@@ -175,6 +175,10 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, exec
 	workflows.Post("/:id/health-check", healthCheckHandler.RunHealthCheck)
 	workflows.Get("/:id/health-checks", healthCheckHandler.ListHealthChecks)
 
+	// Health check reports (by ID)
+	healthChecks := api.Group("/health-checks")
+	healthChecks.Get("/:report_id", healthCheckHandler.GetHealthCheckReport)
+
 	executions := api.Group("/executions")
 	executions.Get("/", executionHandler.ListExecutions)
 	executions.Get("/:execution_id", executionHandler.GetExecutionStatus)
