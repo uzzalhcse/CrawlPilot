@@ -1,6 +1,13 @@
 package handlers
 
 import (
+	"compress/gzip"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/internal/ai"
@@ -76,12 +83,44 @@ func (h *AutoFixHandler) AnalyzeSnapshot(c *fiber.Ctx) error {
 	// Build screenshot path
 	var screenshotPath string
 	if snapshot.ScreenshotPath != nil {
-		screenshotPath = *snapshot.ScreenshotPath
+		screenshotPath = filepath.Join(h.snapshotBasePath, *snapshot.ScreenshotPath)
+	}
+
+	// Build DOM snapshot path
+	if snapshot.DOMSnapshotPath != nil {
+		fullDOMPath := filepath.Join(h.snapshotBasePath, *snapshot.DOMSnapshotPath)
+		snapshot.DOMSnapshotPath = &fullDOMPath
+	}
+
+	// Try to get baseline preview data to help AI understand expected output
+	var baselinePreview string
+	baseline, err := h.healthCheckRepo.GetBaseline(c.Context(), report.WorkflowID)
+	if err == nil && baseline != nil {
+		// Get baseline snapshots for the same node
+		baselineSnapshots, err := h.snapshotRepo.GetByReportID(c.Context(), baseline.ID)
+		if err == nil {
+			// Find snapshot for the same node
+			for _, baselineSnap := range baselineSnapshots {
+				if baselineSnap.NodeID == snapshot.NodeID && baselineSnap.ElementsFound > 0 {
+					// This baseline snapshot worked! Extract preview using its selector
+					if baselineSnap.DOMSnapshotPath != nil && baselineSnap.SelectorValue != nil {
+						fullPath := filepath.Join(h.snapshotBasePath, *baselineSnap.DOMSnapshotPath)
+						if domBytes, err := h.readAndExtractPreview(fullPath, *baselineSnap.SelectorValue); err == nil {
+							baselinePreview = domBytes
+							logger.Info("Loaded baseline preview for AI",
+								zap.String("baseline_selector", *baselineSnap.SelectorValue),
+								zap.Int("preview_length", len(baselinePreview)))
+						}
+					}
+					break
+				}
+			}
+		}
 	}
 
 	// Analyze with AI
 	logger.Info("Analyzing snapshot with AI", zap.String("snapshot_id", snapshotID))
-	aiSuggestion, err := h.autoFixService.AnalyzeSnapshot(c.Context(), snapshot, screenshotPath)
+	aiSuggestion, err := h.autoFixService.AnalyzeSnapshot(c.Context(), snapshot, screenshotPath, baselinePreview)
 	if err != nil {
 		logger.Error("AI analysis failed", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -165,6 +204,7 @@ func (h *AutoFixHandler) AnalyzeSnapshot(c *fiber.Ctx) error {
 		SuggestedNodeConfig:  suggestedNodeConfig,
 		FixExplanation:       aiSuggestion.Explanation,
 		ConfidenceScore:      aiSuggestion.Confidence,
+		VerificationResult:   aiSuggestion.VerificationResult, // Include verification results
 		Status:               "pending",
 		AIModel:              "gemini-2.0-flash-exp",
 	}
@@ -448,10 +488,51 @@ func (h *AutoFixHandler) RevertSuggestion(c *fiber.Ctx) error {
 		})
 	}
 
-	logger.Info("Suggestion reverted and new version created",
-		zap.String("suggestion_id", suggestionID),
-		zap.Int("new_version", newVersionNum))
+	return c.JSON(fiber.Map{"message": "Suggestion reverted successfully"})
+}
 
-	suggestion, _ = h.suggestionRepo.GetByID(c.Context(), suggestionID)
-	return c.JSON(suggestion)
+// readAndExtractPreview reads a DOM snapshot and extracts preview data using a selector
+func (h *AutoFixHandler) readAndExtractPreview(domPath string, selector string) (string, error) {
+	// Open the DOM file
+	f, err := os.Open(domPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	var reader io.Reader = f
+
+	// Check if gzipped
+	if strings.HasSuffix(domPath, ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return "", err
+		}
+		defer gz.Close()
+		reader = gz
+	}
+
+	// Parse HTML
+	doc, err := goquery.NewDocumentFromReader(reader)
+	if err != nil {
+		return "", err
+	}
+
+	// Extract preview data (up to 3 items, truncated to 200 chars each)
+	var previews []string
+	doc.Find(selector).EachWithBreak(func(i int, s *goquery.Selection) bool {
+		if i >= 3 {
+			return false
+		}
+		text := strings.TrimSpace(s.Text())
+		if len(text) > 200 {
+			text = text[:200] + "..."
+		}
+		if text != "" {
+			previews = append(previews, text)
+		}
+		return true
+	})
+
+	return strings.Join(previews, "\n"), nil
 }

@@ -23,12 +23,13 @@ func NewFixSuggestionRepository(db *PostgresDB) *FixSuggestionRepository {
 func (r *FixSuggestionRepository) Create(ctx context.Context, suggestion *models.FixSuggestion) error {
 	alternativesJSON, _ := json.Marshal(suggestion.AlternativeSelectors)
 	configJSON, _ := json.Marshal(suggestion.SuggestedNodeConfig)
+	verificationJSON, _ := json.Marshal(suggestion.VerificationResult)
 
 	query := `
 		INSERT INTO fix_suggestions
 		(id, snapshot_id, workflow_id, node_id, suggested_selector, alternative_selectors,
-		 suggested_node_config, fix_explanation, confidence_score, status, ai_model, ai_response_raw)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		 suggested_node_config, fix_explanation, confidence_score, status, ai_model, ai_response_raw, verification_result)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 
 	_, err := r.db.Pool.Exec(ctx, query,
@@ -44,6 +45,7 @@ func (r *FixSuggestionRepository) Create(ctx context.Context, suggestion *models
 		suggestion.Status,
 		suggestion.AIModel,
 		suggestion.AIResponseRaw,
+		verificationJSON,
 	)
 
 	if err != nil {
@@ -60,13 +62,13 @@ func (r *FixSuggestionRepository) GetByID(ctx context.Context, id string) (*mode
 		SELECT id, snapshot_id, workflow_id, node_id, suggested_selector, alternative_selectors,
 		       suggested_node_config, fix_explanation, confidence_score, status, reviewed_by,
 		       reviewed_at, applied_at, reverted_at, ai_model, ai_prompt_tokens, ai_response_tokens,
-		       ai_response_raw, created_at, updated_at
+		       ai_response_raw, verification_result, created_at, updated_at
 		FROM fix_suggestions
 		WHERE id = $1
 	`
 
 	suggestion := &models.FixSuggestion{}
-	var alternativesJSON, configJSON []byte
+	var alternativesJSON, configJSON, verificationJSON []byte
 
 	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
 		&suggestion.ID,
@@ -87,6 +89,7 @@ func (r *FixSuggestionRepository) GetByID(ctx context.Context, id string) (*mode
 		&suggestion.AIPromptTokens,
 		&suggestion.AIResponseTokens,
 		&suggestion.AIResponseRaw,
+		&verificationJSON,
 		&suggestion.CreatedAt,
 		&suggestion.UpdatedAt,
 	)
@@ -98,6 +101,7 @@ func (r *FixSuggestionRepository) GetByID(ctx context.Context, id string) (*mode
 	// Unmarshal JSON fields
 	json.Unmarshal(alternativesJSON, &suggestion.AlternativeSelectors)
 	json.Unmarshal(configJSON, &suggestion.SuggestedNodeConfig)
+	json.Unmarshal(verificationJSON, &suggestion.VerificationResult)
 
 	return suggestion, nil
 }
@@ -108,7 +112,7 @@ func (r *FixSuggestionRepository) GetBySnapshotID(ctx context.Context, snapshotI
 		SELECT id, snapshot_id, workflow_id, node_id, suggested_selector, alternative_selectors,
 		       suggested_node_config, fix_explanation, confidence_score, status, reviewed_by,
 		       reviewed_at, applied_at, reverted_at, ai_model, ai_prompt_tokens, ai_response_tokens,
-		       created_at, updated_at
+		       verification_result, created_at, updated_at
 		FROM fix_suggestions
 		WHERE snapshot_id = $1
 		ORDER BY created_at DESC
@@ -123,7 +127,7 @@ func (r *FixSuggestionRepository) GetBySnapshotID(ctx context.Context, snapshotI
 	var suggestions []*models.FixSuggestion
 	for rows.Next() {
 		suggestion := &models.FixSuggestion{}
-		var alternativesJSON, configJSON []byte
+		var alternativesJSON, configJSON, verificationJSON []byte
 
 		err := rows.Scan(
 			&suggestion.ID,
@@ -143,6 +147,7 @@ func (r *FixSuggestionRepository) GetBySnapshotID(ctx context.Context, snapshotI
 			&suggestion.AIModel,
 			&suggestion.AIPromptTokens,
 			&suggestion.AIResponseTokens,
+			&verificationJSON,
 			&suggestion.CreatedAt,
 			&suggestion.UpdatedAt,
 		)
@@ -153,6 +158,7 @@ func (r *FixSuggestionRepository) GetBySnapshotID(ctx context.Context, snapshotI
 
 		json.Unmarshal(alternativesJSON, &suggestion.AlternativeSelectors)
 		json.Unmarshal(configJSON, &suggestion.SuggestedNodeConfig)
+		json.Unmarshal(verificationJSON, &suggestion.VerificationResult)
 
 		suggestions = append(suggestions, suggestion)
 	}

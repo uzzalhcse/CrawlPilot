@@ -39,6 +39,33 @@
             <p>{{ suggestion.fix_explanation }}</p>
           </div>
 
+          <!-- Verification Result -->
+          <div v-if="suggestion.verification_result" class="verification-result">
+            <div class="verification-header">
+              <div class="verification-status" :class="{ 'valid': suggestion.verification_result.is_valid, 'invalid': !suggestion.verification_result.is_valid }">
+                <Check v-if="suggestion.verification_result.is_valid" class="w-4 h-4" />
+                <AlertTriangle v-else class="w-4 h-4" />
+                <span>{{ suggestion.verification_result.is_valid ? 'Verified' : 'Verification Failed' }}</span>
+              </div>
+              <span class="element-count" v-if="suggestion.verification_result.is_valid">
+                {{ suggestion.verification_result.elements_found }} elements found
+              </span>
+            </div>
+            
+            <div v-if="suggestion.verification_result.error_message" class="verification-error">
+              {{ suggestion.verification_result.error_message }}
+            </div>
+
+            <div v-if="suggestion.verification_result.data_preview && suggestion.verification_result.data_preview.length > 0" class="data-preview">
+              <span class="preview-label">Data Preview:</span>
+              <ul class="preview-list">
+                <li v-for="(item, index) in suggestion.verification_result.data_preview" :key="index">
+                  {{ item }}
+                </li>
+              </ul>
+            </div>
+          </div>
+
           <div v-if="suggestion.status === 'pending'" class="actions">
             <button @click="approve(suggestion.id)" class="btn-approve">
               <Check class="w-4 h-4" />
@@ -71,7 +98,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Sparkles, TrendingUp, ArrowRight, Info, Check, X, Wand2, RotateCcw } from 'lucide-vue-next'
+import { Sparkles, TrendingUp, ArrowRight, Info, Check, X, Wand2, RotateCcw, AlertTriangle } from 'lucide-vue-next'
 import { workflowsApi } from '@/api/workflows'
 import type { HealthCheckSnapshot, FixSuggestion } from '@/types'
 
@@ -231,5 +258,45 @@ async function revert(id: string) {
 
 .btn-revert {
   @apply bg-gray-500 text-white hover:bg-gray-600;
+}
+
+.verification-result {
+  @apply space-y-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700;
+}
+
+.verification-header {
+  @apply flex items-center justify-between;
+}
+
+.verification-status {
+  @apply flex items-center gap-2 text-sm font-medium;
+}
+
+.verification-status.valid {
+  @apply text-green-600 dark:text-green-400;
+}
+
+.verification-status.invalid {
+  @apply text-red-600 dark:text-red-400;
+}
+
+.element-count {
+  @apply text-xs text-gray-500 dark:text-gray-400;
+}
+
+.verification-error {
+  @apply text-sm text-red-600 dark:text-red-400;
+}
+
+.data-preview {
+  @apply space-y-1;
+}
+
+.preview-label {
+  @apply text-xs font-medium text-gray-500 dark:text-gray-400;
+}
+
+.preview-list {
+  @apply list-disc list-inside text-xs text-gray-700 dark:text-gray-300 space-y-0.5 pl-2;
 }
 </style>

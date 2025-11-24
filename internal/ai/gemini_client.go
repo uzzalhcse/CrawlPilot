@@ -122,10 +122,11 @@ func (g *GeminiClient) GenerateText(ctx context.Context, prompt string) (string,
 func (g *GeminiClient) GenerateWithImage(ctx context.Context, prompt string, imageData []byte, mimeType string) (string, error) {
 	var lastErr error
 
-	// Try with all available keys
-	maxAttempts := 100
+	// Try with all available keys (round-robin through all keys once)
+	// We'll attempt up to 20 times (reasonable max number of keys a user might have)
+	maxAttempts := 20
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		// Get API key from manager
+		// Get API key from manager (will rotate to next available key after failures)
 		apiKey, err := g.keyManager.GetAPIKey(ctx, "gemini")
 		if err != nil {
 			if attempt == 0 {
@@ -200,10 +201,7 @@ func (g *GeminiClient) GenerateWithImage(ctx context.Context, prompt string, ima
 
 			g.keyManager.RecordFailure(ctx, err)
 
-			if attempt < maxAttempts-1 {
-				delayMs := 500 + (attempt % 1500)
-				time.Sleep(time.Duration(delayMs) * time.Millisecond)
-			}
+			// Continue to next key immediately (no retry delay needed since we're rotating keys)
 			continue
 		}
 

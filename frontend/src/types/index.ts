@@ -220,8 +220,16 @@ export interface FixSuggestion {
   applied_at?: string
   reverted_at?: string
   ai_model: string
+  verification_result?: VerificationResult
   created_at: string
   updated_at: string
+}
+
+export interface VerificationResult {
+  is_valid: boolean
+  elements_found: number
+  data_preview: string[]
+  error_message?: string
 }
 
 export interface ConsoleLog {

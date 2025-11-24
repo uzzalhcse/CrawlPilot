@@ -62,7 +62,7 @@ func (m *AIKeyManager) RecordSuccess(ctx context.Context) error {
 	return m.keyRepo.RecordSuccess(ctx, m.currentKeyID)
 }
 
-// RecordFailure records failed API call and rotates if rate limited
+// RecordFailure records failed API call and rotates to next key
 func (m *AIKeyManager) RecordFailure(ctx context.Context, err error) error {
 	if m.currentKeyID == "" {
 		return nil
@@ -70,22 +70,35 @@ func (m *AIKeyManager) RecordFailure(ctx context.Context, err error) error {
 
 	errMsg := err.Error()
 	isRateLimit := isRateLimitError(errMsg)
+	isSuspended := strings.Contains(errMsg, "CONSUMER_SUSPENDED") || strings.Contains(errMsg, "has been suspended")
 
 	// Record the failure
 	if recordErr := m.keyRepo.RecordFailure(ctx, m.currentKeyID, &errMsg, isRateLimit); recordErr != nil {
 		m.logger.Error("Failed to record API key failure", zap.Error(recordErr))
 	}
 
-	// If rate limited, rotate to next key
-	if isRateLimit {
-		m.logger.Warn("API key rate limited, rotating to next key",
+	// If key is suspended, permanently disable it
+	if isSuspended {
+		m.logger.Warn("API key suspended, disabling permanently",
 			zap.String("key_id", m.currentKeyID),
 			zap.String("error", errMsg))
 
-		// Clear current key to force rotation
-		m.currentKeyID = ""
-		m.currentAPIKey = ""
+		if disableErr := m.keyRepo.SetActive(ctx, m.currentKeyID, false); disableErr != nil {
+			m.logger.Error("Failed to disable suspended API key", zap.Error(disableErr))
+		}
 	}
+
+	// Always rotate to next key on failure (round-robin approach)
+	// This ensures we try all available keys before giving up
+	m.logger.Info("API key failed, rotating to next key",
+		zap.String("key_id", m.currentKeyID),
+		zap.String("error", errMsg),
+		zap.Bool("is_rate_limit", isRateLimit),
+		zap.Bool("is_suspended", isSuspended))
+
+	// Clear current key to force rotation on next GetAPIKey call
+	m.currentKeyID = ""
+	m.currentAPIKey = ""
 
 	return nil
 }

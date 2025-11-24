@@ -184,6 +184,15 @@ type FixSuggestion struct {
 	AIPromptTokens       *int                   `json:"ai_prompt_tokens,omitempty"`
 	AIResponseTokens     *int                   `json:"ai_response_tokens,omitempty"`
 	AIResponseRaw        *string                `json:"ai_response_raw,omitempty"`
+	VerificationResult   *VerificationResult    `json:"verification_result,omitempty"`
 	CreatedAt            time.Time              `json:"created_at"`
 	UpdatedAt            time.Time              `json:"updated_at"`
+}
+
+// VerificationResult contains the result of verifying a suggested selector
+type VerificationResult struct {
+	IsValid       bool     `json:"is_valid"`
+	ElementsFound int      `json:"elements_found"`
+	DataPreview   []string `json:"data_preview"`
+	ErrorMessage  string   `json:"error_message,omitempty"`
 }
