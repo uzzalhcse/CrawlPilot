@@ -138,7 +138,6 @@ func (e *Executor) PublishEvent(executionID, eventType string, data map[string]i
 		Timestamp:   time.Now(),
 		Data:        data,
 	}
-	fmt.Println("Publishing event:", eventType, "data:", data)
 
 	e.eventBroadcaster.Publish(event)
 }
