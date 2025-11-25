@@ -17,7 +17,8 @@ import {
   Calendar,
   Server,
   HardDrive,
-  HelpCircle
+  HelpCircle,
+    GlobeIcon,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -34,8 +35,8 @@ const menuItems = [
   { icon: FileText, label: 'Logs', route: '/logs' },
 ]
 
-const developmentItems = [
-  { icon: Workflow, label: 'My Workflows', route: '/my-workflows' },
+const antiBotItems = [
+  { icon: GlobeIcon, label: 'Browsers', route: '/browsers' },
 ]
 
 const bottomItems = [
@@ -142,13 +143,13 @@ onMounted(() => {
             @click="devSectionOpen = !devSectionOpen"
             class="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
           >
-            <span>Development</span>
+            <span>AntiBot</span>
             <ChevronRight :class="['w-3 h-3 transition-transform', devSectionOpen && 'rotate-90']" />
           </button>
           
           <div v-if="devSectionOpen || isCollapsed" class="px-2 space-y-0.5 mt-1">
             <RouterLink
-              v-for="item in developmentItems"
+              v-for="item in antiBotItems"
               :key="item.route"
               :to="item.route"
               :class="[

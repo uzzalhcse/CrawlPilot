@@ -68,22 +68,27 @@ watch(
 // Toggle Mode
 function toggleMode() {
   if (mode.value === 'builder') {
-    // Switch to JSON
+    // Switch to JSON - use ORIGINAL workflow config from backend, not reconstructed from nodes
     try {
-      const config = convertNodesToWorkflowConfig(
-        nodes.value, 
-        edges.value, 
-        {
-          start_urls: workflowConfig.value.start_urls || [],
-          max_depth: workflowConfig.value.max_depth || 3,
-          rate_limit_delay: workflowConfig.value.rate_limit_delay || 1000,
-          storage: workflowConfig.value.storage || { type: 'database' },
-        },
-        preservedPhaseProps.value,
-        preservedWorkflowProps.value
-      )
+      let configToShow = props.workflow?.config
       
-      jsonContent.value = JSON.stringify(config, null, 2)
+      // If no existing workflow (new workflow), convert from nodes
+      if (!configToShow || Object.keys(configToShow).length === 0) {
+        configToShow = convertNodesToWorkflowConfig(
+          nodes.value, 
+          edges.value, 
+          {
+            start_urls: workflowConfig.value.start_urls || [],
+            max_depth: workflowConfig.value.max_depth || 3,
+            rate_limit_delay: workflowConfig.value.rate_limit_delay || 1000,
+            storage: workflowConfig.value.storage || { type: 'database' },
+          },
+          preservedPhaseProps.value,
+          preservedWorkflowProps.value
+        )
+      }
+      
+      jsonContent.value = JSON.stringify(configToShow, null, 2)
       mode.value = 'json'
     } catch (e: any) {
       toast.error('Failed to generate JSON', { description: e.message })
@@ -874,28 +879,49 @@ function handleConnect(params: any) {
 
 // Save workflow
 function handleSave() {
-  if (!workflowName.value.trim()) {
-    toast.error('Workflow name required')
-    return
-  }
-
-  toast.loading('Saving workflow...', { id: 'save-workflow' })
-
+  console.log('[SAVE] handleSave called')
+  console.log('[SAVE] workflowName (initial):', workflowName.value)
+  console.log('[SAVE] mode:', mode.value)
+  
   let config: WorkflowConfig | undefined
   
+  // First: Extract data from JSON mode (including name!)
   if (mode.value === 'json') {
+    console.log('[SAVE] Mode is JSON, parsing...')
     try {
       const parsed = JSON.parse(jsonContent.value)
+      console.log('[SAVE] Parsed JSON:', parsed)
+      
+      // Extract name/description from JSON if present
+      if (parsed.name && !workflowName.value) {
+        console.log('[SAVE] Extracting name from JSON:', parsed.name)
+        workflowName.value = parsed.name
+      }
+      if (parsed.description && !workflowDescription.value) {
+        console.log('[SAVE] Extracting description from JSON')
+        workflowDescription.value = parsed.description
+      }
+      if (parsed.status) {
+        console.log('[SAVE] Extracting status from JSON:', parsed.status)
+        workflowStatus.value = parsed.status
+      }
+      
+      // Use exact config from JSON - don't modify it!
       if (parsed.config && typeof parsed.config === 'object') {
-        config = parsed.config
+        config = parsed.config // Use as-is, including start_urls, headers, etc.
+        console.log('[SAVE] Using exact nested config from JSON (no modifications)')
       } else {
-        config = parsed
+        config = parsed // Entire parsed object is the config
+        console.log('[SAVE] Using entire parsed JSON as config (no modifications)')
       }
     } catch (e) {
+      console.error('[SAVE] JSON parse error:', e)
+      toast.dismiss('save-workflow')
       toast.error('Invalid JSON')
       return
     }
   } else {
+    console.log('[SAVE] Mode is builder, converting nodes to config...')
     config = convertNodesToWorkflowConfig(
       nodes.value, 
       edges.value, 
@@ -908,16 +934,42 @@ function handleSave() {
       preservedPhaseProps.value,
       preservedWorkflowProps.value
     )
+    console.log('[SAVE] Converted config:', config)
+  }
+  
+  // NOW validate after extraction
+  console.log('[SAVE] workflowName (after extraction):', workflowName.value)
+  if (!workflowName.value.trim()) {
+    console.log('[SAVE] ABORT: Workflow name is empty after extraction')
+    toast.error('Workflow name required')
+    return
   }
 
+  console.log('[SAVE] Starting save process...')
+  toast.loading('Saving workflow...', { id: 'save-workflow' })
+
+  console.log('[SAVE] Emitting save event with:', {
+    name: workflowName.value,
+    description: workflowDescription.value,
+    status: workflowStatus.value,
+    nodeCount: mode.value === 'json' ? 0 : nodes.value.length,
+    edgeCount: mode.value === 'json' ? 0 : edges.value.length,
+    hasConfig: !!config,
+    mode: mode.value
+  })
+  
+  // When in JSON mode, don't send nodes/edges (they might have auto-modifications)
+  // Send only the raw config to preserve exact JSON structure
   emit('save', {
     name: workflowName.value,
     description: workflowDescription.value,
     status: workflowStatus.value,
-    nodes: nodes.value,
-    edges: edges.value,
+    nodes: mode.value === 'json' ? [] : nodes.value,
+    edges: mode.value === 'json' ? [] : edges.value,
     config
   })
+  
+  console.log('[SAVE] Save event emitted successfully')
 }
 
 // Execute workflow
