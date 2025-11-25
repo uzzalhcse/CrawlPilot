@@ -1,0 +1,153 @@
+{
+    "name": "Columbia Sports Crawler - With Plugin",
+    "description": "Comprehensive crawler for Columbia Sportswear using discovery plugin",
+    "config": {
+        "start_urls": [
+            "https://www.columbiasports.co.jp/shop/default.aspx"
+        ],
+        "max_depth": 3,
+        "rate_limit_delay": 2000,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        },
+        "phases": [
+            {
+                "id": "discover_main_categories",
+                "type": "discovery",
+                "name": "Discover Main Categories",
+                "nodes": [
+                    {
+                        "id": "navigate_to_homepage",
+                        "type": "navigate",
+                        "name": "Navigate to Homepage"
+                    },
+                    {
+                        "id": "extract_category_links",
+                        "type": "extract_links",
+                        "name": "Extract Category Links",
+                        "dependencies": [
+                            "navigate_to_homepage"
+                        ],
+                        "params": {
+                            "selector": "ul.block-header-gnav li a",
+                            "marker": "category",
+                            "limit": 3
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "discover_products"
+                }
+            },
+            {
+                "id": "discover_products",
+                "type": "discovery",
+                "name": "Discover Products with Plugin",
+                "nodes": [
+                    {
+                        "id": "navigate_to_category",
+                        "type": "navigate",
+                        "name": "Navigate to Category"
+                    },
+                    {
+                        "id": "discover_products_plugin",
+                        "type": "plugin",
+                        "name": "Discover Products Using Plugin",
+                        "dependencies": [
+                            "navigate_to_category"
+                        ],
+                        "params": {
+                            "plugin_slug": "columbia-product-discovery",
+                            "config": {
+                                "limit": 5
+                            }
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "category"
+                    ]
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "extract_product_data"
+                }
+            },
+            {
+                "id": "extract_product_data",
+                "type": "extraction",
+                "name": "Extract Product Details",
+                "nodes": [
+                    {
+                        "id": "navigate_to_product",
+                        "type": "navigate",
+                        "name": "Navigate to Product"
+                    },
+                    {
+                        "id": "extract_product_info",
+                        "type": "extract",
+                        "name": "Extract Product Information",
+                        "dependencies": [
+                            "navigate_to_product"
+                        ],
+                        "params": {
+                            "fields": {
+                                "product_name": {
+                                    "selector": "h1.product-name",
+                                    "type": "text"
+                                },
+                                "price": {
+                                    "selector": "span.sales span.value",
+                                    "type": "text"
+                                },
+                                "original_price": {
+                                    "selector": "span.strike-through span.value",
+                                    "type": "text",
+                                    "default": null
+                                },
+                                "description": {
+                                    "selector": "div.product-description",
+                                    "type": "text"
+                                },
+                                "images": {
+                                    "selector": "div.primary-images img",
+                                    "type": "attribute",
+                                    "attribute": "src",
+                                    "multiple": true
+                                },
+                                "rating": {
+                                    "selector": "span.bv_avgRating_component_container",
+                                    "type": "text",
+                                    "default": null
+                                },
+                                "sizes": {
+                                    "selector": "ul.swatches.size button.selectable",
+                                    "type": "attribute",
+                                    "attribute": "data-attr-value",
+                                    "multiple": true
+                                },
+                                "colors": {
+                                    "selector": "ul.swatches.color button.selectable",
+                                    "type": "attribute",
+                                    "attribute": "data-attr-value",
+                                    "multiple": true
+                                }
+                            }
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "patterns": [
+                        "*/p/*.html"
+                    ]
+                }
+            }
+        ]
+    },
+    "status": "active"
+}

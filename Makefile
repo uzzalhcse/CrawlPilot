@@ -1,88 +1,95 @@
 .PHONY: all build build-backend build-plugins build-frontend clean run dev help
 
+# Directories
+PLUGIN_SRC_DIR := examples/plugins
+PLUGIN_OUT_DIR := plugins
+
+# Dynamically find all plugin directories
+PLUGIN_DIRS := $(shell find $(PLUGIN_SRC_DIR) -mindepth 1 -maxdepth 1 -type d)
+PLUGIN_NAMES := $(notdir $(PLUGIN_DIRS))
+PLUGIN_BINARIES := $(addprefix $(PLUGIN_OUT_DIR)/,$(addsuffix .so,$(PLUGIN_NAMES)))
+
 # Default target
+.PHONY: all
 all: build
 
 # Build everything (backend + all plugins)
+.PHONY: build
 build: build-backend build-plugins
-	@echo "✅ Build complete!"
 
-# Build only the backend
+# Clean everything
+.PHONY: clean
+clean:
+	@echo "🧹 Cleaning build artifacts..."
+	@rm -f cmd/crawler/main
+	@rm -f $(PLUGIN_OUT_DIR)/*.so
+	@echo "✅ Clean complete"
+
+# Build backend
+.PHONY: build-backend
 build-backend:
 	@echo "🔨 Building backend..."
 	@cd cmd/crawler && go build -o main
 	@echo "✅ Backend built"
 
-# Build all plugins
-build-plugins:
-	@echo "🔌 Building plugins..."
-	@$(MAKE) -s build-plugin-ecommerce-discovery
-	@$(MAKE) -s build-plugin-aqua-extractor
+# Build all plugins dynamically
+.PHONY: build-plugins
+build-plugins: $(PLUGIN_BINARIES)
 	@echo "✅ All plugins built"
 
-# Build individual plugins
-build-plugin-ecommerce-discovery:
-	@echo "  → Building ecommerce-discovery plugin..."
-	@cd examples/plugins/ecommerce-discovery && \
-		GOOS=linux GOARCH=amd64 go build -buildmode=plugin -o ecommerce-discovery-linux-amd64.so && \
-		cp ecommerce-discovery-linux-amd64.so ../../../plugins/
-	@echo "  ✓ ecommerce-discovery built"
+# Pattern rule to build individual plugins
+$(PLUGIN_OUT_DIR)/%.so: $(PLUGIN_SRC_DIR)/%/plugin.go
+	@echo "  → Building $* plugin..."
+	@mkdir -p $(PLUGIN_OUT_DIR)
+	@cd $(PLUGIN_SRC_DIR)/$* && \
+		go mod tidy > /dev/null 2>&1 && \
+		GOOS=linux GOARCH=amd64 go build -buildmode=plugin -o $(CURDIR)/$(PLUGIN_OUT_DIR)/$*.so
+	@echo "  ✓ $* built"
 
-build-plugin-aqua-extractor:
-	@echo "  → Building aqua-product-extractor plugin..."
-	@cd examples/plugins/aqua-product-extractor && \
-		GOOS=linux GOARCH=amd64 go build -buildmode=plugin -o aqua-product-extractor.so && \
-		cp aqua-product-extractor.so ../../../plugins/
-	@echo "  ✓ aqua-product-extractor built"
+# Build a specific plugin
+.PHONY: build-plugin-%
+build-plugin-%:
+	@echo "🔨 Building $* plugin..."
+	@mkdir -p $(PLUGIN_OUT_DIR)
+	@cd $(PLUGIN_SRC_DIR)/$* && \
+		go mod tidy && \
+		GOOS=linux GOARCH=amd64 go build -buildmode=plugin -o $(CURDIR)/$(PLUGIN_OUT_DIR)/$*.so
+	@echo "✅ $* plugin built"
 
-# Build frontend
-build-frontend:
-	@echo "🎨 Building frontend..."
-	@cd frontend && npm run build
-	@echo "✅ Frontend built"
+# List all discovered plugins
+.PHONY: list-plugins
+list-plugins:
+	@echo "📦 Discovered plugins:"
+	@for plugin in $(PLUGIN_NAMES); do \
+		echo "  - $$plugin"; \
+	done
 
-# Clean build artifacts
-clean:
-	@echo "🧹 Cleaning build artifacts..."
-	@rm -f cmd/crawler/main
-	@rm -f plugins/*.so
-	@rm -f examples/plugins/*/*.so
-	@echo "✅ Clean complete"
-
-# Run the application (builds first if needed)
+# Run backend (builds first if needed)
+.PHONY: run
 run: build
-	@echo "🚀 Starting Crawlify..."
+	@echo "🚀 Starting Crawlify backend..."
 	@cd cmd/crawler && ./main
 
-# Development mode: build and run with auto-reload
-dev:
-	@echo "🔧 Starting development mode..."
-	@$(MAKE) build
-	@echo "💡 Tip: Use 'make build' to rebuild when you make changes"
-	@cd cmd/crawler && ./main
-
-# Watch mode - rebuild on file changes (requires entr or similar)
+# Development watch mode (requires entr: brew install entr)
+.PHONY: watch
 watch:
 	@echo "👀 Watching for changes..."
-	@echo "Press Ctrl+C to stop"
-	@find . -name '*.go' | entr -r make build run
+	@find . -name '*.go' | entr -r make run
 
 # Help
+.PHONY: help
 help:
-	@echo "Crawlify Build System"
+	@echo "Crawlify Makefile Commands:"
 	@echo ""
-	@echo "Usage:"
-	@echo "  make              - Build backend and all plugins"
-	@echo "  make build        - Build backend and all plugins"
-	@echo "  make build-backend - Build only the backend"
-	@echo "  make build-plugins - Build all plugins"
-	@echo "  make build-frontend - Build frontend"
-	@echo "  make run          - Build and run the application"
-	@echo "  make dev          - Development mode (build + run)"
-	@echo "  make clean        - Remove build artifacts"
-	@echo "  make watch        - Auto-rebuild on file changes (requires entr)"
-	@echo "  make help         - Show this help message"
+	@echo "  make build              Build backend and all plugins"
+	@echo "  make build-backend      Build only the backend"
+	@echo "  make build-plugins      Build all plugins"
+	@echo "  make build-plugin-NAME  Build a specific plugin"
+	@echo "  make list-plugins       List all discovered plugins"
+	@echo "  make run                Build and run the backend"
+	@echo "  make clean              Clean all build artifacts"
+	@echo "  make watch              Watch for changes and rebuild"
+	@echo "  make help               Show this help message"
 	@echo ""
-	@echo "Individual plugin builds:"
-	@echo "  make build-plugin-ecommerce-discovery"
-	@echo "  make build-plugin-aqua-extractor"
+	@echo "Plugin directories: $(PLUGIN_SRC_DIR)"
+	@echo "Plugin output: $(PLUGIN_OUT_DIR)"
