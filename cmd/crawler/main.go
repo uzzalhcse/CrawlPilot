@@ -56,6 +56,7 @@ func main() {
 	nodeExecRepo := storage.NewNodeExecutionRepository(db)
 	urlQueue := queue.NewURLQueue(db)
 	monitoringRepo := storage.NewMonitoringRepository(db)
+	pluginRepo := storage.NewPluginRepository(db) // Plugin marketplace
 
 	// Initialize browser pool
 	browserPool, err := browser.NewBrowserPool(&cfg.Browser)
@@ -181,8 +182,11 @@ func main() {
 	// Initialize schedule handler
 	scheduleHandler := handlers.NewScheduleHandler(scheduleRepo, schedulerService)
 
+	// Initialize plugin handler
+	pluginHandler := handlers.NewPluginHandler(pluginRepo, zapLogger)
+
 	// Routes
-	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler)
+	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler)
 
 	// Monitoring
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -232,7 +236,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -312,6 +316,25 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, work
 	selector.Get("/sessions/:session_id", selectorHandler.GetSessionStatus)
 	selector.Get("/sessions/:session_id/fields", selectorHandler.GetSelectedFields)
 	selector.Delete("/sessions/:session_id", selectorHandler.CloseSelectorSession)
+
+	// Plugin Marketplace routes
+	plugins := api.Group("/plugins")
+	plugins.Get("/categories", pluginHandler.GetCategories)
+	plugins.Get("/search", pluginHandler.SearchPlugins)
+	plugins.Get("/popular", pluginHandler.GetPopularPlugins)
+	plugins.Get("/installed", pluginHandler.ListInstalledPlugins)
+	plugins.Post("/", pluginHandler.CreatePlugin)
+	plugins.Get("/", pluginHandler.ListPlugins)
+	plugins.Get("/:slug", pluginHandler.GetPlugin)
+	plugins.Put("/:id", pluginHandler.UpdatePlugin)
+	plugins.Delete("/:id", pluginHandler.DeletePlugin)
+	plugins.Post("/:id/versions", pluginHandler.PublishVersion)
+	plugins.Get("/:id/versions", pluginHandler.ListVersions)
+	plugins.Get("/:id/versions/:version", pluginHandler.GetVersion)
+	plugins.Post("/:id/install", pluginHandler.InstallPlugin)
+	plugins.Delete("/:id/uninstall", pluginHandler.UninstallPlugin)
+	plugins.Post("/:id/reviews", pluginHandler.CreateReview)
+	plugins.Get("/:id/reviews", pluginHandler.ListReviews)
 }
 
 func errorHandler(c *fiber.Ctx, err error) error {

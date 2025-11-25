@@ -18,7 +18,8 @@ import {
   Server,
   HardDrive,
   HelpCircle,
-    GlobeIcon,
+  GlobeIcon,
+  Package,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -31,6 +32,7 @@ const menuItems = [
   { icon: Workflow, label: 'Workflows', route: '/workflows', badge: null },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
   { icon: Calendar, label: 'Monitoring', route: '/monitoring' },
+  { icon: Package, label: 'Plugins', route: '/plugins' },
   { icon: Calendar, label: 'Schedules', route: '/schedules' },
   { icon: FileText, label: 'Logs', route: '/logs' },
 ]

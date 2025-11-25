@@ -381,3 +381,96 @@ export interface TransformConfig {
   type: string
   params?: Record<string, any>
 }
+
+// ============================================================================
+// Plugin Marketplace Types
+// ============================================================================
+
+export type PluginType = 'builtin' | 'official' | 'community' | 'private'
+export type PhaseType = 'discovery' | 'extraction' | 'processing' | 'custom'
+
+export interface Plugin {
+  id: string
+  name: string
+  slug: string
+  description: string
+  author_name: string
+  author_email?: string
+  repository_url?: string
+  documentation_url?: string
+  phase_type: PhaseType
+  plugin_type: PluginType
+  category?: string
+  tags: string[]
+  is_verified: boolean
+  total_downloads: number
+  total_installs: number
+  average_rating: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PluginVersion {
+  id: string
+  plugin_id: string
+  version: string
+  changelog?: string
+  is_stable: boolean
+  min_crawlify_version?: string
+  linux_amd64_binary_path?: string
+  linux_arm64_binary_path?: string
+  darwin_amd64_binary_path?: string
+  darwin_arm64_binary_path?: string
+  binary_hash?: string
+  binary_size_bytes?: number
+  config_schema?: Record<string, any>
+  downloads: number
+  published_at: string
+}
+
+export interface PluginInstallation {
+  id: string
+  plugin_id: string
+  plugin_version_id: string
+  workspace_id: string
+  installed_at: string
+  last_used_at?: string
+  usage_count: number
+}
+
+export interface PluginReview {
+  id: string
+  plugin_id: string
+  user_id: string
+  rating: number
+  review_text?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PluginCategory {
+  id: string
+  name: string
+  description?: string
+  icon?: string
+  display_order: number
+}
+
+export interface PluginFilters {
+  q?: string
+  category?: string
+  phase_type?: PhaseType
+  plugin_type?: PluginType
+  tags?: string[]
+  verified?: boolean
+  sort_by?: 'popular' | 'recent' | 'rating' | 'name'
+  sort_order?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
+}
+
+export interface PluginSearchResult {
+  plugins: Plugin[]
+  total: number
+}
+
