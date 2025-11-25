@@ -1,165 +1,262 @@
 <template>
-  <div class="plugin-marketplace">
-    <!-- Header -->
-    <div class="marketplace-header">
-      <div class="header-content">
-        <h1 class="marketplace-title">Plugin Marketplace</h1>
-        <p class="marketplace-subtitle">
-          Extend Crawlify with powerful plugins for discovery and extraction
-        </p>
-      </div>
-
-      <!-- Search Bar -->
-      <div class="search-container">
-        <div class="search-box">
-          <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
-          </svg>
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="Search plugins..."
-            class="search-input"
-            @input="debouncedSearch"
-          />
-        </div>
-      </div>
-    </div>
-
-    <div class="marketplace-container">
-      <!-- Sidebar with Categories -->
-      <aside class="marketplace-sidebar">
-        <div class="sidebar-section">
-          <h3 class="sidebar-title">Categories</h3>
-          <div class="category-list">
-            <button
-              v-for="category in categories"
-              :key="category.id"
-              :class="['category-btn', { active: selectedCategory === category.id }]"
-              @click="selectCategory(category.id)"
-            >
-              <span class="category-icon">{{ getCategoryIcon(category.id) }}</span>
-              <span class="category-name">{{ category.name }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="sidebar-section">
-          <h3 class="sidebar-title">Filters</h3>
-
-          <!-- Phase Type Filter -->
-          <div class="filter-group">
-            <label class="filter-label">Phase Type</label>
-            <select v-model="filters.phase_type" class="filter-select" @change="applyFilters">
-              <option value="">All Phases</option>
-              <option value="discovery">Discovery</option>
-              <option value="extraction">Extraction</option>
-              <option value="processing">Processing</option>
-            </select>
-          </div>
-
-          <!-- Plugin Type Filter -->
-          <div class="filter-group">
-            <label class="filter-label">Type</label>
-            <select v-model="filters.plugin_type" class="filter-select" @change="applyFilters">
-              <option value="">All Types</option>
-              <option value="official">Official</option>
-              <option value="community">Community</option>
-            </select>
-          </div>
-
-          <!-- Verified Filter -->
-          <div class="filter-group">
-            <label class="filter-checkbox">
-              <input
-                v-model="filters.verified"
-                type="checkbox"
-                @change="applyFilters"
+  <div class="min-h-screen bg-[#0F1115] text-gray-200 font-sans">
+    <ScrollArea class="h-screen">
+      <div class="container mx-auto max-w-[1600px] px-6 py-8">
+        
+        <!-- LANDING MODE -->
+        <div v-if="viewMode === 'landing'" class="space-y-16 py-16">
+          <!-- Hero Section -->
+          <div class="text-center space-y-8 max-w-4xl mx-auto">
+            <h1 class="text-5xl md:text-7xl font-bold tracking-tight text-white">
+              Discover Plugins
+            </h1>
+            <p class="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
+              Hundreds of pre-built plugins to automate your work. <br>
+              Scrape websites, extract data, and automate workflows.
+            </p>
+            
+            <!-- Hero Search -->
+            <div class="relative max-w-2xl mx-auto group">
+              <Search class="absolute left-5 top-1/2 -translate-y-1/2 h-6 w-6 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
+              <Input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Search for scrapers, automation tools..."
+                class="h-16 pl-14 bg-[#1a1d21] border-gray-800 hover:border-gray-700 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 text-lg rounded-2xl shadow-2xl shadow-black/50 placeholder:text-gray-600"
+                @input="switchToSearch"
               />
-              <span>Verified Only</span>
-            </label>
+            </div>
+
+            <!-- Categories -->
+            <div class="flex flex-wrap justify-center gap-3 pt-4">
+              <Button
+                v-for="category in categories"
+                :key="category.id"
+                variant="outline"
+                size="sm"
+                class="rounded-full border-gray-800 bg-[#1a1d21] text-gray-400 hover:bg-[#222529] hover:text-white hover:border-gray-700 transition-all px-4 h-9"
+                @click="selectCategory(category.id)"
+              >
+                {{ category.name }}
+              </Button>
+            </div>
+          </div>
+
+          <!-- Featured Section -->
+          <div class="space-y-8">
+            <div class="flex items-center justify-between px-1">
+              <h2 class="text-2xl font-bold text-white tracking-tight">Featured Plugins</h2>
+              <Button variant="ghost" class="text-gray-400 hover:text-white gap-2 group" @click="switchToSearch">
+                View all
+                <ArrowRight class="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <PluginCard
+                v-for="plugin in featuredPlugins"
+                :key="plugin.id"
+                :plugin="plugin"
+                @click="openPluginDetail(plugin)"
+              />
+            </div>
           </div>
         </div>
-      </aside>
 
-      <!-- Main Content -->
-      <main class="marketplace-main">
-        <!--  Sort & View Controls -->
-        <div class="controls-bar">
-          <div class="results-info">
-            {{ plugins?.length || 0 }} {{ (plugins?.length || 0) === 1 ? 'plugin' : 'plugins' }}
+        <!-- SEARCH / VIEW ALL MODE -->
+        <div v-else class="space-y-8">
+          <!-- Top Bar -->
+          <div class="flex items-center justify-between gap-6">
+            <div class="flex items-center gap-4 flex-1">
+              <Button variant="ghost" size="icon" class="-ml-3 text-gray-400 hover:text-white hover:bg-white/5" @click="viewMode = 'landing'">
+                <ArrowLeft class="h-5 w-5" />
+              </Button>
+              <div class="relative flex-1 max-w-lg">
+                <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                <Input
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="Search for Plugins"
+                  class="h-10 pl-10 bg-[#1a1d21] border-gray-800 hover:border-gray-700 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 transition-all rounded-lg text-sm placeholder:text-gray-600"
+                  @input="debouncedSearch"
+                  auto-focus
+                />
+              </div>
+            </div>
+            <Button class="gap-2 bg-blue-600 hover:bg-blue-500 text-white border-0 font-medium shadow-lg shadow-blue-900/20">
+              <Plus class="h-4 w-4" />
+              Develop new
+            </Button>
           </div>
 
-          <div class="sort-controls">
-            <label class="sort-label">Sort by:</label>
-            <select v-model="filters.sort_by" class="sort-select" @change="applyFilters">
-              <option value="popular">Most Popular</option>
-              <option value="rating">Highest Rated</option>
-              <option value="recent">Recently Added</option>
-              <option value="name">Name</option>
-            </select>
+          <!-- Filters Row -->
+          <div class="flex items-center justify-between gap-4 pb-4 border-b border-gray-800/50">
+            <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <!-- Categories -->
+              <Select :model-value="selectedCategory || 'all'" @update:model-value="(v) => selectCategory(v === 'all' ? null : v)">
+                <SelectTrigger class="h-8 min-w-[130px] bg-transparent border-transparent hover:bg-white/5 text-gray-400 hover:text-white transition-colors rounded-md text-sm font-medium">
+                  <SelectValue placeholder="All categories" />
+                </SelectTrigger>
+                <SelectContent class="bg-[#1a1d21] border-gray-800 text-gray-300">
+                  <SelectItem value="all" class="focus:bg-white/5 focus:text-white">All categories</SelectItem>
+                  <SelectItem v-for="category in categories" :key="category.id" :value="category.id" class="focus:bg-white/5 focus:text-white">
+                    {{ category.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <div class="h-4 w-px bg-gray-800 mx-2"></div>
+
+              <!-- Phase Type -->
+              <Select :model-value="filters.phase_type" @update:model-value="(v) => updateFilter('phase_type', v)">
+                <SelectTrigger class="h-8 min-w-[130px] bg-transparent border-transparent hover:bg-white/5 text-gray-400 hover:text-white transition-colors rounded-md text-sm font-medium">
+                  <SelectValue>
+                    {{ formatFilterLabel(filters.phase_type, 'All pricing models') }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent class="bg-[#1a1d21] border-gray-800 text-gray-300">
+                  <SelectItem value="all" class="focus:bg-white/5 focus:text-white">All pricing models</SelectItem>
+                  <SelectItem value="discovery" class="focus:bg-white/5 focus:text-white">Discovery</SelectItem>
+                  <SelectItem value="extraction" class="focus:bg-white/5 focus:text-white">Extraction</SelectItem>
+                  <SelectItem value="processing" class="focus:bg-white/5 focus:text-white">Processing</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <!-- Plugin Type -->
+              <Select :model-value="filters.plugin_type" @update:model-value="(v) => updateFilter('plugin_type', v)">
+                <SelectTrigger class="h-8 min-w-[130px] bg-transparent border-transparent hover:bg-white/5 text-gray-400 hover:text-white transition-colors rounded-md text-sm font-medium">
+                  <SelectValue>
+                    {{ formatFilterLabel(filters.plugin_type, 'All developers') }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent class="bg-[#1a1d21] border-gray-800 text-gray-300">
+                  <SelectItem value="all" class="focus:bg-white/5 focus:text-white">All developers</SelectItem>
+                  <SelectItem value="official" class="focus:bg-white/5 focus:text-white">Official</SelectItem>
+                  <SelectItem value="community" class="focus:bg-white/5 focus:text-white">Community</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <!-- Sort -->
+              <Select :model-value="filters.sort_by" @update:model-value="(v) => updateFilter('sort_by', v)">
+                <SelectTrigger class="h-8 min-w-[130px] bg-transparent border-transparent hover:bg-white/5 text-gray-400 hover:text-white transition-colors rounded-md text-sm font-medium">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent class="bg-[#1a1d21] border-gray-800 text-gray-300">
+                  <SelectItem value="popular" class="focus:bg-white/5 focus:text-white">Most relevant</SelectItem>
+                  <SelectItem value="rating" class="focus:bg-white/5 focus:text-white">Highest rated</SelectItem>
+                  <SelectItem value="recent" class="focus:bg-white/5 focus:text-white">Newest</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="text-sm font-medium text-gray-500">
+              {{ plugins.length }} Plugins
+            </div>
+          </div>
+
+          <!-- Content Section -->
+          <div>
+            <!-- Loading State -->
+            <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <div v-for="i in 8" :key="i" class="h-[220px] rounded-xl bg-[#1a1d21] animate-pulse border border-gray-800" />
+            </div>
+
+            <!-- Empty State -->
+            <div v-else-if="!plugins || plugins.length === 0" class="text-center py-24">
+              <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-[#1a1d21] mb-6 border border-gray-800">
+                <Search class="h-10 w-10 text-gray-600" />
+              </div>
+              <h3 class="text-xl font-semibold mb-3 text-white">No plugins found</h3>
+              <p class="text-gray-500 max-w-sm mx-auto">We couldn't find any plugins matching your search. Try adjusting your filters or search terms.</p>
+              <Button variant="link" class="mt-6 text-blue-500 hover:text-blue-400" @click="clearFilters">
+                Clear all filters
+              </Button>
+            </div>
+
+            <!-- Plugin Grid -->
+            <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <PluginCard
+                v-for="plugin in plugins"
+                :key="plugin.id"
+                :plugin="plugin"
+                @click="openPluginDetail(plugin)"
+              />
+            </div>
           </div>
         </div>
-
-        <!-- Loading State -->
-        <div v-if="loading" class="loading-state">
-          <div class="spinner"></div>
-          <p>Loading plugins...</p>
-        </div>
-
-        <!-- Empty State -->
-        <div v-else-if="!plugins || plugins.length === 0 && !loading" class="empty-state">
-          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="m21 21-4.35-4.35"></path>
-          </svg>
-          <h3>No plugins found</h3>
-          <p>Try adjusting your filters or search query</p>
-        </div>
-
-        <!-- Plugin Grid -->
-        <div v-else class="plugin-grid">
-          <PluginCard
-            v-for="plugin in plugins"
-            :key="plugin.id"
-            :plugin="plugin"
-            @click="openPluginDetail(plugin)"
-          />
-        </div>
-      </main>
-    </div>
-
-    <!-- Plugin Detail Modal -->
-    <PluginDetailModal
-      v-if="selectedPlugin"
-      :plugin="selectedPlugin"
-      @close="selectedPlugin = null"
-      @installed="onPluginInstalled"
-    />
+      </div>
+    </ScrollArea>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import type { Plugin, PluginCategory, PluginFilters } from '@/types'
-import pluginAPI from '@/lib/plugin-api'
+import { useRouter } from 'vue-router'
+import { Search, Plus, ArrowRight, ArrowLeft } from 'lucide-vue-next'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import PluginCard from '@/components/plugins/PluginCard.vue'
-import PluginDetailModal from '@/components/plugins/PluginDetailModal.vue'
+import pluginAPI from '@/lib/plugin-api'
+import type { Plugin, PluginCategory, PluginFilters, PhaseType, PluginType } from '@/types'
 
+// UI State interface allowing 'all' values
+interface FilterState {
+  sort_by: 'popular' | 'recent' | 'rating' | 'name'
+  limit: number
+  phase_type: PhaseType | 'all'
+  plugin_type: PluginType | 'all'
+  verified: boolean
+}
+
+const router = useRouter()
+const viewMode = ref<'landing' | 'search'>('landing')
 const plugins = ref<Plugin[]>([])
 const categories = ref<PluginCategory[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const selectedCategory = ref<string | null>(null)
-const selectedPlugin = ref<Plugin | null>(null)
 
-const filters = ref<PluginFilters>({
+const filters = ref<FilterState>({
   sort_by: 'popular',
-  limit: 50
+  limit: 50,
+  phase_type: 'all',
+  plugin_type: 'all',
+  verified: false
 })
 
+const featuredPlugins = computed(() => plugins.value.slice(0, 8))
+
+const formatFilterLabel = (value: string, defaultLabel: string) => {
+  if (value === 'all') return defaultLabel
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+// Update filter helper
+const updateFilter = <K extends keyof FilterState>(key: K, value: any) => {
+  if (value === null) return
+  filters.value[key] = value
+  if (viewMode.value === 'landing') viewMode.value = 'search'
+  applyFilters()
+}
+
+// Switch to search mode
+const switchToSearch = () => {
+  if (viewMode.value !== 'search') {
+    viewMode.value = 'search'
+    applyFilters()
+  }
+}
+
 // Debounced search
-let searchTimeout: NodeJS.Timeout
+let searchTimeout: ReturnType<typeof setTimeout>
 const debouncedSearch = () => {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
@@ -171,7 +268,20 @@ const debouncedSearch = () => {
 const loadPlugins = async () => {
   loading.value = true
   try {
-    const queryFilters = { ...filters.value }
+    // Map UI state to API filters
+    const queryFilters: PluginFilters = {
+      sort_by: filters.value.sort_by,
+      limit: filters.value.limit,
+      verified: filters.value.verified
+    }
+    
+    if (filters.value.phase_type !== 'all') {
+      queryFilters.phase_type = filters.value.phase_type
+    }
+    
+    if (filters.value.plugin_type !== 'all') {
+      queryFilters.plugin_type = filters.value.plugin_type
+    }
     
     if (searchQuery.value.trim()) {
       queryFilters.q = searchQuery.value.trim()
@@ -189,7 +299,6 @@ const loadPlugins = async () => {
   }
 }
 
-// Load categories
 const loadCategories = async () => {
   try {
     categories.value = await pluginAPI.getCategories()
@@ -198,46 +307,32 @@ const loadCategories = async () => {
   }
 }
 
-// Select category
-const selectCategory = (categoryId: string) => {
-  if (selectedCategory.value === categoryId) {
-    selectedCategory.value = null
-  } else {
-    selectedCategory.value = categoryId
-  }
-  applyFilters()
-}
-
-// Apply filters
 const applyFilters = () => {
   loadPlugins()
 }
 
+const selectCategory = (categoryId: any) => {
+  selectedCategory.value = categoryId === 'all' ? null : categoryId
+  if (viewMode.value === 'landing') viewMode.value = 'search'
+  applyFilters()
+}
+
+const clearFilters = () => {
+  searchQuery.value = ''
+  selectedCategory.value = null
+  filters.value = {
+    sort_by: 'popular',
+    limit: 50,
+    phase_type: 'all',
+    plugin_type: 'all',
+    verified: false
+  }
+  applyFilters()
+}
+
 // Open plugin detail
 const openPluginDetail = (plugin: Plugin) => {
-  selectedPlugin.value = plugin
-}
-
-// Handle plugin installed
-const onPluginInstalled = () => {
-  // Reload plugins to update install status
-  loadPlugins()
-}
-
-// Get category icon
-const getCategoryIcon = (categoryId: string): string => {
-  const icons: Record<string, string> = {
-    'ecommerce': '🛒',
-    'social-media': '📱',
-    'news': '📰',
-    'data-extraction': '📊',
-    'authentication': '🔐',
-    'pagination': '📄',
-    'javascript-heavy': '⚡',
-    'api-integration': '🔌',
-    'general': '⚙️'
-  }
-  return icons[categoryId] || '📦'
+  router.push({ name: 'plugin-detail', params: { id: plugin.id } })
 }
 
 onMounted(() => {
@@ -245,293 +340,3 @@ onMounted(() => {
   loadPlugins()
 })
 </script>
-
-<style scoped>
-.plugin-marketplace {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 2rem;
-}
-
-.marketplace-header {
-  max-width: 1400px;
-  margin: 0 auto 2rem;
-}
-
-.header-content {
-  text-align: center;
-  margin-bottom: 2rem;
-}
-
-.marketplace-title {
-  font-size: 2.5rem;
-  font-weight: 700;
-  color: white;
-  margin: 0 0 0.5rem;
-}
-
-.marketplace-subtitle {
-  font-size: 1.125rem;
-  color: rgba(255, 255, 255, 0.9);
-  margin: 0;
-}
-
-.search-container {
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-.search-box {
-  position: relative;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-}
-
-.search-icon {
-  position: absolute;
-  left: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
-  color: #9ca3af;
-}
-
-.search-input {
-  width: 100%;
-  padding: 0.875rem 1rem 0.875rem 3rem;
-  border: none;
-  border-radius: 12px;
-  font-size: 1rem;
-  outline: none;
-}
-
-.marketplace-container {
-  max-width: 1400px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 2rem;
-  align-items: start;
-}
-
-/* Sidebar */
-.marketplace-sidebar {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  position: sticky;
-  top: 2rem;
-}
-
-.sidebar-section {
-  margin-bottom: 2rem;
-}
-
-.sidebar-section:last-child {
-  margin-bottom: 0;
-}
-
-.sidebar-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: #6b7280;
-  margin: 0 0 1rem;
-  letter-spacing: 0.05em;
-}
-
-.category-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.category-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: transparent;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: left;
-  font-size: 0.9375rem;
-}
-
-.category-btn:hover {
-  background: #f9fafb;
-  border-color: #e5e7eb;
-}
-
-.category-btn.active {
-  background: #ede9fe;
-  border-color: #8b5cf6;
-  color: #7c3aed;
-}
-
-.category-icon {
-  font-size: 1.25rem;
-}
-
-.category-name {
-  flex: 1;
-  font-weight: 500;
-}
-
-.filter-group {
-  margin-bottom: 1rem;
-}
-
-.filter-label {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 0.5rem;
-}
-
-.filter-select {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  outline: none;
-  transition: border 0.2s;
-}
-
-.filter-select:focus {
-  border-color: #8b5cf6;
-}
-
-.filter-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  color: #374151;
-}
-
-.filter-checkbox input {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-/* Main Content */
-.marketplace-main {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  min-height: 500px;
-}
-
-.controls-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.results-info {
-  font-size: 0.875rem;
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.sort-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.sort-label {
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-.sort-select {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  outline: none;
-  cursor: pointer;
-  transition: border 0.2s;
-}
-
-.sort-select:focus {
-  border-color: #8b5cf6;
-}
-
-/* Loading & Empty States */
-.loading-state,
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  color: #6b7280;
-}
-
-.spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid #e5e7eb;
-  border-top-color: #8b5cf6;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-bottom: 1rem;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.empty-icon {
-  width: 64px;
-  height: 64px;
-  color: #d1d5db;
-  margin-bottom: 1rem;
-}
-
-.empty-state h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #374151;
-  margin: 0 0 0.5rem;
-}
-
-.empty-state p {
-  font-size: 0.875rem;
-  color: #6b7280;
-  margin: 0;
-}
-
-/* Plugin Grid */
-.plugin-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1.5rem;
-}
-
-@media (max-width: 1024px) {
-  .marketplace-container {
-    grid-template-columns: 1fr;
-  }
-  
-  .marketplace-sidebar {
-    position: static;
-  }
-}
-</style>

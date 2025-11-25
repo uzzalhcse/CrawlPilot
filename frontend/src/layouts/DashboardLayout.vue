@@ -28,7 +28,6 @@ const isCollapsed = ref(false)
 
 const menuItems = [
   { icon: Home, label: 'Home', route: '/' },
-  { icon: Store, label: 'Store', route: '/store' },
   { icon: Workflow, label: 'Workflows', route: '/workflows', badge: null },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
   { icon: Calendar, label: 'Monitoring', route: '/monitoring' },

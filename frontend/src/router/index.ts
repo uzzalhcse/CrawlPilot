@@ -57,6 +57,16 @@ const router = createRouter({
           path: 'plugins',
           name: 'plugins',
           component: () => import('@/views/PluginMarketplace.vue')
+        },
+        {
+          path: 'plugins/:id',
+          name: 'plugin-detail',
+          component: () => import('@/views/PluginDetailView.vue')
+        },
+        {
+          path: '/:pathMatch(.*)*',
+          name: 'not-found',
+          component: () => import('@/views/NotFoundView.vue')
         }
       ]
     }
