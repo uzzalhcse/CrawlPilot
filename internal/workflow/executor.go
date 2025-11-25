@@ -676,12 +676,27 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 
 	// TRY REGISTRY FIRST - New plugin-based execution
 	if e.registry != nil && e.registry.IsRegistered(node.Type) {
+		logger.Debug("Found node type in registry",
+			zap.String("node_type", string(node.Type)),
+			zap.String("node_id", node.ID),
+		)
+
 		executor, regErr := e.registry.Get(node.Type)
 		if regErr == nil {
 			// Validate node parameters
 			if validErr := executor.Validate(node.Params); validErr != nil {
 				err = fmt.Errorf("node validation failed: %w", validErr)
+				logger.Error("NodeValidation failed",
+					zap.String("node_id", node.ID),
+					zap.String("node_type", string(node.Type)),
+					zap.Error(err),
+				)
 			} else {
+				logger.Debug("Node validation passed, preparing execution",
+					zap.String("node_id", node.ID),
+					zap.String("node_type", string(node.Type)),
+				)
+
 				// Prepare input for plugin execution
 				input := &nodes.ExecutionInput{
 					BrowserContext:   browserCtx,
@@ -692,11 +707,27 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 				}
 
 				// Execute using plugin
+				logger.Debug("Calling executor.Execute",
+					zap.String("node_id", node.ID),
+					zap.String("node_type", string(node.Type)),
+				)
+
 				output, execErr := executor.Execute(ctx, input)
 				if execErr != nil {
 					err = execErr
+					logger.Error("Node execution failed",
+						zap.String("node_id", node.ID),
+						zap.String("node_type", string(node.Type)),
+						zap.Error(err),
+					)
 				} else {
 					result = output.Result
+					logger.Debug("Node execution succeeded",
+						zap.String("node_id", node.ID),
+						zap.String("node_type", string(node.Type)),
+						zap.Bool("has_result", result != nil),
+						zap.Int("discovered_urls", len(output.DiscoveredURLs)),
+					)
 
 					// Handle discovered URLs
 					if len(output.DiscoveredURLs) > 0 {
@@ -740,8 +771,8 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 	}
 
 	// Store extracted data directly in context (only for non-extraction nodes)
-	// Extraction nodes handle their own context storage
-	if node.Type != models.NodeTypeExtract {
+	// Extraction nodes and plugin nodes handle their own context storage
+	if node.Type != models.NodeTypeExtract && node.Type != models.NodeTypePlugin {
 		if resultMap, ok := result.(map[string]interface{}); ok {
 			for k, v := range resultMap {
 				execCtx.Set(k, v)
@@ -945,10 +976,15 @@ func containsString(s, substr string) bool {
 func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[string]interface{} {
 	data := make(map[string]interface{})
 
+	logger.Debug("Collecting extracted data from execution context",
+		zap.Int("context_size", len(execCtx.Data)),
+	)
+
 	// Check if this context has any extracted fields marker
 	// Extract nodes set a special marker to indicate they have extracted data
 	extractedFields, hasExtractedData := execCtx.Get("__extracted_fields__")
 	if !hasExtractedData {
+		logger.Debug("No extracted fields marker found in context")
 		// No extract node was executed, return empty
 		return data
 	}
@@ -956,15 +992,6 @@ func (e *Executor) collectExtractedData(execCtx *models.ExecutionContext) map[st
 	// Get the list of field names that were extracted
 	fieldNames, ok := extractedFields.([]string)
 	if !ok {
-		// Fallback: if marker is not a list, collect all non-internal fields
-		// This handles backward compatibility
-		contextData := execCtx.GetAll()
-		for key, value := range contextData {
-			// Skip fields starting with '_' or '__' (internal/metadata convention)
-			if len(key) > 0 && key[0] != '_' {
-				data[key] = value
-			}
-		}
 		return data
 	}
 

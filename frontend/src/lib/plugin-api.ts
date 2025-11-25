@@ -8,7 +8,7 @@ import type {
     PluginSearchResult
 } from '@/types'
 
-const API_BASE = '/api'
+const API_BASE = '/api/v1'
 
 class PluginAPI {
     // Plugin CRUD

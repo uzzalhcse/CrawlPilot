@@ -115,30 +115,14 @@ func (p *Parser) validateNodes(nodes []models.Node) error {
 // isValidNodeType checks if a node type is valid
 func (p *Parser) isValidNodeType(nodeType models.NodeType) bool {
 	validTypes := []models.NodeType{
-		models.NodeTypeFetch,
-		models.NodeTypeExtractLinks,
-		models.NodeTypeFilterURLs,
 		models.NodeTypeNavigate,
 		models.NodeTypePaginate,
 		models.NodeTypeClick,
-		models.NodeTypeScroll,
-		models.NodeTypeType,
-		models.NodeTypeHover,
 		models.NodeTypeWait,
-		models.NodeTypeWaitFor,
-		models.NodeTypeScreenshot,
+		models.NodeTypeExtractLinks,
 		models.NodeTypeExtract,
-		models.NodeTypeExtractText,
-		models.NodeTypeExtractAttr,
-		models.NodeTypeExtractJSON,
-		models.NodeTypeTransform,
-		models.NodeTypeFilter,
-		models.NodeTypeMap,
-		models.NodeTypeValidate,
-		models.NodeTypeSequence, // NEW
-		models.NodeTypeConditional,
-		models.NodeTypeLoop,
-		models.NodeTypeParallel,
+		models.NodeTypeInput,
+		models.NodeTypePlugin, // NEW: Plugin node support
 	}
 
 	for _, validType := range validTypes {

@@ -143,7 +143,21 @@ func (r *PluginRepository) PublishVersion(ctx context.Context, version *models.P
 func (r *PluginRepository) GetLatestVersion(ctx context.Context, pluginID string) (*models.PluginVersion, error) {
 	var version models.PluginVersion
 	query := `
-		SELECT * FROM plugin_versions 
+		SELECT 
+			id, plugin_id, version,
+			COALESCE(changelog, '') as changelog,
+			is_stable,
+			COALESCE(min_crawlify_version, '') as min_crawlify_version,
+			COALESCE(linux_amd64_binary_path, '') as linux_amd64_binary_path,
+			COALESCE(linux_arm64_binary_path, '') as linux_arm64_binary_path,
+			COALESCE(darwin_amd64_binary_path, '') as darwin_amd64_binary_path,
+			COALESCE(darwin_arm64_binary_path, '') as darwin_arm64_binary_path,
+			COALESCE(binary_hash, '') as binary_hash,
+			COALESCE(binary_size_bytes, 0) as binary_size_bytes,
+			config_schema,
+			downloads,
+			published_at
+		FROM plugin_versions 
 		WHERE plugin_id = $1 AND is_stable = true
 		ORDER BY published_at DESC 
 		LIMIT 1
@@ -162,7 +176,24 @@ func (r *PluginRepository) GetLatestVersion(ctx context.Context, pluginID string
 // GetVersionByID retrieves a specific version by ID
 func (r *PluginRepository) GetVersionByID(ctx context.Context, versionID string) (*models.PluginVersion, error) {
 	var version models.PluginVersion
-	query := `SELECT * FROM plugin_versions WHERE id = $1`
+	query := `
+		SELECT 
+			id, plugin_id, version,
+			COALESCE(changelog, '') as changelog,
+			is_stable,
+			COALESCE(min_crawlify_version, '') as min_crawlify_version,
+			COALESCE(linux_amd64_binary_path, '') as linux_amd64_binary_path,
+			COALESCE(linux_arm64_binary_path, '') as linux_arm64_binary_path,
+			COALESCE(darwin_amd64_binary_path, '') as darwin_amd64_binary_path,
+			COALESCE(darwin_arm64_binary_path, '') as darwin_arm64_binary_path,
+			COALESCE(binary_hash, '') as binary_hash,
+			COALESCE(binary_size_bytes, 0) as binary_size_bytes,
+			config_schema,
+			downloads,
+			published_at
+		FROM plugin_versions 
+		WHERE id = $1
+	`
 	err := r.db.Pool.QueryRow(ctx, query, versionID).Scan(
 		&version.ID, &version.PluginID, &version.Version,
 		&version.Changelog, &version.IsStable, &version.MinCrawlifyVersion,
@@ -176,7 +207,25 @@ func (r *PluginRepository) GetVersionByID(ctx context.Context, versionID string)
 
 // ListVersions lists all versions
 func (r *PluginRepository) ListVersions(ctx context.Context, pluginID string) ([]*models.PluginVersion, error) {
-	query := `SELECT * FROM plugin_versions WHERE plugin_id = $1 ORDER BY published_at DESC`
+	query := `
+		SELECT 
+			id, plugin_id, version, 
+			COALESCE(changelog, '') as changelog,
+			is_stable,
+			COALESCE(min_crawlify_version, '') as min_crawlify_version,
+			COALESCE(linux_amd64_binary_path, '') as linux_amd64_binary_path,
+			COALESCE(linux_arm64_binary_path, '') as linux_arm64_binary_path,
+			COALESCE(darwin_amd64_binary_path, '') as darwin_amd64_binary_path,
+			COALESCE(darwin_arm64_binary_path, '') as darwin_arm64_binary_path,
+			COALESCE(binary_hash, '') as binary_hash,
+			COALESCE(binary_size_bytes, 0) as binary_size_bytes,
+			config_schema,
+			downloads,
+			published_at
+		FROM plugin_versions 
+		WHERE plugin_id = $1 
+		ORDER BY published_at DESC
+	`
 	rows, err := r.db.Pool.Query(ctx, query, pluginID)
 	if err != nil {
 		return nil, err

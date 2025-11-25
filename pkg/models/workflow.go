@@ -50,6 +50,7 @@ const (
 	NodeTypeFilterURLs   NodeType = "filter_urls"
 	NodeTypeNavigate     NodeType = "navigate"
 	NodeTypePaginate     NodeType = "paginate"
+	NodeTypePlugin       NodeType = "plugin" // NEW: Plugin execution
 
 	// Interaction nodes
 	NodeTypeClick      NodeType = "click"
@@ -59,6 +60,7 @@ const (
 	NodeTypeWait       NodeType = "wait"
 	NodeTypeWaitFor    NodeType = "wait_for"
 	NodeTypeScreenshot NodeType = "screenshot"
+	NodeTypeInput      NodeType = "input" // Added based on instruction's snippet
 
 	// Extraction nodes
 	NodeTypeExtract     NodeType = "extract"

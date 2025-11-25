@@ -1,0 +1,114 @@
+{
+    "name": "Aqua E-commerce Site Crawler - With Plugin",
+    "description": "Comprehensive crawler for Aqua e-commerce site using extraction plugin",
+    "config": {
+        "start_urls": [
+            "https://aqua-has.com"
+        ],
+        "max_depth": 3,
+        "rate_limit_delay": 2000,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        },
+        "phases": [
+            {
+                "id": "discover_categories",
+                "type": "discovery",
+                "name": "Discover Main Product Categories",
+                "nodes": [
+                    {
+                        "id": "navigate_to_homepage",
+                        "type": "navigate",
+                        "name": "Navigate to Homepage"
+                    },
+                    {
+                        "id": "discover_main_categories",
+                        "type": "extract_links",
+                        "name": "Extract Category Links",
+                        "dependencies": [
+                            "navigate_to_homepage"
+                        ],
+                        "params": {
+                            "selector": "ul.Header_Navigation_List_Item_Sub_Group_Inner a",
+                            "marker": "category",
+                            "limit": 2
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "discover_products"
+                }
+            },
+            {
+                "id": "discover_products",
+                "type": "discovery",
+                "name": "Discover Product Listing Pages",
+                "nodes": [
+                    {
+                        "id": "navigate_to_category",
+                        "type": "navigate",
+                        "name": "Navigate to Category Page"
+                    },
+                    {
+                        "id": "discover_product_listings",
+                        "type": "extract_links",
+                        "name": "Extract Product Links",
+                        "dependencies": [
+                            "navigate_to_category"
+                        ],
+                        "params": {
+                            "selector": "div.CategoryTop_Series_Item_Content_List a",
+                            "marker": "product",
+                            "limit": 1
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "category"
+                    ]
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "extract_product_data"
+                }
+            },
+            {
+                "id": "extract_product_data",
+                "type": "extraction",
+                "name": "Extract Product Details with Plugin",
+                "nodes": [
+                    {
+                        "id": "navigate_to_product",
+                        "type": "navigate",
+                        "name": "Navigate to Product Page"
+                    },
+                    {
+                        "id": "extract_with_plugin",
+                        "type": "plugin",
+                        "name": "Extract Aqua Product Data",
+                        "dependencies": [
+                            "navigate_to_product"
+                        ],
+                        "params": {
+                            "plugin_slug": "aqua-product-extractor",
+                            "config": {
+                                "schema": "aqua_product"
+                            }
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "product"
+                    ]
+                }
+            }
+        ]
+    },
+    "status": "active"
+}

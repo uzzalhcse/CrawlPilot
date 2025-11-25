@@ -83,56 +83,35 @@ func (r *NodeRegistry) ListRegistered() []models.NodeType {
 	return types
 }
 
-// RegisterDefaultNodes registers all built-in node types
+// RegisterDefaultNodes registers all built-in node executors
 func (r *NodeRegistry) RegisterDefaultNodes() error {
 	// Discovery nodes
 	if err := r.Register(discovery.NewExtractLinksExecutor()); err != nil {
-		return fmt.Errorf("failed to register extract_links: %w", err)
+		return err
 	}
 	if err := r.Register(discovery.NewNavigateExecutor()); err != nil {
-		return fmt.Errorf("failed to register navigate: %w", err)
+		return err
 	}
 	if err := r.Register(discovery.NewPaginateExecutor()); err != nil {
-		return fmt.Errorf("failed to register paginate: %w", err)
+		return err
 	}
 
 	// Extraction nodes
 	if err := r.Register(extraction.NewExtractExecutor()); err != nil {
-		return fmt.Errorf("failed to register extract: %w", err)
-	}
-	if err := r.Register(extraction.NewExtractJSONExecutor()); err != nil {
-		return fmt.Errorf("failed to register extract_json: %w", err)
+		return err
 	}
 
 	// Interaction nodes
 	if err := r.Register(interaction.NewClickExecutor()); err != nil {
-		return fmt.Errorf("failed to register click: %w", err)
-	}
-	if err := r.Register(interaction.NewScrollExecutor()); err != nil {
-		return fmt.Errorf("failed to register scroll: %w", err)
-	}
-	if err := r.Register(interaction.NewTypeExecutor()); err != nil {
-		return fmt.Errorf("failed to register type: %w", err)
-	}
-	if err := r.Register(interaction.NewHoverExecutor()); err != nil {
-		return fmt.Errorf("failed to register hover: %w", err)
+		return err
 	}
 	if err := r.Register(interaction.NewWaitExecutor()); err != nil {
-		return fmt.Errorf("failed to register wait: %w", err)
-	}
-	if err := r.Register(interaction.NewWaitForExecutor()); err != nil {
-		return fmt.Errorf("failed to register wait_for: %w", err)
-	}
-	if err := r.Register(interaction.NewScreenshotExecutor()); err != nil {
-		return fmt.Errorf("failed to register screenshot: %w", err)
+		return err
 	}
 
-	// Advanced nodes (need registry reference)
-	if err := r.Register(interaction.NewSequenceExecutor(r)); err != nil {
-		return fmt.Errorf("failed to register sequence: %w", err)
-	}
-	if err := r.Register(interaction.NewConditionalExecutor(r)); err != nil {
-		return fmt.Errorf("failed to register conditional: %w", err)
+	// Plugin executor
+	if err := r.Register(nodes.NewPluginNodeExecutor(r.logger)); err != nil {
+		return err
 	}
 
 	return nil

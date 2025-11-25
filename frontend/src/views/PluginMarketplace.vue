@@ -87,7 +87,7 @@
         <!--  Sort & View Controls -->
         <div class="controls-bar">
           <div class="results-info">
-            {{ plugins.length }} {{ plugins.length === 1 ? 'plugin' : 'plugins' }}
+            {{ plugins?.length || 0 }} {{ (plugins?.length || 0) === 1 ? 'plugin' : 'plugins' }}
           </div>
 
           <div class="sort-controls">
@@ -108,7 +108,7 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else-if="plugins.length === 0 && !loading" class="empty-state">
+        <div v-else-if="!plugins || plugins.length === 0 && !loading" class="empty-state">
           <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <circle cx="11" cy="11" r="8"></circle>
             <path d="m21 21-4.35-4.35"></path>
