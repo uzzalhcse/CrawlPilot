@@ -602,25 +602,50 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 		"node_type": node.Type,
 		"node_name": node.Name,
 		"params":    node.Params,
+		"url_id":    item.ID,
 	})
 
 	// Create node execution record
 	var nodeExecID string
+	var parentNodeExecIDForEvents *string // Capture parent BEFORE we update context
 	if e.nodeExecRepo != nil {
 		inputData, _ := json.Marshal(node.Params)
 
+		// Determine parent node execution ID
+		// Priority 1: If this is the first node processing a discovered URL, use the discovering node's execution ID from the URL queue
+		// === CRITICAL: Capture parent ID BEFORE creating this node's record ===
+		// This prevents circular references where a node becomes its own parent
+		parentNodeExecIDForEvents = getParentNodeExecID(execCtx, item)
+
+		// Now determine parent for the database record
+		var parentNodeExecID *string
+		// Priority 1: If URL has a parent from discovery, use that for the first node
+		if item.ParentNodeExecutionID != nil && *item.ParentNodeExecutionID != "" {
+			if _, ok := execCtx.Get("_last_node_exec_id"); !ok {
+				parentNodeExecID = item.ParentNodeExecutionID
+			}
+		}
+		// Priority 2: Use last executed node from context (sequential)
+		if parentNodeExecID == nil {
+			if lastNodeID, ok := execCtx.Get("_last_node_exec_id"); ok {
+				if lastNodeIDStr, ok := lastNodeID.(string); ok {
+					parentNodeExecID = &lastNodeIDStr
+				}
+			}
+		}
+
 		// Determine node type from node.Type
 		nodeType := string(node.Type)
-
 		nodeExec := &models.NodeExecution{
-			ExecutionID: executionID,
-			NodeID:      node.ID,
-			Status:      models.ExecutionStatusRunning,
-			URLID:       &item.ID, // Link to the URL being processed
-			NodeType:    &nodeType,
-			StartedAt:   time.Now(),
-			Input:       inputData,
-			RetryCount:  0,
+			ExecutionID:           executionID,
+			NodeID:                node.ID,
+			Status:                models.ExecutionStatusRunning,
+			URLID:                 &item.ID, // Link to the URL being processed
+			ParentNodeExecutionID: parentNodeExecID,
+			NodeType:              &nodeType,
+			StartedAt:             time.Now(),
+			Input:                 inputData,
+			RetryCount:            0,
 		}
 
 		if err := e.nodeExecRepo.Create(ctx, nodeExec); err != nil {
@@ -629,6 +654,8 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 			nodeExecID = nodeExec.ID
 			// Store in context for later retrieval (e.g., when saving extracted data)
 			execCtx.Set("_node_exec_id", nodeExecID)
+			// Track this as the last executed node for sequential tracking
+			execCtx.Set("_last_node_exec_id", nodeExecID)
 		}
 	}
 
@@ -735,14 +762,32 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 
 	if err != nil {
 		e.PublishEvent(executionID, "node_failed", map[string]interface{}{
-			"node_id": node.ID,
-			"error":   err.Error(),
+			"node_id":                  node.ID,
+			"node_execution_id":        nodeExecID,
+			"parent_node_execution_id": parentNodeExecIDForEvents,
+			"error":                    err.Error(),
 		})
 	} else {
 		e.PublishEvent(executionID, "node_completed", map[string]interface{}{
-			"node_id": node.ID,
-			"result":  result,
+			"node_id":                  node.ID,
+			"node_execution_id":        nodeExecID,
+			"parent_node_execution_id": parentNodeExecIDForEvents,
+			"node_type":                string(node.Type),
+			"result":                   result,
 		})
+	}
+
+	// NOW update the NodeExecution record with completion status
+	if e.nodeExecRepo != nil && nodeExecID != "" {
+		if err != nil {
+			if updateErr := e.nodeExecRepo.MarkFailed(ctx, nodeExecID, err.Error()); updateErr != nil {
+				logger.Error("Failed to mark node execution as failed", zap.Error(updateErr))
+			}
+		} else {
+			if updateErr := e.nodeExecRepo.MarkCompleted(ctx, nodeExecID, result); updateErr != nil {
+				logger.Error("Failed to mark node execution as completed", zap.Error(updateErr))
+			}
+		}
 	}
 
 	return err
@@ -785,15 +830,16 @@ func (e *Executor) enqueueLinks(ctx context.Context, executionID string, parentI
 		}
 
 		item := &models.URLQueueItem{
-			ExecutionID:      executionID,
-			URL:              absoluteURL,
-			Depth:            parentItem.Depth + 1,
-			Priority:         parentItem.Priority - 10,
-			ParentURLID:      &parentItem.ID,
-			DiscoveredByNode: &nodeID,
-			URLType:          marker, // For backward compatibility
-			Marker:           marker, // NEW: Set marker for phase matching
-			PhaseID:          "",     // Will be set by phase transition logic
+			ExecutionID:           executionID,
+			URL:                   absoluteURL,
+			Depth:                 parentItem.Depth + 1,
+			Priority:              parentItem.Priority - 10,
+			ParentURLID:           &parentItem.ID,
+			DiscoveredByNode:      &nodeID,
+			ParentNodeExecutionID: &nodeExecID, // NEW: Track the node execution that discovered this URL
+			URLType:               marker,      // For backward compatibility
+			Marker:                marker,      // NEW: Set marker for phase matching
+			PhaseID:               "",          // Will be set by phase transition logic
 		}
 
 		logger.Debug("Enqueued URL",

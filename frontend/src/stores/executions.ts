@@ -8,7 +8,8 @@ import type {
   ExecutionHierarchy,
   PerformanceMetrics,
   ItemWithHierarchy,
-  Bottleneck
+  Bottleneck,
+  NodeTreeResponse
 } from '@/api/executions'
 
 export const useExecutionsStore = defineStore('executions', () => {
@@ -21,6 +22,7 @@ export const useExecutionsStore = defineStore('executions', () => {
   const performance = ref<PerformanceMetrics[]>([])
   const itemsWithHierarchy = ref<ItemWithHierarchy[]>([])
   const bottlenecks = ref<Bottleneck[]>([])
+  const nodeTree = ref<NodeTreeResponse | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -257,6 +259,21 @@ export const useExecutionsStore = defineStore('executions', () => {
     }
   }
 
+  async function fetchNodeTree(id: string) {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await executionsApi.getNodeTree(id)
+      nodeTree.value = response.data
+      return response.data
+    } catch (e: any) {
+      error.value = e.response?.data?.error || 'Failed to fetch node tree'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   function clearError() {
     error.value = null
   }
@@ -270,6 +287,7 @@ export const useExecutionsStore = defineStore('executions', () => {
     performance.value = []
     itemsWithHierarchy.value = []
     bottlenecks.value = []
+    nodeTree.value = null
     extractedDataTotal.value = 0
     extractedDataLimit.value = 50
     extractedDataOffset.value = 0
@@ -288,6 +306,7 @@ export const useExecutionsStore = defineStore('executions', () => {
     performance,
     itemsWithHierarchy,
     bottlenecks,
+    nodeTree,
     loading,
     error,
     runningExecutions,
@@ -305,6 +324,7 @@ export const useExecutionsStore = defineStore('executions', () => {
     fetchPerformance,
     fetchItemsWithHierarchy,
     fetchBottlenecks,
+    fetchNodeTree,
     clearError,
     clearCurrentExecution
   }

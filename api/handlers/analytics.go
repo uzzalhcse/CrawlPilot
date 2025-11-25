@@ -31,6 +31,7 @@ func NewAnalyticsHandler(
 func (h *AnalyticsHandler) RegisterRoutes(router fiber.Router) {
 	router.Get("/executions/:executionId/timeline", h.GetExecutionTimeline)
 	router.Get("/executions/:executionId/hierarchy", h.GetURLHierarchy)
+	router.Get("/executions/:executionId/node-tree", h.GetNodeTree)
 	router.Get("/executions/:executionId/performance", h.GetPerformanceMetrics)
 	router.Get("/executions/:executionId/items-with-hierarchy", h.GetItemsWithHierarchy)
 	router.Get("/executions/:executionId/bottlenecks", h.GetBottlenecks)

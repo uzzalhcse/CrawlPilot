@@ -62,6 +62,36 @@ export interface Bottleneck {
   started_at: string
 }
 
+export interface NodeTreeNode {
+  id: string
+  node_id: string
+  node_type: string
+  status: string
+  started_at: string
+  completed_at?: string
+  duration_ms?: number
+  urls_discovered: number
+  items_extracted: number
+  error_message?: string
+  parent_node_execution_id?: string
+  children?: NodeTreeNode[]
+}
+
+export interface NodeTreeStats {
+  total_nodes: number
+  completed_nodes: number
+  failed_nodes: number
+  max_depth: number
+  total_urls_found: number
+  total_items_found: number
+}
+
+export interface NodeTreeResponse {
+  execution_id: string
+  tree: NodeTreeNode[]
+  stats: NodeTreeStats
+}
+
 export const executionsApi = {
   // List all executions
   list(params?: { workflow_id?: string; status?: string; limit?: number; offset?: number }) {
@@ -123,5 +153,10 @@ export const executionsApi = {
     return apiClient.get<Bottleneck[]>(`/executions/${id}/bottlenecks`, {
       params: { threshold }
     })
+  },
+
+  // Get node execution tree
+  getNodeTree(id: string) {
+    return apiClient.get<NodeTreeResponse>(`/executions/${id}/node-tree`)
   }
 }

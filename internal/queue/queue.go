@@ -42,8 +42,8 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 	}
 
 	const query = `
-		INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, marker, phase_id, metadata, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+		INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, parent_node_execution_id, url_type, marker, phase_id, metadata, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
 		ON CONFLICT (execution_id, url_hash) DO UPDATE SET
 			priority = GREATEST(url_queue.priority, EXCLUDED.priority),
 			status = CASE
@@ -67,6 +67,7 @@ func (q *URLQueue) Enqueue(ctx context.Context, item *models.URLQueueItem) error
 		models.QueueItemStatusPending,
 		item.ParentURLID,
 		item.DiscoveredByNode,
+		item.ParentNodeExecutionID,
 		item.URLType,
 		item.Marker,
 		item.PhaseID,
@@ -116,8 +117,8 @@ func (q *URLQueue) EnqueueBatch(ctx context.Context, items []*models.URLQueueIte
 		// }
 
 		const query = `
-			INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, marker, phase_id, metadata, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+			INSERT INTO url_queue (id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, parent_node_execution_id, url_type, marker, phase_id, metadata, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
 			ON CONFLICT (execution_id, url_hash) DO UPDATE SET
 				priority = GREATEST(url_queue.priority, EXCLUDED.priority),
 				status = CASE
@@ -136,6 +137,7 @@ func (q *URLQueue) EnqueueBatch(ctx context.Context, items []*models.URLQueueIte
 			models.QueueItemStatusPending,
 			item.ParentURLID,
 			item.DiscoveredByNode,
+			item.ParentNodeExecutionID,
 			item.URLType,
 			item.Marker,
 			item.PhaseID,
@@ -171,7 +173,7 @@ func (q *URLQueue) Dequeue(ctx context.Context, executionID string) (*models.URL
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, url_type, marker, phase_id, retry_count, error, metadata, created_at, processed_at, locked_at, locked_by
+		RETURNING id, execution_id, url, url_hash, depth, priority, status, parent_url_id, discovered_by_node, parent_node_execution_id, url_type, marker, phase_id, retry_count, error, metadata, created_at, processed_at, locked_at, locked_by
 	`
 
 	var item models.URLQueueItem
@@ -191,6 +193,7 @@ func (q *URLQueue) Dequeue(ctx context.Context, executionID string) (*models.URL
 		&item.Status,
 		&item.ParentURLID,
 		&item.DiscoveredByNode,
+		&item.ParentNodeExecutionID,
 		&item.URLType,
 		&item.Marker,
 		&item.PhaseID,

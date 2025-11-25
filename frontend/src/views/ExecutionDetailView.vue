@@ -42,6 +42,7 @@ import {
   Maximize2
 } from 'lucide-vue-next'
 import ExecutionLiveView from '@/components/execution/ExecutionLiveView.vue'
+import ExecutionNodeTree from '@/components/execution/ExecutionNodeTree.vue'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 
@@ -364,6 +365,7 @@ onUnmounted(() => {
         <TabsList class="h-8">
           <TabsTrigger value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="text-xs">Live View</TabsTrigger>
           <TabsTrigger value="data" class="text-xs">Extracted Data</TabsTrigger>
+          <TabsTrigger value="tree" class="text-xs">Node Tree</TabsTrigger>
         </TabsList>
 
         <TabsContent value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="space-y-3">
@@ -464,6 +466,12 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="tree" class="min-w-0 w-full max-w-full">
+          <Card class="p-4 w-full max-w-full">
+            <ExecutionNodeTree />
           </Card>
         </TabsContent>
       </Tabs>

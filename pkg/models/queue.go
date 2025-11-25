@@ -8,25 +8,26 @@ import (
 
 // URLQueueItem represents an item in the URL queue
 type URLQueueItem struct {
-	ID               string          `json:"id" db:"id"`
-	ExecutionID      string          `json:"execution_id" db:"execution_id"`
-	URL              string          `json:"url" db:"url"`
-	URLHash          string          `json:"url_hash" db:"url_hash"`
-	Depth            int             `json:"depth" db:"depth"`
-	Priority         int             `json:"priority" db:"priority"`
-	Status           QueueItemStatus `json:"status" db:"status"`
-	ParentURLID      *string         `json:"parent_url_id,omitempty" db:"parent_url_id"`
-	DiscoveredByNode *string         `json:"discovered_by_node,omitempty" db:"discovered_by_node"`
-	URLType          string          `json:"url_type" db:"url_type"` // Deprecated, use Marker
-	Marker           string          `json:"marker" db:"marker"`     // NEW: Phase marker for URL filtering
-	PhaseID          string          `json:"phase_id" db:"phase_id"` // NEW: Which phase should process this URL
-	RetryCount       int             `json:"retry_count" db:"retry_count"`
-	Error            string          `json:"error,omitempty" db:"error"`
-	Metadata         string          `json:"metadata,omitempty" db:"metadata"`
-	CreatedAt        time.Time       `json:"created_at" db:"created_at"`
-	ProcessedAt      *time.Time      `json:"processed_at,omitempty" db:"processed_at"`
-	LockedAt         *time.Time      `json:"locked_at,omitempty" db:"locked_at"`
-	LockedBy         string          `json:"locked_by,omitempty" db:"locked_by"`
+	ID                    string          `json:"id" db:"id"`
+	ExecutionID           string          `json:"execution_id" db:"execution_id"`
+	URL                   string          `json:"url" db:"url"`
+	URLHash               string          `json:"url_hash" db:"url_hash"`
+	Depth                 int             `json:"depth" db:"depth"`
+	Priority              int             `json:"priority" db:"priority"`
+	Status                QueueItemStatus `json:"status" db:"status"`
+	ParentURLID           *string         `json:"parent_url_id,omitempty" db:"parent_url_id"`
+	DiscoveredByNode      *string         `json:"discovered_by_node,omitempty" db:"discovered_by_node"`
+	ParentNodeExecutionID *string         `json:"parent_node_execution_id,omitempty" db:"parent_node_execution_id"` // NEW: Node execution that discovered this URL
+	URLType               string          `json:"url_type" db:"url_type"`                                           // Deprecated, use Marker
+	Marker                string          `json:"marker" db:"marker"`                                               // NEW: Phase marker for URL filtering
+	PhaseID               string          `json:"phase_id" db:"phase_id"`                                           // NEW: Which phase should process this URL
+	RetryCount            int             `json:"retry_count" db:"retry_count"`
+	Error                 string          `json:"error,omitempty" db:"error"`
+	Metadata              string          `json:"metadata,omitempty" db:"metadata"`
+	CreatedAt             time.Time       `json:"created_at" db:"created_at"`
+	ProcessedAt           *time.Time      `json:"processed_at,omitempty" db:"processed_at"`
+	LockedAt              *time.Time      `json:"locked_at,omitempty" db:"locked_at"`
+	LockedBy              string          `json:"locked_by,omitempty" db:"locked_by"`
 }
 
 // QueueItemStatus represents the status of a queue item

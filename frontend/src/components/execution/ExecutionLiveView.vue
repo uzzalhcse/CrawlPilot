@@ -13,7 +13,7 @@ const props = defineProps<{
   workflowConfig?: any
 }>()
 
-const { connect, disconnect, isConnected, logs, currentPhase, activeNodes, nodeStatuses } = useExecutionStream(props.executionId)
+const { connect, disconnect, isConnected, logs, currentPhase, activeNodes, nodeStatuses, executionTree } = useExecutionStream(props.executionId)
 
 onMounted(() => {
   connect()
@@ -86,6 +86,7 @@ const phases = computed(() => {
         :workflow-config="workflowConfig" 
         :active-nodes="activeNodes"
         :node-statuses="nodeStatuses"
+        :execution-tree="executionTree"
       />
     </Card>
 

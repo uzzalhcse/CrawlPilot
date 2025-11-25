@@ -16,6 +16,20 @@ export interface LogEntry {
     metadata?: any
 }
 
+export interface NodeExecution {
+    id: string
+    node_id: string
+    node_execution_id?: string
+    parent_node_execution_id?: string | null
+    node_type?: string
+    status: 'running' | 'completed' | 'failed' | 'pending'
+    startTime?: string
+    endTime?: string
+    result?: any
+    error?: string
+    children: NodeExecution[]
+}
+
 export function useExecutionStream(executionId: string) {
     const executionsStore = useExecutionsStore()
     const isConnected = ref(false)
@@ -23,6 +37,8 @@ export function useExecutionStream(executionId: string) {
     const currentPhase = ref<string | null>(null)
     const activeNodes = ref<Set<string>>(new Set())
     const nodeStatuses = ref(new Map<string, any>())
+    const nodeExecutions = ref(new Map<string, NodeExecution>()) // Track all node executions by node_execution_id
+    const executionTree = ref<NodeExecution[]>([]) // Root nodes
 
     let eventSource: EventSource | null = null
 
@@ -119,6 +135,7 @@ export function useExecutionStream(executionId: string) {
         eventSource.addEventListener('node_completed', (e: MessageEvent) => {
             const event = JSON.parse(e.data)
             const data = event.data
+            console.log('[SSE] node_completed event received:', data) // DEBUG
             activeNodes.value.delete(data.node_id)
 
             // Update node status
@@ -130,12 +147,22 @@ export function useExecutionStream(executionId: string) {
                 result: data.result // Capture result
             })
 
+            // Build execution tree
+            if (data.node_execution_id) {
+                console.log('[TREE] Building tree node:', data.node_execution_id, 'parent:', data.parent_node_execution_id) // DEBUG
+                addNodeExecution(data.node_execution_id, data.node_id, data.parent_node_execution_id, data.node_type, 'completed')
+                console.log('[TREE] Current tree:', executionTree.value) // DEBUG
+            } else {
+                console.warn('[TREE] No node_execution_id in event!', data) // DEBUG
+            }
+
             logs.value.push(createLogEntry(`Node completed: ${data.node_id}`, 'debug', data))
         })
 
         eventSource.addEventListener('node_failed', (e: MessageEvent) => {
             const event = JSON.parse(e.data)
             const data = event.data
+            console.log('[SSE] node_failed event received:', data) // DEBUG
             activeNodes.value.delete(data.node_id)
 
             // Update node status
@@ -146,6 +173,15 @@ export function useExecutionStream(executionId: string) {
                 endTime: new Date().toISOString(),
                 error: data.error
             })
+
+            // Build execution tree
+            if (data.node_execution_id) {
+                console.log('[TREE] Building tree node (failed):', data.node_execution_id, 'parent:', data.parent_node_execution_id) // DEBUG
+                addNodeExecution(data.node_execution_id, data.node_id, data.parent_node_execution_id, data.node_type, 'failed', data.error)
+                console.log('[TREE] Current tree:', executionTree.value) // DEBUG
+            } else {
+                console.warn('[TREE] No node_execution_id in failed event!', data) // DEBUG
+            }
 
             logs.value.push(createLogEntry(`Node failed: ${data.error}`, 'warn', data))
         })
@@ -173,6 +209,48 @@ export function useExecutionStream(executionId: string) {
         })
     }
 
+    // Helper to build execution tree from events
+    const addNodeExecution = (
+        nodeExecId: string,
+        nodeId: string,
+        parentNodeExecId: string | null | undefined,
+        nodeType: string | undefined,
+        status: NodeExecution['status'],
+        error?: string
+    ) => {
+        // Create or update node execution
+        const nodeExecution: NodeExecution = nodeExecutions.value.get(nodeExecId) || {
+            id: nodeId,
+            node_id: nodeId,
+            node_execution_id: nodeExecId,
+            parent_node_execution_id: parentNodeExecId,
+            node_type: nodeType,
+            status,
+            startTime: new Date().toISOString(),
+            children: []
+        }
+
+        nodeExecution.status = status
+        nodeExecution.endTime = new Date().toISOString()
+        if (error) nodeExecution.error = error
+
+        nodeExecutions.value.set(nodeExecId, nodeExecution)
+
+        // Update tree structure
+        if (parentNodeExecId && nodeExecutions.value.has(parentNodeExecId)) {
+            // Has parent - add as child
+            const parent = nodeExecutions.value.get(parentNodeExecId)!
+            if (!parent.children.find(c => c.node_execution_id === nodeExecId)) {
+                parent.children.push(nodeExecution)
+            }
+        } else {
+            // No parent or parent not found yet - add to roots
+            if (!executionTree.value.find(n => n.node_execution_id === nodeExecId)) {
+                executionTree.value.push(nodeExecution)
+            }
+        }
+    }
+
     const disconnect = () => {
         if (eventSource) {
             eventSource.close()
@@ -192,7 +270,9 @@ export function useExecutionStream(executionId: string) {
         logs,
         currentPhase,
         activeNodes,
-        nodeStatuses
+        nodeStatuses,
+        nodeExecutions,
+        executionTree
     }
 }
 

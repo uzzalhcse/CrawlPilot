@@ -7,7 +7,6 @@ import { MiniMap } from '@vue-flow/minimap'
 import ExecutionNode from './ExecutionNode.vue'
 import NodeDetailPanel from './NodeDetailPanel.vue'
 import type { WorkflowNode, WorkflowEdge } from '@/types'
-import { convertNodesToWorkflowConfig } from '@/lib/workflow-utils'
 
 // Import Vue Flow styles
 import '@vue-flow/core/dist/style.css'
@@ -19,6 +18,7 @@ const props = defineProps<{
   workflowConfig: any
   activeNodes: Set<string>
   nodeStatuses: Map<string, any>
+  executionTree?: any[] // NEW: Array of NodeExecution from useExecutionStream
 }>()
 
 const nodes = ref<WorkflowNode[]>([])
@@ -192,6 +192,107 @@ const initGraph = () => {
   setTimeout(() => fitView(), 100)
 }
 
+// Build graph from execution tree (dynamic, live data)
+const buildGraphFromExecutionTree = () => {
+  console.log('[GRAPH] buildGraphFromExecutionTree called with tree:', props.executionTree) // DEBUG
+  if (!props.executionTree || props.executionTree.length === 0) {
+    console.warn('[GRAPH] No execution tree data, skipping') // DEBUG
+    return
+  }
+  console.log('[GRAPH] Building dynamic graph from', props.executionTree.length, 'root nodes') // DEBUG
+
+  const loadedNodes: WorkflowNode[] = []
+  const loadedEdges: WorkflowEdge[] = []
+  const nodePositions = new Map<string, { x: number, y: number }>()
+
+  // Flatten tree to get all nodes
+  const allExecutions: any[] = []
+  const flattenTree = (nodes: any[]) => {
+    nodes.forEach(node => {
+      allExecutions.push(node)
+      if (node.children && node.children.length > 0) {
+        flattenTree(node.children)
+      }
+    })
+  }
+  flattenTree(props.executionTree)
+
+  // Simple layout: arrange by level (depth in tree)
+  const levelMap = new Map<number, any[]>()
+  const calculateLevel = (node: any, level: number = 0): number => {
+    if (!levelMap.has(level)) levelMap.set(level, [])
+    levelMap.get(level)!.push(node)
+    
+    let maxChildLevel = level
+    if (node.children && node.children.length > 0) {
+      node.children.forEach((child: any) => {
+        const childLevel = calculateLevel(child, level + 1)
+       if (childLevel > maxChildLevel) maxChildLevel = childLevel
+      })
+    }
+    return maxChildLevel
+  }
+
+  props.executionTree.forEach(root => calculateLevel(root, 0))
+
+  // Position nodes
+  const nodeWidth = 280
+  const horizontalGap = 100
+  const verticalGap = 200
+  let currentY = 100
+
+  levelMap.forEach((levelNodes, level) => {
+    const totalWidth = (levelNodes.length * nodeWidth) + ((levelNodes.length - 1) * horizontalGap)
+    const startX = Math.max(100, (1200 - totalWidth) / 2)
+
+    levelNodes.forEach((node, index) => {
+      nodePositions.set(node.node_execution_id, {
+        x: startX + (index * (nodeWidth + horizontalGap)),
+        y: currentY
+      })
+    })
+    currentY += verticalGap
+  })
+
+  // Create Vue Flow nodes
+  allExecutions.forEach(execution => {
+    const position = nodePositions.get(execution.node_execution_id) || { x: 0, y: 0 }
+    
+    loadedNodes.push({
+      id: execution.node_execution_id,
+      type: 'custom',
+      position,
+      data: {
+        label: execution.node_id,
+        nodeType: execution.node_type || 'unknown',
+        params: {},
+        status: execution.status,
+        error: execution.error,
+        result: execution.result
+      }
+    })
+
+    // Create edge from parent
+    if (execution.parent_node_execution_id) {
+      loadedEdges.push({
+        id: `${execution.parent_node_execution_id}-${execution.node_execution_id}`,
+        source: execution.parent_node_execution_id,
+        target: execution.node_execution_id,
+        animated: execution.status === 'running',
+        style: { 
+          stroke: execution.status === 'completed' ? '#22c55e' : 
+                  execution.status === 'failed' ? '#ef4444' : '#94a3b8' 
+        }
+      })
+    }
+  })
+
+  nodes.value = loadedNodes
+  edges.value = loadedEdges
+  
+  setTimeout(() => fitView(), 100)
+}
+
 // Watch for status updates
 watch(() => props.nodeStatuses, (newStatuses) => {
   nodes.value = nodes.value.map(node => {
@@ -225,8 +326,26 @@ const onNodeClick = (event: any) => {
 }
 
 onMounted(() => {
-  initGraph()
+  console.log('[GRAPH] Component mounted. executionTree:', props.executionTree) // DEBUG
+  console.log('[GRAPH] workflowConfig:', props.workflowConfig) // DEBUG
+  // Try execution tree first, fallback to workflow config
+  if (props.executionTree && props.executionTree.length > 0) {
+    console.log('[GRAPH] Using execution tree') // DEBUG
+    buildGraphFromExecutionTree()
+  } else {
+    console.log('[GRAPH] Using static workflow config') // DEBUG
+    initGraph()
+  }
 })
+
+// Watch for execution tree updates (live mode)
+watch(() => props.executionTree, (newTree) => {
+  console.log('[GRAPH] executionTree changed:', newTree) // DEBUG
+  if (newTree && newTree.length > 0) {
+    console.log('[GRAPH] Rebuilding graph from updated tree') // DEBUG
+    buildGraphFromExecutionTree()
+  }
+}, { deep: true })
 </script>
 
 <template>
