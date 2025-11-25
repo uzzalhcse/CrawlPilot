@@ -2,36 +2,36 @@ package models
 
 import "time"
 
-// HealthCheckReport represents a workflow health check report
-type HealthCheckReport struct {
+// MonitoringReport represents a workflow monitoring report
+type MonitoringReport struct {
 	ID           string                            `json:"id" db:"id"`
 	WorkflowID   string                            `json:"workflow_id" db:"workflow_id"`
 	WorkflowName string                            `json:"workflow_name" db:"-"`
 	ExecutionID  *string                           `json:"execution_id,omitempty" db:"execution_id"`
-	Status       HealthCheckStatus                 `json:"status" db:"status"`
+	Status       MonitoringStatus                  `json:"status" db:"status"`
 	StartedAt    time.Time                         `json:"started_at" db:"started_at"`
 	CompletedAt  *time.Time                        `json:"completed_at,omitempty" db:"completed_at"`
 	Duration     int64                             `json:"duration_ms" db:"duration_ms"`
 	Results      map[string]*PhaseValidationResult `json:"phase_results" db:"-"`
 	ResultsJSON  []byte                            `json:"-" db:"results"`
-	Summary      *HealthCheckSummary               `json:"summary" db:"-"`
+	Summary      *MonitoringSummary                `json:"summary" db:"-"`
 	SummaryJSON  []byte                            `json:"-" db:"summary"`
-	Config       *HealthCheckConfig                `json:"config" db:"-"`
+	Config       *MonitoringConfig                 `json:"config" db:"-"`
 	ConfigJSON   []byte                            `json:"-" db:"config"`
 }
 
-// HealthCheckStatus represents the overall health status
-type HealthCheckStatus string
+// MonitoringStatus represents the overall health status
+type MonitoringStatus string
 
 const (
-	HealthCheckStatusRunning  HealthCheckStatus = "running"
-	HealthCheckStatusHealthy  HealthCheckStatus = "healthy"
-	HealthCheckStatusDegraded HealthCheckStatus = "degraded"
-	HealthCheckStatusFailed   HealthCheckStatus = "failed"
+	MonitoringStatusRunning  MonitoringStatus = "running"
+	MonitoringStatusHealthy  MonitoringStatus = "healthy"
+	MonitoringStatusDegraded MonitoringStatus = "degraded"
+	MonitoringStatusFailed   MonitoringStatus = "failed"
 )
 
-// HealthCheckConfig contains configuration for health check execution
-type HealthCheckConfig struct {
+// MonitoringConfig contains configuration for monitoring execution
+type MonitoringConfig struct {
 	MaxURLsPerPhase    int  `json:"max_urls_per_phase"`
 	MaxPaginationPages int  `json:"max_pagination_pages"`
 	MaxDepth           int  `json:"max_depth"`
@@ -80,8 +80,8 @@ type ValidationIssue struct {
 	Suggestion string      `json:"suggestion,omitempty"`
 }
 
-// HealthCheckSummary provides an aggregate summary of health check results
-type HealthCheckSummary struct {
+// MonitoringSummary provides an aggregate summary of monitoring results
+type MonitoringSummary struct {
 	TotalPhases    int               `json:"total_phases"`
 	TotalNodes     int               `json:"total_nodes"`
 	PassedNodes    int               `json:"passed_nodes"`
@@ -90,8 +90,8 @@ type HealthCheckSummary struct {
 	CriticalIssues []ValidationIssue `json:"critical_issues"`
 }
 
-// HealthCheckSchedule represents a scheduled health check configuration
-type HealthCheckSchedule struct {
+// MonitoringSchedule represents a scheduled monitoring configuration
+type MonitoringSchedule struct {
 	ID                 string              `json:"id" db:"id"`
 	WorkflowID         string              `json:"workflow_id" db:"workflow_id"`
 	Schedule           string              `json:"schedule" db:"schedule"` // cron format
@@ -104,7 +104,7 @@ type HealthCheckSchedule struct {
 	UpdatedAt          time.Time           `json:"updated_at" db:"updated_at"`
 }
 
-// NotificationConfig defines how to notify on health check results
+// NotificationConfig defines how to notify on monitoring results
 type NotificationConfig struct {
 	Slack         *SlackConfig `json:"slack,omitempty"`
 	OnlyOnFailure bool         `json:"only_on_failure"`
@@ -134,8 +134,8 @@ const (
 	ComparisonUnchanged ComparisonStatus = "unchanged"
 )
 
-// HealthCheckSnapshot stores diagnostic data captured when health check fails
-type HealthCheckSnapshot struct {
+// MonitoringSnapshot stores diagnostic data captured when monitoring fails
+type MonitoringSnapshot struct {
 	ID              string                 `json:"id" db:"id"`
 	ReportID        string                 `json:"report_id" db:"report_id"`
 	NodeID          string                 `json:"node_id" db:"node_id"`
@@ -165,7 +165,7 @@ type ConsoleLog struct {
 	Source    string    `json:"source,omitempty"`
 }
 
-// FixSuggestion represents an AI-generated fix for a failed health check
+// FixSuggestion represents an AI-generated fix for a failed monitoring
 type FixSuggestion struct {
 	ID                   string                 `json:"id"`
 	SnapshotID           string                 `json:"snapshot_id"`

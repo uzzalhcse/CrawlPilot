@@ -52,8 +52,8 @@ func (e *ExtractLinksExecutor) Execute(ctx context.Context, input *nodes.Executi
 	}, nil
 }
 
-// ValidateForHealthCheck performs health check validation for extract_links
-func (e *ExtractLinksExecutor) ValidateForHealthCheck(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
+// ValidateForMonitoring performs monitoring validation for extract_links
+func (e *ExtractLinksExecutor) ValidateForMonitoring(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
 	result := &models.NodeValidationResult{
 		NodeType: string(models.NodeTypeExtractLinks),
 		Status:   models.ValidationStatusPass,

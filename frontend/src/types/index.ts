@@ -246,6 +246,8 @@ export interface WorkflowNode {
   type: string
   position: { x: number; y: number }
   data: NodeData
+  draggable?: boolean
+  selectable?: boolean
 }
 
 export interface NodeData {
@@ -262,6 +264,9 @@ export interface NodeData {
   level?: number
   branch?: 'true' | 'false'
   isVirtual?: boolean
+  index?: number // For phase labels
+  phaseWidth?: number // For phase labels
+  field?: any // For extractField nodes
   // Execution status
   status?: 'pending' | 'running' | 'completed' | 'failed'
   startTime?: string
@@ -317,6 +322,7 @@ export type NodeType =
   | 'parallel'
   // Virtual Nodes
   | 'extractField'
+  | 'phaseLabel'
 
 export interface NodeCategory {
   name: string

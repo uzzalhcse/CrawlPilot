@@ -4,24 +4,24 @@ import (
 	"context"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/uzzalhcse/crawlify/internal/healthcheck"
-	"github.com/uzzalhcse/crawlify/internal/healthcheck/notifications"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/monitoring"
+	"github.com/uzzalhcse/crawlify/internal/monitoring/notifications"
 	"github.com/uzzalhcse/crawlify/internal/storage"
 	"github.com/uzzalhcse/crawlify/pkg/models"
 	"go.uber.org/zap"
 )
 
-// ScheduleHandler handles health check schedule endpoints
+// ScheduleHandler handles monitoring schedule endpoints
 type ScheduleHandler struct {
-	scheduleRepo     *storage.HealthCheckScheduleRepository
-	schedulerService *healthcheck.SchedulerService
+	scheduleRepo     *storage.MonitoringScheduleRepository
+	schedulerService *monitoring.SchedulerService
 }
 
 // NewScheduleHandler creates a new schedule handler
 func NewScheduleHandler(
-	scheduleRepo *storage.HealthCheckScheduleRepository,
-	schedulerService *healthcheck.SchedulerService,
+	scheduleRepo *storage.MonitoringScheduleRepository,
+	schedulerService *monitoring.SchedulerService,
 ) *ScheduleHandler {
 	return &ScheduleHandler{
 		scheduleRepo:     scheduleRepo,
@@ -44,7 +44,7 @@ func (h *ScheduleHandler) GetSchedule(c *fiber.Ctx) error {
 	return c.JSON(schedule)
 }
 
-// CreateSchedule creates or updates a health check schedule
+// CreateSchedule creates or updates a monitoring schedule
 func (h *ScheduleHandler) CreateSchedule(c *fiber.Ctx) error {
 	workflowID := c.Params("id")
 	ctx := context.Background()
@@ -92,7 +92,7 @@ func (h *ScheduleHandler) CreateSchedule(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(schedule)
 }
 
-// DeleteSchedule deletes a health check schedule
+// DeleteSchedule deletes a monitoring schedule
 func (h *ScheduleHandler) DeleteSchedule(c *fiber.Ctx) error {
 	workflowID := c.Params("id")
 	ctx := context.Background()
@@ -123,12 +123,12 @@ func (h *ScheduleHandler) TestNotification(c *fiber.Ctx) error {
 	}
 
 	// Create a dummy report for testing
-	testReport := &models.HealthCheckReport{
+	testReport := &models.MonitoringReport{
 		ID:           "test-notification",
 		WorkflowID:   workflowID,
 		WorkflowName: "Test Workflow",
-		Status:       models.HealthCheckStatusHealthy,
-		Summary: &models.HealthCheckSummary{
+		Status:       models.MonitoringStatusHealthy,
+		Summary: &models.MonitoringSummary{
 			TotalNodes:   5,
 			PassedNodes:  5,
 			FailedNodes:  0,

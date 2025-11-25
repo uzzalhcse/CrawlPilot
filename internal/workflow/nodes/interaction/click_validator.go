@@ -8,8 +8,8 @@ import (
 	"github.com/uzzalhcse/crawlify/pkg/models"
 )
 
-// ValidateForHealthCheck performs health check validation for click nodes
-func (e *ClickExecutor) ValidateForHealthCheck(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
+// ValidateForMonitoring performs monitoring validation for click nodes
+func (e *ClickExecutor) ValidateForMonitoring(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
 	result := &models.NodeValidationResult{
 		NodeType: string(models.NodeTypeClick),
 		Status:   models.ValidationStatusPass,

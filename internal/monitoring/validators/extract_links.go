@@ -3,8 +3,8 @@ package validators
 import (
 	"context"
 
-	"github.com/uzzalhcse/crawlify/internal/healthcheck"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/monitoring"
 	"github.com/uzzalhcse/crawlify/internal/workflow/nodes"
 	"github.com/uzzalhcse/crawlify/pkg/models"
 	"go.uber.org/zap"
@@ -12,20 +12,20 @@ import (
 
 // ExtractLinksValidator validates extract_links nodes
 type ExtractLinksValidator struct {
-	*healthcheck.GenericValidator
+	*monitoring.GenericValidator
 }
 
 // NewExtractLinksValidator creates a new extract links validator
 func NewExtractLinksValidator() *ExtractLinksValidator {
 	return &ExtractLinksValidator{
-		GenericValidator: healthcheck.NewGenericValidator(models.NodeTypeExtractLinks),
+		GenericValidator: monitoring.NewGenericValidator(models.NodeTypeExtractLinks),
 	}
 }
 
-// ValidateForHealthCheck performs validation specific to extract_links nodes
-func (v *ExtractLinksValidator) ValidateForHealthCheck(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
+// ValidateForMonitoring performs validation specific to extract_links nodes
+func (v *ExtractLinksValidator) ValidateForMonitoring(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
 	// Start with generic validation
-	result, err := v.GenericValidator.ValidateForHealthCheck(ctx, input)
+	result, err := v.GenericValidator.ValidateForMonitoring(ctx, input)
 	if err != nil {
 		return result, err
 	}

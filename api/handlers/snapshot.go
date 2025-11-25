@@ -8,18 +8,18 @@ import (
 	"path/filepath"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/uzzalhcse/crawlify/internal/healthcheck"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/monitoring"
 	"go.uber.org/zap"
 )
 
 // SnapshotHandler handles snapshot API requests
 type SnapshotHandler struct {
-	snapshotService *healthcheck.SnapshotService
+	snapshotService *monitoring.SnapshotService
 }
 
 // NewSnapshotHandler creates a new snapshot handler
-func NewSnapshotHandler(snapshotService *healthcheck.SnapshotService) *SnapshotHandler {
+func NewSnapshotHandler(snapshotService *monitoring.SnapshotService) *SnapshotHandler {
 	return &SnapshotHandler{
 		snapshotService: snapshotService,
 	}
@@ -43,7 +43,7 @@ func (h *SnapshotHandler) GetSnapshot(c *fiber.Ctx) error {
 	return c.JSON(snapshot)
 }
 
-// ListSnapshotsByReport retrieves all snapshots for a health check report
+// ListSnapshotsByReport retrieves all snapshots for a monitoring report
 func (h *SnapshotHandler) ListSnapshotsByReport(c *fiber.Ctx) error {
 	ctx := context.Background()
 	reportID := c.Params("report_id")

@@ -7,25 +7,53 @@ import {
   Workflow,
   PlayCircle,
   BarChart3,
-  Activity,
   Settings,
-  Moon,
-  Sun,
-  Menu,
-  X
+  ChevronDown,
+  Search,
+  Bell,
+  ChevronLeft,
+  ChevronRight,
+  Home,
+  Store,
+  FileText,
+  Zap,
+  Calendar,
+  MessageSquare,
+  Server,
+  HardDrive,
+  CreditCard,
+  HelpCircle
 } from 'lucide-vue-next'
 
 const router = useRouter()
 const themeStore = useThemeStore()
-const isSidebarOpen = ref(true)
+const isCollapsed = ref(false)
 
 const menuItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', route: '/' },
-  { icon: Workflow, label: 'Workflows', route: '/workflows' },
+  { icon: Home, label: 'Home', route: '/' },
+  { icon: Store, label: 'Store', route: '/store' },
+  { icon: Workflow, label: 'Workflows', route: '/workflows', badge: null },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
-  { icon: Activity, label: 'Health Checks', route: '/health-checks' },
-  { icon: BarChart3, label: 'Analytics', route: '/analytics' }
+  { icon: FileText, label: 'Saved tasks', route: '/tasks' },
+  { icon: Zap, label: 'Integrations', route: '/integrations' },
+  { icon: Calendar, label: 'Monitoring', route: '/monitoring' },
 ]
+
+const developmentItems = [
+  { icon: Workflow, label: 'My Workflows', route: '/my-workflows' },
+  { icon: BarChart3, label: 'Analytics', route: '/analytics' },
+  { icon: MessageSquare, label: 'Messaging', route: '/messaging' },
+]
+
+const bottomItems = [
+  { icon: Server, label: 'Proxy', route: '/proxy' },
+  { icon: HardDrive, label: 'Storage', route: '/storage' },
+  { icon: CreditCard, label: 'Billing', route: '/billing' },
+  { icon: Settings, label: 'Settings', route: '/settings' },
+  { icon: HelpCircle, label: 'Help', route: '/help' },
+]
+
+const devSectionOpen = ref(true)
 
 const isActive = (route: string) => {
   if (route === '/') {
@@ -35,7 +63,7 @@ const isActive = (route: string) => {
 }
 
 const toggleSidebar = () => {
-  isSidebarOpen.value = !isSidebarOpen.value
+  isCollapsed.value = !isCollapsed.value
 }
 
 onMounted(() => {
@@ -48,81 +76,188 @@ onMounted(() => {
     <!-- Sidebar -->
     <aside
       :class="[
-        'fixed left-0 top-0 z-40 h-screen transition-transform duration-300',
-        isSidebarOpen ? 'translate-x-0' : '-translate-x-full',
-        'w-64 bg-sidebar border-r border-sidebar-border'
+        'fixed left-0 top-0 z-40 h-screen transition-all duration-300 bg-sidebar border-r border-sidebar-border flex flex-col',
+        isCollapsed ? 'w-14' : 'w-56'
       ]"
     >
-      <div class="flex h-full flex-col">
-        <!-- Logo -->
-        <div class="flex h-16 items-center justify-between border-b border-sidebar-border px-6">
-          <div class="flex items-center gap-2">
-            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Workflow class="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span class="text-xl font-bold text-sidebar-foreground">Crawlify</span>
+      <!-- User Section -->
+      <div v-if="!isCollapsed" class="p-3 border-b border-sidebar-border">
+        <button class="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-sidebar-accent transition-colors">
+          <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-medium text-primary">
+            U
           </div>
-        </div>
+          <div class="flex-1 text-left min-w-0">
+            <div class="text-sm font-medium truncate">Uzzal</div>
+            <div class="text-xs text-muted-foreground truncate">Personal</div>
+          </div>
+          <ChevronDown class="w-4 h-4 text-muted-foreground shrink-0" />
+        </button>
+      </div>
 
-        <!-- Navigation -->
-        <nav class="flex-1 space-y-1 px-3 py-4">
+      <!-- Collapsed User Section -->
+      <div v-else class="p-2 border-b border-sidebar-border flex justify-center">
+        <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-medium text-primary">
+          U
+        </div>
+      </div>
+
+      <!-- Search Bar -->
+      <div v-if="!isCollapsed" class="p-3 border-b border-sidebar-border">
+        <div class="relative">
+          <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search..."
+            class="w-full pl-8 pr-12 py-1.5 text-sm bg-background border border-sidebar-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono bg-muted text-muted-foreground rounded border border-sidebar-border">
+            ⌘K
+          </kbd>
+        </div>
+      </div>
+
+      <!-- Notification Icon (Collapsed) -->
+      <div v-else class="p-2 border-b border-sidebar-border flex justify-center">
+        <button class="p-2 hover:bg-sidebar-accent rounded-lg transition-colors">
+          <Bell class="w-4 h-4 text-muted-foreground" />
+        </button>
+      </div>
+
+      <!-- Get Started Progress -->
+      <div v-if="!isCollapsed" class="p-3 border-b border-sidebar-border">
+        <div class="flex items-center justify-between text-xs mb-1.5">
+          <span class="text-muted-foreground">Get started</span>
+          <span class="text-muted-foreground">1/4 steps</span>
+        </div>
+        <div class="h-1 bg-muted rounded-full overflow-hidden">
+          <div class="h-full bg-primary" style="width: 25%"></div>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 overflow-y-auto py-2 scrollbar-hide">
+        <div class="px-2 space-y-0.5">
           <RouterLink
             v-for="item in menuItems"
             :key="item.route"
             :to="item.route"
             :class="[
-              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+              'group flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors',
               isActive(item.route)
-                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                ? 'bg-sidebar-accent text-foreground'
+                : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground',
+              isCollapsed && 'justify-center'
             ]"
           >
-            <component :is="item.icon" class="h-5 w-5" />
-            <span>{{ item.label }}</span>
+            <component :is="item.icon" class="w-4 h-4 shrink-0" />
+            <span v-if="!isCollapsed">{{ item.label }}</span>
           </RouterLink>
-        </nav>
+        </div>
 
-        <!-- Footer -->
-        <div class="border-t border-sidebar-border p-4">
+        <!-- Development Section -->
+        <div class="mt-4">
           <button
-            @click="themeStore.toggleTheme"
-            class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            v-if="!isCollapsed"
+            @click="devSectionOpen = !devSectionOpen"
+            class="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
           >
-            <Moon v-if="!themeStore.isDark" class="h-5 w-5" />
-            <Sun v-else class="h-5 w-5" />
-            <span>{{ themeStore.isDark ? 'Light Mode' : 'Dark Mode' }}</span>
+            <span>Development</span>
+            <ChevronRight :class="['w-3 h-3 transition-transform', devSectionOpen && 'rotate-90']" />
+          </button>
+          
+          <div v-if="devSectionOpen || isCollapsed" class="px-2 space-y-0.5 mt-1">
+            <RouterLink
+              v-for="item in developmentItems"
+              :key="item.route"
+              :to="item.route"
+              :class="[
+                'group flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors',
+                isActive(item.route)
+                  ? 'bg-sidebar-accent text-foreground'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground',
+                isCollapsed && 'justify-center'
+              ]"
+            >
+              <component :is="item.icon" class="w-4 h-4 shrink-0" />
+              <span v-if="!isCollapsed">{{ item.label }}</span>
+            </RouterLink>
+          </div>
+        </div>
+
+        <!-- Bottom Items -->
+        <div class="mt-4 px-2 space-y-0.5">
+          <RouterLink
+            v-for="item in bottomItems"
+            :key="item.route"
+            :to="item.route"
+            :class="[
+              'group flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors',
+              isActive(item.route)
+                ? 'bg-sidebar-accent text-foreground'
+                : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground',
+              isCollapsed && 'justify-center'
+            ]"
+          >
+            <component :is="item.icon" class="w-4 h-4 shrink-0" />
+            <span v-if="!isCollapsed">{{ item.label }}</span>
+          </RouterLink>
+        </div>
+      </nav>
+
+      <!-- Footer -->
+      <div class="border-t border-sidebar-border">
+        <!-- Usage Stats -->
+        <div v-if="!isCollapsed" class="p-3 text-xs space-y-1">
+          <div class="flex justify-between text-muted-foreground">
+            <span>RAM</span>
+            <span>0 MB / 8 GB</span>
+          </div>
+          <div class="flex justify-between text-muted-foreground">
+            <span>Usage</span>
+            <span>$0.00 / $5.00</span>
+          </div>
+          <button class="w-full mt-2 px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-md text-xs font-medium flex items-center justify-between transition-colors">
+            <span>Upgrade to Starter</span>
+            <ChevronRight class="w-3 h-3" />
+          </button>
+        </div>
+
+        <!-- Logo and Toggle -->
+        <div class="p-3 flex items-center justify-between">
+          <div v-if="!isCollapsed" class="flex items-center gap-2">
+            <Workflow class="w-5 h-5 text-primary" />
+            <span class="text-sm font-bold">Crawlify</span>
+          </div>
+          <button
+            @click="toggleSidebar"
+            class="p-2 hover:bg-sidebar-accent rounded-lg transition-colors"
+            :class="isCollapsed && 'mx-auto'"
+          >
+            <ChevronLeft v-if="!isCollapsed" class="w-4 h-4" />
+            <ChevronRight v-else class="w-4 h-4" />
           </button>
         </div>
       </div>
     </aside>
 
     <!-- Main Content -->
-    <div :class="['flex flex-1 flex-col', isSidebarOpen ? 'ml-64' : 'ml-0']">
-      <!-- Top Bar -->
-      <header class="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-6">
-        <button
-          @click="toggleSidebar"
-          class="rounded-lg p-2 hover:bg-accent"
-        >
-          <Menu v-if="!isSidebarOpen" class="h-5 w-5" />
-          <X v-else class="h-5 w-5" />
-        </button>
-
-        <div class="flex flex-1 items-center justify-between">
-          <h1 class="text-xl font-semibold">
-            {{ router.currentRoute.value.meta.title || 'Dashboard' }}
-          </h1>
-
-          <div class="flex items-center gap-4">
-            <!-- Add user menu or other actions here -->
-          </div>
-        </div>
-      </header>
-
+    <div :class="['flex flex-1 flex-col transition-all duration-300', isCollapsed ? 'ml-14' : 'ml-56']">
       <!-- Page Content -->
-      <main class="flex-1 overflow-y-auto p-6">
+      <main class="flex-1 overflow-y-auto bg-background">
         <RouterView />
       </main>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+</style>

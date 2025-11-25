@@ -21,7 +21,7 @@ type AIClient interface {
 	Close() error
 }
 
-// AutoFixService analyzes health check failures and suggests fixes
+// AutoFixService analyzes monitoring failures and suggests fixes
 type AutoFixService struct {
 	aiClient AIClient
 	logger   *zap.Logger
@@ -45,8 +45,8 @@ func NewAutoFixService(aiClient AIClient, logger *zap.Logger) *AutoFixService {
 	}
 }
 
-// AnalyzeSnapshot analyzes a health check snapshot and suggests fixes
-func (s *AutoFixService) AnalyzeSnapshot(ctx context.Context, snapshot *models.HealthCheckSnapshot, screenshotPath string, baselinePreview string) (*FixSuggestion, error) {
+// AnalyzeSnapshot analyzes a monitoring snapshot and suggests fixes
+func (s *AutoFixService) AnalyzeSnapshot(ctx context.Context, snapshot *models.MonitoringSnapshot, screenshotPath string, baselinePreview string) (*FixSuggestion, error) {
 	s.logger.Info("Analyzing snapshot with AI",
 		zap.String("snapshot_id", snapshot.ID),
 		zap.String("node_id", snapshot.NodeID))
@@ -197,7 +197,7 @@ func (s *AutoFixService) verifySuggestion(selector string, domPath string) *mode
 }
 
 // buildPrompt constructs the AI prompt from snapshot data
-func (s *AutoFixService) buildPrompt(snapshot *models.HealthCheckSnapshot, domContent string, baselinePreview string) string {
+func (s *AutoFixService) buildPrompt(snapshot *models.MonitoringSnapshot, domContent string, baselinePreview string) string {
 	var prompt strings.Builder
 
 	prompt.WriteString("You are an expert web scraping engineer. Analyze this failed CSS selector and suggest a fix.\n\n")

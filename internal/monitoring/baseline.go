@@ -1,4 +1,4 @@
-package healthcheck
+package monitoring
 
 import (
 	"context"
@@ -8,17 +8,17 @@ import (
 	"github.com/uzzalhcse/crawlify/pkg/models"
 )
 
-// BaselineService manages baseline health checks and comparisons
+// BaselineService manages baseline monitorings and comparisons
 type BaselineService struct {
-	repo *storage.HealthCheckRepository
+	repo *storage.MonitoringRepository
 }
 
 // NewBaselineService creates a new baseline service
-func NewBaselineService(repo *storage.HealthCheckRepository) *BaselineService {
+func NewBaselineService(repo *storage.MonitoringRepository) *BaselineService {
 	return &BaselineService{repo: repo}
 }
 
-// SetAsBaseline marks a health check report as the baseline for its workflow
+// SetAsBaseline marks a monitoring report as the baseline for its workflow
 func (s *BaselineService) SetAsBaseline(ctx context.Context, reportID string) error {
 	// Get the report
 	report, err := s.repo.GetByID(ctx, reportID)
@@ -42,12 +42,12 @@ func (s *BaselineService) SetAsBaseline(ctx context.Context, reportID string) er
 }
 
 // GetBaseline retrieves the baseline report for a workflow
-func (s *BaselineService) GetBaseline(ctx context.Context, workflowID string) (*models.HealthCheckReport, error) {
+func (s *BaselineService) GetBaseline(ctx context.Context, workflowID string) (*models.MonitoringReport, error) {
 	return s.repo.GetBaseline(ctx, workflowID)
 }
 
-// CompareWithBaseline compares a health check report with the baseline
-func (s *BaselineService) CompareWithBaseline(current, baseline *models.HealthCheckReport) []models.BaselineComparison {
+// CompareWithBaseline compares a monitoring report with the baseline
+func (s *BaselineService) CompareWithBaseline(current, baseline *models.MonitoringReport) []models.BaselineComparison {
 	if baseline == nil || baseline.Summary == nil || current.Summary == nil {
 		return []models.BaselineComparison{}
 	}

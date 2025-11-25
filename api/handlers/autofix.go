@@ -23,7 +23,7 @@ type AutoFixHandler struct {
 	suggestionRepo   *storage.FixSuggestionRepository
 	workflowRepo     *storage.WorkflowRepository
 	versionRepo      *storage.WorkflowVersionRepository
-	healthCheckRepo  *storage.HealthCheckRepository // NEW
+	monitoringRepo   *storage.MonitoringRepository // NEW
 	autoFixService   *ai.AutoFixService
 	snapshotBasePath string
 }
@@ -34,7 +34,7 @@ func NewAutoFixHandler(
 	suggestionRepo *storage.FixSuggestionRepository,
 	workflowRepo *storage.WorkflowRepository,
 	versionRepo *storage.WorkflowVersionRepository,
-	healthCheckRepo *storage.HealthCheckRepository, // NEW
+	monitoringRepo *storage.MonitoringRepository, // NEW
 	autoFixService *ai.AutoFixService,
 	snapshotBasePath string,
 ) *AutoFixHandler {
@@ -43,7 +43,7 @@ func NewAutoFixHandler(
 		suggestionRepo:   suggestionRepo,
 		workflowRepo:     workflowRepo,
 		versionRepo:      versionRepo,
-		healthCheckRepo:  healthCheckRepo,
+		monitoringRepo:   monitoringRepo,
 		autoFixService:   autoFixService,
 		snapshotBasePath: snapshotBasePath,
 	}
@@ -62,12 +62,12 @@ func (h *AutoFixHandler) AnalyzeSnapshot(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get health check report to find the correct WorkflowID
-	report, err := h.healthCheckRepo.GetByID(c.Context(), snapshot.ReportID)
+	// Get monitoring report to find the correct WorkflowID
+	report, err := h.monitoringRepo.GetByID(c.Context(), snapshot.ReportID)
 	if err != nil {
-		logger.Error("Failed to fetch health check report", zap.Error(err))
+		logger.Error("Failed to fetch monitoring report", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to fetch health check report",
+			"error": "Failed to fetch monitoring report",
 		})
 	}
 
@@ -94,7 +94,7 @@ func (h *AutoFixHandler) AnalyzeSnapshot(c *fiber.Ctx) error {
 
 	// Try to get baseline preview data to help AI understand expected output
 	var baselinePreview string
-	baseline, err := h.healthCheckRepo.GetBaseline(c.Context(), report.WorkflowID)
+	baseline, err := h.monitoringRepo.GetBaseline(c.Context(), report.WorkflowID)
 	if err == nil && baseline != nil {
 		// Get baseline snapshots for the same node
 		baselineSnapshots, err := h.snapshotRepo.GetByReportID(c.Context(), baseline.ID)

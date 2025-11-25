@@ -1,4 +1,4 @@
-package healthcheck
+package monitoring
 
 import (
 	"compress/gzip"
@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// SnapshotService handles capturing diagnostic data when health checks fail
+// SnapshotService handles capturing diagnostic data when monitorings fail
 type SnapshotService struct {
 	repo        *storage.SnapshotRepository
 	storagePath string
@@ -38,7 +38,7 @@ func (s *SnapshotService) CaptureSnapshot(
 	validationResult *models.NodeValidationResult,
 	browserCtx *browser.BrowserContext,
 	node *models.Node, // NEW: Pass node to determine field requirement
-) (*models.HealthCheckSnapshot, error) {
+) (*models.MonitoringSnapshot, error) {
 	s.logger.Info("Capturing snapshot for failed validation",
 		zap.String("node_id", nodeID),
 		zap.String("phase", phaseName),
@@ -52,7 +52,7 @@ func (s *SnapshotService) CaptureSnapshot(
 		return nil, fmt.Errorf("failed to create snapshot directory: %w", err)
 	}
 
-	snapshot := &models.HealthCheckSnapshot{
+	snapshot := &models.MonitoringSnapshot{
 		ReportID:        reportID,
 		NodeID:          nodeID,
 		PhaseName:       phaseName,
@@ -288,12 +288,12 @@ func (s *SnapshotService) captureConsoleLogs(browserCtx *browser.BrowserContext)
 }
 
 // GetSnapshot retrieves a snapshot by ID
-func (s *SnapshotService) GetSnapshot(ctx context.Context, id string) (*models.HealthCheckSnapshot, error) {
+func (s *SnapshotService) GetSnapshot(ctx context.Context, id string) (*models.MonitoringSnapshot, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
 // GetSnapshotsByReport retrieves all snapshots for a report
-func (s *SnapshotService) GetSnapshotsByReport(ctx context.Context, reportID string) ([]*models.HealthCheckSnapshot, error) {
+func (s *SnapshotService) GetSnapshotsByReport(ctx context.Context, reportID string) ([]*models.MonitoringSnapshot, error) {
 	return s.repo.GetByReportID(ctx, reportID)
 }
 

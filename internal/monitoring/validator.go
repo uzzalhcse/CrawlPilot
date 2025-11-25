@@ -1,4 +1,4 @@
-package healthcheck
+package monitoring
 
 import (
 	"context"
@@ -20,8 +20,8 @@ func NewGenericValidator(nodeType models.NodeType) *GenericValidator {
 	return &GenericValidator{nodeType: nodeType}
 }
 
-// ValidateForHealthCheck performs generic validation
-func (v *GenericValidator) ValidateForHealthCheck(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
+// ValidateForMonitoring performs generic validation
+func (v *GenericValidator) ValidateForMonitoring(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
 	result := &models.NodeValidationResult{
 		NodeType: string(v.nodeType),
 		Status:   models.ValidationStatusPass,

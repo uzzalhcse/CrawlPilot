@@ -8,22 +8,22 @@ import (
 	"github.com/uzzalhcse/crawlify/pkg/models"
 )
 
-// HealthCheckScheduleRepository handles schedule persistence
-type HealthCheckScheduleRepository struct {
+// MonitoringScheduleRepository handles schedule persistence
+type MonitoringScheduleRepository struct {
 	db *PostgresDB
 }
 
-// NewHealthCheckScheduleRepository creates a new schedule repository
-func NewHealthCheckScheduleRepository(db *PostgresDB) *HealthCheckScheduleRepository {
-	return &HealthCheckScheduleRepository{db: db}
+// NewMonitoringScheduleRepository creates a new schedule repository
+func NewMonitoringScheduleRepository(db *PostgresDB) *MonitoringScheduleRepository {
+	return &MonitoringScheduleRepository{db: db}
 }
 
-// Create creates a new health check schedule
-func (r *HealthCheckScheduleRepository) Create(ctx context.Context, schedule *models.HealthCheckSchedule) error {
+// Create creates a new monitoring schedule
+func (r *MonitoringScheduleRepository) Create(ctx context.Context, schedule *models.MonitoringSchedule) error {
 	notificationJSON, _ := json.Marshal(schedule.NotificationConfig)
 
 	query := `
-		INSERT INTO health_check_schedules
+		INSERT INTO monitoring_schedules
 		(id, workflow_id, schedule, enabled, last_run_at, next_run_at, notification_config, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
@@ -44,14 +44,14 @@ func (r *HealthCheckScheduleRepository) Create(ctx context.Context, schedule *mo
 }
 
 // GetByWorkflowID gets the schedule for a workflow
-func (r *HealthCheckScheduleRepository) GetByWorkflowID(ctx context.Context, workflowID string) (*models.HealthCheckSchedule, error) {
+func (r *MonitoringScheduleRepository) GetByWorkflowID(ctx context.Context, workflowID string) (*models.MonitoringSchedule, error) {
 	query := `
 		SELECT id, workflow_id, schedule, enabled, last_run_at, next_run_at, notification_config, created_at, updated_at
-		FROM health_check_schedules
+		FROM monitoring_schedules
 		WHERE workflow_id = $1
 	`
 
-	schedule := &models.HealthCheckSchedule{}
+	schedule := &models.MonitoringSchedule{}
 	var notificationJSON []byte
 
 	err := r.db.Pool.QueryRow(ctx, query, workflowID).Scan(
@@ -78,11 +78,11 @@ func (r *HealthCheckScheduleRepository) GetByWorkflowID(ctx context.Context, wor
 }
 
 // Update updates an existing schedule
-func (r *HealthCheckScheduleRepository) Update(ctx context.Context, schedule *models.HealthCheckSchedule) error {
+func (r *MonitoringScheduleRepository) Update(ctx context.Context, schedule *models.MonitoringSchedule) error {
 	notificationJSON, _ := json.Marshal(schedule.NotificationConfig)
 
 	query := `
-		UPDATE health_check_schedules
+		UPDATE monitoring_schedules
 		SET schedule = $1, enabled = $2, last_run_at = $3, next_run_at = $4, 
 		    notification_config = $5, updated_at = $6
 		WHERE id = $7
@@ -102,17 +102,17 @@ func (r *HealthCheckScheduleRepository) Update(ctx context.Context, schedule *mo
 }
 
 // Delete deletes a schedule
-func (r *HealthCheckScheduleRepository) Delete(ctx context.Context, workflowID string) error {
-	query := `DELETE FROM health_check_schedules WHERE workflow_id = $1`
+func (r *MonitoringScheduleRepository) Delete(ctx context.Context, workflowID string) error {
+	query := `DELETE FROM monitoring_schedules WHERE workflow_id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, workflowID)
 	return err
 }
 
 // GetDueSchedules gets all enabled schedules that are due to run
-func (r *HealthCheckScheduleRepository) GetDueSchedules(ctx context.Context) ([]*models.HealthCheckSchedule, error) {
+func (r *MonitoringScheduleRepository) GetDueSchedules(ctx context.Context) ([]*models.MonitoringSchedule, error) {
 	query := `
 		SELECT id, workflow_id, schedule, enabled, last_run_at, next_run_at, notification_config, created_at, updated_at
-		FROM health_check_schedules
+		FROM monitoring_schedules
 		WHERE enabled = true AND (next_run_at IS NULL OR next_run_at <= $1)
 		ORDER BY next_run_at ASC
 	`
@@ -123,9 +123,9 @@ func (r *HealthCheckScheduleRepository) GetDueSchedules(ctx context.Context) ([]
 	}
 	defer rows.Close()
 
-	var schedules []*models.HealthCheckSchedule
+	var schedules []*models.MonitoringSchedule
 	for rows.Next() {
-		schedule := &models.HealthCheckSchedule{}
+		schedule := &models.MonitoringSchedule{}
 		var notificationJSON []byte
 
 		err := rows.Scan(

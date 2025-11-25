@@ -93,8 +93,8 @@ func (e *PaginateExecutor) Execute(ctx context.Context, input *nodes.ExecutionIn
 	}, nil
 }
 
-// ValidateForHealthCheck performs health check validation for paginate
-func (e *PaginateExecutor) ValidateForHealthCheck(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
+// ValidateForMonitoring performs monitoring validation for paginate
+func (e *PaginateExecutor) ValidateForMonitoring(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
 	result := &models.NodeValidationResult{
 		NodeType: string(models.NodeTypePaginate),
 		Status:   models.ValidationStatusPass,
@@ -104,7 +104,7 @@ func (e *PaginateExecutor) ValidateForHealthCheck(ctx context.Context, input *no
 
 	selector := nodes.GetStringParam(input.Params, "selector")
 	linkSelector := nodes.GetStringParam(input.Params, "link_selector", "")
-	maxPages := input.Config.MaxPaginationPages // Use health check config limit
+	maxPages := input.Config.MaxPaginationPages // Use monitoring config limit
 
 	page := input.BrowserContext.Page
 
@@ -130,9 +130,9 @@ func (e *PaginateExecutor) ValidateForHealthCheck(ctx context.Context, input *no
 	if linkSelector != "" {
 		engine := extraction.NewExtractionEngine(page)
 
-		// Test pagination for health check (limit to configured max pages)
+		// Test pagination for monitoring (limit to configured max pages)
 		pagesChecked := 0
-		for pagesChecked < maxPages && pagesChecked < 2 { // Max 2 pages for health check
+		for pagesChecked < maxPages && pagesChecked < 2 { // Max 2 pages for monitoring
 			// Extract links from current page
 			links, err := engine.ExtractLinks(linkSelector, 0)
 			if err == nil && len(links) > 0 {

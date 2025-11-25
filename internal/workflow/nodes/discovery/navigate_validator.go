@@ -9,8 +9,8 @@ import (
 	"github.com/uzzalhcse/crawlify/pkg/models"
 )
 
-// ValidateForHealthCheck performs health check validation for navigate nodes
-func (e *NavigateExecutor) ValidateForHealthCheck(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
+// ValidateForMonitoring performs monitoring validation for navigate nodes
+func (e *NavigateExecutor) ValidateForMonitoring(ctx context.Context, input *nodes.ValidationInput) (*models.NodeValidationResult, error) {
 	result := &models.NodeValidationResult{
 		NodeType: string(models.NodeTypeNavigate),
 		Status:   models.ValidationStatusPass,

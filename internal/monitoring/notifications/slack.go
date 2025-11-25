@@ -18,8 +18,8 @@ func NewSlackNotifier() *SlackNotifier {
 	return &SlackNotifier{}
 }
 
-// Send sends a health check notification to Slack
-func (n *SlackNotifier) Send(config *models.SlackConfig, report *models.HealthCheckReport, workflowName string) error {
+// Send sends a monitoring notification to Slack
+func (n *SlackNotifier) Send(config *models.SlackConfig, report *models.MonitoringReport, workflowName string) error {
 	if config == nil || config.WebhookURL == "" {
 		return fmt.Errorf("slack webhook URL is required")
 	}
@@ -62,16 +62,16 @@ type slackMessage struct {
 	Blocks []interface{} `json:"blocks"`
 }
 
-func (n *SlackNotifier) formatMessage(report *models.HealthCheckReport, workflowName string) *slackMessage {
+func (n *SlackNotifier) formatMessage(report *models.MonitoringReport, workflowName string) *slackMessage {
 	// Determine emoji based on status
 	emoji := ":white_check_mark:"
 	statusText := "Healthy"
 
 	switch report.Status {
-	case models.HealthCheckStatusFailed:
+	case models.MonitoringStatusFailed:
 		emoji = ":x:"
 		statusText = "Failed"
-	case models.HealthCheckStatusDegraded:
+	case models.MonitoringStatusDegraded:
 		emoji = ":warning:"
 		statusText = "Degraded"
 	}

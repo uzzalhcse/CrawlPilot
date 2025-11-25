@@ -16,8 +16,8 @@ import (
 	"github.com/uzzalhcse/crawlify/internal/ai"
 	"github.com/uzzalhcse/crawlify/internal/browser"
 	"github.com/uzzalhcse/crawlify/internal/config"
-	"github.com/uzzalhcse/crawlify/internal/healthcheck"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/monitoring"
 	"github.com/uzzalhcse/crawlify/internal/queue"
 	"github.com/uzzalhcse/crawlify/internal/storage"
 	"github.com/uzzalhcse/crawlify/internal/workflow"
@@ -55,7 +55,7 @@ func main() {
 	extractedItemsRepo := storage.NewExtractedItemsRepository(db)
 	nodeExecRepo := storage.NewNodeExecutionRepository(db)
 	urlQueue := queue.NewURLQueue(db)
-	healthCheckRepo := storage.NewHealthCheckRepository(db)
+	monitoringRepo := storage.NewMonitoringRepository(db)
 
 	// Initialize browser pool
 	browserPool, err := browser.NewBrowserPool(&cfg.Browser)
@@ -106,10 +106,10 @@ func main() {
 	analyticsHandler := handlers.NewAnalyticsHandler(nodeExecRepo, extractedItemsRepo, urlQueue)
 	selectorHandler := handlers.NewSelectorHandler(browserPool)
 
-	// Create a node registry for health checks
+	// Create a node registry for monitorings
 	nodeRegistry := workflow.NewNodeRegistry()
 	if err := nodeRegistry.RegisterDefaultNodes(); err != nil {
-		logger.Warn("Failed to register default nodes for health checks", zap.Error(err))
+		logger.Warn("Failed to register default nodes for monitorings", zap.Error(err))
 	}
 
 	// Initialize snapshot repository and service
@@ -117,20 +117,20 @@ func main() {
 	snapshotStoragePath := "./data/snapshots"
 	var snapshotLogger *zap.Logger
 	snapshotLogger, _ = zap.NewProduction()
-	snapshotService := healthcheck.NewSnapshotService(snapshotRepo, snapshotStoragePath, snapshotLogger)
+	snapshotService := monitoring.NewSnapshotService(snapshotRepo, snapshotStoragePath, snapshotLogger)
 
-	healthCheckHandler := handlers.NewHealthCheckHandler(workflowRepo, healthCheckRepo, browserPool, nodeRegistry, snapshotService)
+	monitoringHandler := handlers.NewMonitoringHandler(workflowRepo, monitoringRepo, browserPool, nodeRegistry, snapshotService)
 
 	// Initialize schedule repository and handler
-	scheduleRepo := storage.NewHealthCheckScheduleRepository(db)
+	scheduleRepo := storage.NewMonitoringScheduleRepository(db)
 
-	// Create health check orchestrator for scheduler with snapshot service
-	healthCheckOrchestrator := healthcheck.NewOrchestrator(browserPool, nodeRegistry, nil, snapshotService)
+	// Create monitoring orchestrator for scheduler with snapshot service
+	monitoringOrchestrator := monitoring.NewOrchestrator(browserPool, nodeRegistry, nil, snapshotService)
 
 	// Create and start scheduler service
-	schedulerService := healthcheck.NewSchedulerService(scheduleRepo, healthCheckRepo, workflowRepo, healthCheckOrchestrator)
+	schedulerService := monitoring.NewSchedulerService(scheduleRepo, monitoringRepo, workflowRepo, monitoringOrchestrator)
 	go schedulerService.Start()
-	logger.Info("Health check scheduler started")
+	logger.Info("Monitoring scheduler started")
 
 	// Initialize snapshot handler
 	snapshotHandler := handlers.NewSnapshotHandler(snapshotService)
@@ -171,7 +171,7 @@ func main() {
 		fixSuggestionRepo,
 		workflowRepo,        // NEW
 		workflowVersionRepo, // NEW
-		healthCheckRepo,     // NEW
+		monitoringRepo,      // NEW
 		autoFixService,
 		snapshotStoragePath,
 	)
@@ -182,9 +182,9 @@ func main() {
 	scheduleHandler := handlers.NewScheduleHandler(scheduleRepo, schedulerService)
 
 	// Routes
-	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, healthCheckHandler, scheduleHandler, snapshotHandler, autoFixHandler)
+	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler)
 
-	// Health check
+	// Monitoring
 	app.Get("/health", func(c *fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -224,7 +224,7 @@ func main() {
 
 		// Stop scheduler
 		schedulerService.Stop()
-		logger.Info("Health check scheduler stopped")
+		logger.Info("Monitoring scheduler stopped")
 	}()
 
 	if err := app.Listen(addr); err != nil {
@@ -232,7 +232,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, healthCheckHandler *handlers.HealthCheckHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -251,18 +251,18 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, work
 	// Execution routes
 	workflows.Post("/:id/execute", executionHandler.StartExecution)
 
-	// Health Check routes
-	workflows.Post("/:id/health-check", healthCheckHandler.RunHealthCheck)
-	workflows.Get("/:id/health-checks", healthCheckHandler.ListHealthChecks)
+	// Health Check routes (under monitoring)
+	workflows.Post("/:id/monitoring/run", monitoringHandler.RunMonitoring)
+	workflows.Get("/:id/monitoring", monitoringHandler.ListMonitoring)
 
-	// Health check reports (by ID)
-	healthChecks := api.Group("/health-checks")
-	healthChecks.Get("/:report_id", healthCheckHandler.GetHealthCheckReport)
-	healthChecks.Post("/:report_id/set-baseline", healthCheckHandler.SetBaseline)
-	healthChecks.Get("/:report_id/compare", healthCheckHandler.CompareWithBaseline)
+	// Monitoring reports (by ID)
+	monitoring := api.Group("/monitoring")
+	monitoring.Get("/:report_id", monitoringHandler.GetMonitoringReport)
+	monitoring.Post("/:report_id/set-baseline", monitoringHandler.SetBaseline)
+	monitoring.Get("/:report_id/compare", monitoringHandler.CompareWithBaseline)
 
 	// Baseline routes
-	workflows.Get("/:id/baseline", healthCheckHandler.GetBaseline)
+	workflows.Get("/:id/baseline", monitoringHandler.GetBaseline)
 
 	// Schedule management routes
 	workflows.Get("/:id/schedule", scheduleHandler.GetSchedule)
@@ -288,7 +288,7 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, work
 	suggestions.Post("/:id/revert", autoFixHandler.RevertSuggestion)
 
 	// Snapshots by report
-	healthChecks.Get("/:report_id/snapshots", snapshotHandler.ListSnapshotsByReport)
+	monitoring.Get("/:report_id/snapshots", snapshotHandler.ListSnapshotsByReport)
 
 	executions := api.Group("/executions")
 	executions.Get("/", executionHandler.ListExecutions)

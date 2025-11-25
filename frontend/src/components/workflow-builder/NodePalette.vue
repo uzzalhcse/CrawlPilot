@@ -10,8 +10,7 @@ import {
 } from '@/components/ui/accordion'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { Globe, Database, MousePointer, RefreshCw, GitBranch, Search, Sparkles } from 'lucide-vue-next'
+import { Globe, Database, MousePointer, GitBranch, Search, Sparkles } from 'lucide-vue-next'
 
 interface Emits {
   (e: 'add-node', template: NodeTemplate): void
@@ -60,12 +59,19 @@ const totalNodes = computed(() => {
 function handleAddNode(template: NodeTemplate) {
   emit('add-node', template)
 }
+
+function onDragStart(event: DragEvent, node: NodeTemplate) {
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('application/vueflow', JSON.stringify(node))
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
 </script>
 
 <template>
-  <div class="w-72 bg-background border-r border-border flex flex-col h-full">
+  <div class="w-72 bg-card border-r border-border flex flex-col h-full">
     <!-- Header -->
-    <div class="p-4 border-b border-border">
+    <div class="p-4 border-b border-border bg-card/50">
       <div class="flex items-center gap-2 mb-2">
         <Sparkles class="w-5 h-5 text-primary" />
         <h3 class="font-semibold text-lg">Node Palette</h3>
@@ -82,7 +88,7 @@ function handleAddNode(template: NodeTemplate) {
         <Input
           v-model="searchQuery"
           placeholder="Search nodes..."
-          class="pl-9 h-9"
+          class="pl-9 h-9 bg-background"
         />
       </div>
     </div>
@@ -123,14 +129,16 @@ function handleAddNode(template: NodeTemplate) {
               <button
                 v-for="node in category.nodes"
                 :key="node.type"
+                draggable="true"
+                @dragstart="onDragStart($event, node)"
                 @click="handleAddNode(node)"
-                class="w-full text-left p-3 rounded-md border border-border bg-card hover:bg-accent hover:border-primary/50 transition-all duration-200 group"
+                class="w-full text-left p-3 rounded-md border border-border bg-background hover:bg-accent hover:border-primary/30 transition-all duration-200 group cursor-grab active:cursor-grabbing"
               >
                 <div class="flex items-start justify-between gap-2 mb-1">
                   <span class="font-medium text-sm group-hover:text-primary transition-colors">
                     {{ node.label }}
                   </span>
-                  <Badge variant="outline" class="text-[10px] font-mono shrink-0">
+                  <Badge variant="outline" class="text-[10px] font-mono shrink-0 opacity-60 group-hover:opacity-100">
                     {{ node.type }}
                   </Badge>
                 </div>
@@ -145,9 +153,10 @@ function handleAddNode(template: NodeTemplate) {
     </div>
 
     <!-- Footer -->
-    <div class="p-3 border-t border-border bg-muted/30">
-      <div class="text-xs text-muted-foreground text-center">
-        Click any node to add to canvas
+    <div class="p-3 border-t border-border bg-muted/20">
+      <div class="text-xs text-muted-foreground text-center flex items-center justify-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+        Drag or click to add nodes
       </div>
     </div>
   </div>

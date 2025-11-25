@@ -8,7 +8,7 @@ import (
 	"github.com/uzzalhcse/crawlify/pkg/models"
 )
 
-// SnapshotRepository handles database operations for health check snapshots
+// SnapshotRepository handles database operations for monitoring snapshots
 type SnapshotRepository struct {
 	db *PostgresDB
 }
@@ -19,7 +19,7 @@ func NewSnapshotRepository(db *PostgresDB) *SnapshotRepository {
 }
 
 // Create saves a new snapshot to the database
-func (r *SnapshotRepository) Create(ctx context.Context, snapshot *models.HealthCheckSnapshot) error {
+func (r *SnapshotRepository) Create(ctx context.Context, snapshot *models.MonitoringSnapshot) error {
 	// Marshal console logs
 	var consoleLogsJSON []byte
 	var err error
@@ -42,7 +42,7 @@ func (r *SnapshotRepository) Create(ctx context.Context, snapshot *models.Health
 	snapshot.Metadata = metadataJSON
 
 	query := `
-		INSERT INTO health_check_snapshots (
+		INSERT INTO monitoring_snapshots (
 			report_id, node_id, phase_name, url, page_title, status_code,
 			screenshot_path, dom_snapshot_path, console_logs,
 			selector_type, selector_value, elements_found, error_message, metadata, field_required
@@ -68,13 +68,13 @@ func (r *SnapshotRepository) Create(ctx context.Context, snapshot *models.Health
 }
 
 // GetByID retrieves a snapshot by ID
-func (r *SnapshotRepository) GetByID(ctx context.Context, id string) (*models.HealthCheckSnapshot, error) {
-	snapshot := &models.HealthCheckSnapshot{}
+func (r *SnapshotRepository) GetByID(ctx context.Context, id string) (*models.MonitoringSnapshot, error) {
+	snapshot := &models.MonitoringSnapshot{}
 	query := `
 		SELECT id, report_id, node_id, phase_name, created_at, url, page_title,
 		       status_code, screenshot_path, dom_snapshot_path, console_logs,
 		       selector_type, selector_value, elements_found, error_message, metadata, field_required
-		FROM health_check_snapshots
+		FROM monitoring_snapshots
 		WHERE id = $1
 	`
 
@@ -106,13 +106,13 @@ func (r *SnapshotRepository) GetByID(ctx context.Context, id string) (*models.He
 	return snapshot, nil
 }
 
-// GetByReportID retrieves all snapshots for a specific health check report
-func (r *SnapshotRepository) GetByReportID(ctx context.Context, reportID string) ([]*models.HealthCheckSnapshot, error) {
+// GetByReportID retrieves all snapshots for a specific monitoring report
+func (r *SnapshotRepository) GetByReportID(ctx context.Context, reportID string) ([]*models.MonitoringSnapshot, error) {
 	query := `
 		SELECT id, report_id, node_id, phase_name, created_at, url, page_title,
 		       status_code, screenshot_path, dom_snapshot_path, console_logs,
 		       selector_type, selector_value, elements_found, error_message, metadata, field_required
-		FROM health_check_snapshots
+		FROM monitoring_snapshots
 		WHERE report_id = $1
 		ORDER BY created_at DESC
 	`
@@ -123,9 +123,9 @@ func (r *SnapshotRepository) GetByReportID(ctx context.Context, reportID string)
 	}
 	defer rows.Close()
 
-	var snapshots []*models.HealthCheckSnapshot
+	var snapshots []*models.MonitoringSnapshot
 	for rows.Next() {
-		snapshot := &models.HealthCheckSnapshot{}
+		snapshot := &models.MonitoringSnapshot{}
 		err := rows.Scan(
 			&snapshot.ID, &snapshot.ReportID, &snapshot.NodeID, &snapshot.PhaseName,
 			&snapshot.CreatedAt, &snapshot.URL, &snapshot.PageTitle, &snapshot.StatusCode,
@@ -156,12 +156,12 @@ func (r *SnapshotRepository) GetByReportID(ctx context.Context, reportID string)
 }
 
 // GetByNodeID retrieves all snapshots for a specific node across all reports
-func (r *SnapshotRepository) GetByNodeID(ctx context.Context, nodeID string, limit int) ([]*models.HealthCheckSnapshot, error) {
+func (r *SnapshotRepository) GetByNodeID(ctx context.Context, nodeID string, limit int) ([]*models.MonitoringSnapshot, error) {
 	query := `
 		SELECT id, report_id, node_id, phase_name, created_at, url, page_title,
 		       status_code, screenshot_path, dom_snapshot_path, console_logs,
 		       selector_type, selector_value, elements_found, error_message, metadata
-		FROM health_check_snapshots
+		FROM monitoring_snapshots
 		WHERE node_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2
@@ -173,9 +173,9 @@ func (r *SnapshotRepository) GetByNodeID(ctx context.Context, nodeID string, lim
 	}
 	defer rows.Close()
 
-	var snapshots []*models.HealthCheckSnapshot
+	var snapshots []*models.MonitoringSnapshot
 	for rows.Next() {
-		snapshot := &models.HealthCheckSnapshot{}
+		snapshot := &models.MonitoringSnapshot{}
 		err := rows.Scan(
 			&snapshot.ID, &snapshot.ReportID, &snapshot.NodeID, &snapshot.PhaseName,
 			&snapshot.CreatedAt, &snapshot.URL, &snapshot.PageTitle, &snapshot.StatusCode,
@@ -207,7 +207,7 @@ func (r *SnapshotRepository) GetByNodeID(ctx context.Context, nodeID string, lim
 
 // Delete removes a snapshot from the database (note: files must be deleted separately)
 func (r *SnapshotRepository) Delete(ctx context.Context, id string) error {
-	query := `DELETE FROM health_check_snapshots WHERE id = $1`
+	query := `DELETE FROM monitoring_snapshots WHERE id = $1`
 	result, err := r.db.Pool.Exec(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete snapshot: %w", err)
@@ -222,7 +222,7 @@ func (r *SnapshotRepository) Delete(ctx context.Context, id string) error {
 
 // DeleteByReportID removes all snapshots for a report
 func (r *SnapshotRepository) DeleteByReportID(ctx context.Context, reportID string) error {
-	query := `DELETE FROM health_check_snapshots WHERE report_id = $1`
+	query := `DELETE FROM monitoring_snapshots WHERE report_id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, reportID)
 	if err != nil {
 		return fmt.Errorf("failed to delete snapshots by report: %w", err)

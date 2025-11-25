@@ -59,19 +59,19 @@ export const workflowsApi = {
 
   // Run health check
   runHealthCheck(id: string, config?: any) {
-    return apiClient.post<{ message: string; workflow_id: string }>(`/workflows/${id}/health-check`, config || {})
+    return apiClient.post<{ message: string; workflow_id: string }>(`/workflows/${id}/monitoring/run`, config || {})
   },
 
   // Get health check reports for a workflow
   getHealthChecks(id: string, limit?: number) {
-    return apiClient.get<{ workflow_id: string; reports: any[]; total: number }>(`/workflows/${id}/health-checks`, {
+    return apiClient.get<{ workflow_id: string; reports: any[]; total: number }>(`/workflows/${id}/monitoring`, {
       params: { limit: limit || 10 }
     })
   },
 
   // Get specific health check report
   getHealthCheckReport(reportId: string) {
-    return apiClient.get<any>(`/health-checks/${reportId}`)
+    return apiClient.get<any>(`/monitoring/${reportId}`)
   },
 
   // Phase 2: Schedule Management
@@ -88,12 +88,12 @@ export const workflowsApi = {
   },
 
   testNotification(workflowId: string, config: NotificationConfig) {
-    return apiClient.post(`/workflows/${workflowId}/test-notification`, { notification_config: config })
+    return apiClient.post(`/workflows/${workflowId}/monitoring/run`, config)
   },
 
   // Baseline Management
   setBaseline(reportId: string) {
-    return apiClient.post(`/health-checks/${reportId}/set-baseline`)
+    return apiClient.post(`/monitoring/${reportId}/set-baseline`)
   },
 
   getBaseline(workflowId: string) {
@@ -101,12 +101,12 @@ export const workflowsApi = {
   },
 
   compareWithBaseline(reportId: string) {
-    return apiClient.get<ComparisonResponse>(`/health-checks/${reportId}/compare`)
+    return apiClient.get<ComparisonResponse>(`/monitoring/${reportId}/compare`)
   },
 
   // Snapshot API methods
   getSnapshotsByReport(reportId: string) {
-    return apiClient.get<{ report_id: string; snapshots: HealthCheckSnapshot[]; total: number }>(`/health-checks/${reportId}/snapshots`)
+    return apiClient.get<{ report_id: string; snapshots: HealthCheckSnapshot[]; total: number }>(`/monitoring/${reportId}/snapshots`)
   },
 
   getSnapshot(snapshotId: string) {

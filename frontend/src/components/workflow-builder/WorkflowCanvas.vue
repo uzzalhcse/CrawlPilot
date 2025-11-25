@@ -28,6 +28,7 @@ interface Emits {
   (e: 'node-click', node: WorkflowNode): void
   (e: 'connect', connection: Connection): void
   (e: 'pane-click'): void
+  (e: 'drop', data: { template: any; position: { x: number; y: number } }): void
 }
 
 const props = defineProps<Props>()
@@ -40,7 +41,7 @@ const nodeTypes = {
   extractField: markRaw(ExtractionFieldNode)
 }
 
-const { onConnect, addEdges, onPaneClick, onNodeClick } = useVueFlow()
+const { onConnect, addEdges, onPaneClick, onNodeClick, project, findNode } = useVueFlow()
 
 // Handle interactions
 onConnect((params) => {
@@ -55,10 +56,39 @@ onNodeClick(({ node }) => {
   emit('node-click', node as WorkflowNode)
 })
 
+function onDragOver(event: DragEvent) {
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function onDrop(event: DragEvent) {
+  const data = event.dataTransfer?.getData('application/vueflow')
+  if (!data) return
+
+  const template = JSON.parse(data)
+  const bounds = (event.target as Element).getBoundingClientRect()
+  
+  const position = project({
+    x: event.clientX - bounds.left,
+    y: event.clientY - bounds.top,
+  })
+
+  emit('drop', { template, position })
+}
+
+// Expose fitView for parent component to call
+const { fitView } = useVueFlow()
+defineExpose({ fitView })
 </script>
 
 <template>
-  <div class="h-full w-full bg-muted/30 relative">
+  <div 
+    class="h-full w-full bg-muted/30 relative"
+    @dragover="onDragOver"
+    @drop="onDrop"
+  >
     <VueFlow
       :nodes="nodes"
       :edges="edges"

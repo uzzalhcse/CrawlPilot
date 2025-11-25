@@ -1,4 +1,4 @@
-package healthcheck
+package monitoring
 
 import (
 	"context"
@@ -14,18 +14,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// Orchestrator manages health check execution
+// Orchestrator manages monitoring execution
 type Orchestrator struct {
 	browserPool     *browser.BrowserPool
 	registry        *workflow.NodeRegistry
-	config          *models.HealthCheckConfig
+	config          *models.MonitoringConfig
 	snapshotService *SnapshotService
 }
 
-// NewOrchestrator creates a new health check orchestrator
-func NewOrchestrator(browserPool *browser.BrowserPool, registry *workflow.NodeRegistry, config *models.HealthCheckConfig, snapshotService *SnapshotService) *Orchestrator {
+// NewOrchestrator creates a new monitoring orchestrator
+func NewOrchestrator(browserPool *browser.BrowserPool, registry *workflow.NodeRegistry, config *models.MonitoringConfig, snapshotService *SnapshotService) *Orchestrator {
 	if config == nil {
-		config = &models.HealthCheckConfig{
+		config = &models.MonitoringConfig{
 			MaxURLsPerPhase:    1,
 			MaxPaginationPages: 2,
 			MaxDepth:           2,
@@ -42,8 +42,8 @@ func NewOrchestrator(browserPool *browser.BrowserPool, registry *workflow.NodeRe
 	}
 }
 
-// RunHealthCheck executes a health check for a workflow
-func (o *Orchestrator) RunHealthCheck(ctx context.Context, wf *models.Workflow) (*models.HealthCheckReport, error) {
+// RunMonitoring executes a monitoring for a workflow
+func (o *Orchestrator) RunMonitoring(ctx context.Context, wf *models.Workflow) (*models.MonitoringReport, error) {
 	// Check if report ID is already in context (pre-created by handler)
 	existingReportID := ctx.Value("reportID")
 	existingWorkflowID := ctx.Value("workflowID")
@@ -57,17 +57,17 @@ func (o *Orchestrator) RunHealthCheck(ctx context.Context, wf *models.Workflow) 
 		logger.Info("Creating new report ID", zap.String("report_id", reportID))
 	}
 
-	report := &models.HealthCheckReport{
+	report := &models.MonitoringReport{
 		ID:           reportID,
 		WorkflowID:   wf.ID,
 		WorkflowName: wf.Name,
-		Status:       models.HealthCheckStatusRunning,
+		Status:       models.MonitoringStatusRunning,
 		StartedAt:    time.Now(),
 		Config:       o.config,
 		Results:      make(map[string]*models.PhaseValidationResult),
 	}
 
-	logger.Info("Starting health check",
+	logger.Info("Starting monitoring",
 		zap.String("workflow_id", wf.ID),
 		zap.String("workflow_name", wf.Name))
 
@@ -121,7 +121,7 @@ func (o *Orchestrator) RunHealthCheck(ctx context.Context, wf *models.Workflow) 
 	report.CompletedAt = &completedAt
 	report.Duration = completedAt.Sub(report.StartedAt).Milliseconds()
 
-	logger.Info("Health check completed",
+	logger.Info("Monitoring completed",
 		zap.String("workflow_id", wf.ID),
 		zap.String("status", string(report.Status)),
 		zap.Int64("duration_ms", report.Duration))
@@ -284,7 +284,7 @@ func (o *Orchestrator) validateNode(ctx context.Context, node *models.Node, brow
 		Config:           o.config,
 	}
 
-	result, err := validator.ValidateForHealthCheck(ctx, input)
+	result, err := validator.ValidateForMonitoring(ctx, input)
 	if err != nil {
 		if result == nil {
 			result = &models.NodeValidationResult{
@@ -309,8 +309,8 @@ func (o *Orchestrator) validateNode(ctx context.Context, node *models.Node, brow
 }
 
 // generateSummary aggregates validation results into a summary
-func (o *Orchestrator) generateSummary(results map[string]*models.PhaseValidationResult) *models.HealthCheckSummary {
-	summary := &models.HealthCheckSummary{
+func (o *Orchestrator) generateSummary(results map[string]*models.PhaseValidationResult) *models.MonitoringSummary {
+	summary := &models.MonitoringSummary{
 		TotalPhases:    len(results),
 		CriticalIssues: []models.ValidationIssue{},
 	}
@@ -341,12 +341,12 @@ func (o *Orchestrator) generateSummary(results map[string]*models.PhaseValidatio
 }
 
 // determineOverallStatus determines the overall health status
-func (o *Orchestrator) determineOverallStatus(summary *models.HealthCheckSummary) models.HealthCheckStatus {
+func (o *Orchestrator) determineOverallStatus(summary *models.MonitoringSummary) models.MonitoringStatus {
 	if summary.FailedNodes > 0 {
-		return models.HealthCheckStatusFailed
+		return models.MonitoringStatusFailed
 	}
 	if summary.WarningNodes > 0 {
-		return models.HealthCheckStatusDegraded
+		return models.MonitoringStatusDegraded
 	}
-	return models.HealthCheckStatusHealthy
+	return models.MonitoringStatusHealthy
 }

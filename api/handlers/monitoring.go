@@ -7,49 +7,49 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/internal/browser"
-	"github.com/uzzalhcse/crawlify/internal/healthcheck"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/monitoring"
 	"github.com/uzzalhcse/crawlify/internal/storage"
 	"github.com/uzzalhcse/crawlify/internal/workflow"
 	"github.com/uzzalhcse/crawlify/pkg/models"
 	"go.uber.org/zap"
 )
 
-// HealthCheckHandler handles health check API requests
-type HealthCheckHandler struct {
+// MonitoringHandler handles monitoring API requests
+type MonitoringHandler struct {
 	workflowRepo    *storage.WorkflowRepository
-	healthCheckRepo *storage.HealthCheckRepository
+	monitoringRepo  *storage.MonitoringRepository
 	browserPool     *browser.BrowserPool
 	nodeRegistry    *workflow.NodeRegistry
-	snapshotService *healthcheck.SnapshotService
+	snapshotService *monitoring.SnapshotService
 }
 
-// NewHealthCheckHandler creates a new health check handler
-func NewHealthCheckHandler(
+// NewMonitoringHandler creates a new monitoring handler
+func NewMonitoringHandler(
 	workflowRepo *storage.WorkflowRepository,
-	healthCheckRepo *storage.HealthCheckRepository,
+	monitoringRepo *storage.MonitoringRepository,
 	browserPool *browser.BrowserPool,
 	nodeRegistry *workflow.NodeRegistry,
-	snapshotService *healthcheck.SnapshotService,
-) *HealthCheckHandler {
-	return &HealthCheckHandler{
+	snapshotService *monitoring.SnapshotService,
+) *MonitoringHandler {
+	return &MonitoringHandler{
 		workflowRepo:    workflowRepo,
-		healthCheckRepo: healthCheckRepo,
+		monitoringRepo:  monitoringRepo,
 		browserPool:     browserPool,
 		nodeRegistry:    nodeRegistry,
 		snapshotService: snapshotService,
 	}
 }
 
-// RunHealthCheck triggers a health check for a workflow
-func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
+// RunMonitoring triggers a monitoring for a workflow
+func (h *MonitoringHandler) RunMonitoring(c *fiber.Ctx) error {
 	ctx := context.Background()
 	// Make a copy of the string to be safe for goroutine usage
 	paramID := c.Params("id")
 	workflowID := string(append([]byte(nil), paramID...))
 
 	// Parse config from request body (optional)
-	config := &models.HealthCheckConfig{
+	config := &models.MonitoringConfig{
 		MaxURLsPerPhase:    1,
 		MaxPaginationPages: 2,
 		MaxDepth:           2,
@@ -60,7 +60,7 @@ func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 	// Try to parse custom config if provided
 	if err := c.BodyParser(config); err != nil {
 		// Use defaults if parse fails
-		logger.Debug("Using default health check config")
+		logger.Debug("Using default monitoring config")
 	}
 
 	// Get workflow
@@ -71,26 +71,26 @@ func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 		})
 	}
 
-	// Run health check in background
+	// Run monitoring in background
 	go func() {
 		bgCtx := context.Background()
 
 		// Create orchestrator with snapshot service
-		orchestrator := healthcheck.NewOrchestrator(h.browserPool, h.nodeRegistry, config, h.snapshotService)
+		orchestrator := monitoring.NewOrchestrator(h.browserPool, h.nodeRegistry, config, h.snapshotService)
 
 		// Create initial report to get ID
-		report := &models.HealthCheckReport{
+		report := &models.MonitoringReport{
 			ID:         uuid.New().String(), // Generate UUID
 			WorkflowID: workflowID,
-			Status:     models.HealthCheckStatusRunning,
+			Status:     models.MonitoringStatusRunning,
 			StartedAt:  time.Now(),
 		}
-		logger.Info("Creating initial health check report",
+		logger.Info("Creating initial monitoring report",
 			zap.String("report_id", report.ID),
 			zap.String("workflow_id", workflowID))
 
-		if err := h.healthCheckRepo.Create(bgCtx, report); err != nil {
-			logger.Error("Failed to create health check report", zap.Error(err))
+		if err := h.monitoringRepo.Create(bgCtx, report); err != nil {
+			logger.Error("Failed to create monitoring report", zap.Error(err))
 			return
 		}
 
@@ -98,20 +98,20 @@ func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 		ctxWithIDs := context.WithValue(bgCtx, "workflowID", workflowID)
 		ctxWithIDs = context.WithValue(ctxWithIDs, "reportID", report.ID)
 
-		logger.Info("Starting health check with context IDs",
+		logger.Info("Starting monitoring with context IDs",
 			zap.String("workflow_id", workflowID),
 			zap.String("report_id", report.ID))
 
-		// Run health check with context
-		updatedReport, err := orchestrator.RunHealthCheck(ctxWithIDs, wf)
+		// Run monitoring with context
+		updatedReport, err := orchestrator.RunMonitoring(ctxWithIDs, wf)
 
 		if err != nil {
-			logger.Error("Health check failed", zap.Error(err), zap.String("workflow_id", workflowID))
+			logger.Error("Monitoring failed", zap.Error(err), zap.String("workflow_id", workflowID))
 			// Update report status to failed
 			now := time.Now()
-			report.Status = models.HealthCheckStatusFailed
+			report.Status = models.MonitoringStatusFailed
 			report.CompletedAt = &now
-			if updateErr := h.healthCheckRepo.Update(bgCtx, report); updateErr != nil {
+			if updateErr := h.monitoringRepo.Update(bgCtx, report); updateErr != nil {
 				logger.Error("Failed to update failed report", zap.Error(updateErr))
 			}
 			return
@@ -125,12 +125,12 @@ func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 		report.Summary = updatedReport.Summary
 
 		// Update the report in database
-		if err := h.healthCheckRepo.Update(bgCtx, report); err != nil {
-			logger.Error("Failed to update health check report", zap.Error(err))
+		if err := h.monitoringRepo.Update(bgCtx, report); err != nil {
+			logger.Error("Failed to update monitoring report", zap.Error(err))
 			return
 		}
 
-		logger.Info("Health check completed",
+		logger.Info("Monitoring completed",
 			zap.String("workflow_id", workflowID),
 			zap.String("report_id", report.ID),
 			zap.String("status", string(report.Status)),
@@ -138,17 +138,17 @@ func (h *HealthCheckHandler) RunHealthCheck(c *fiber.Ctx) error {
 	}()
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
-		"message":     "Health check started",
+		"message":     "Monitoring started",
 		"workflow_id": workflowID,
 	})
 }
 
-// SetBaseline marks a health check report as the baseline
-func (h *HealthCheckHandler) SetBaseline(c *fiber.Ctx) error {
+// SetBaseline marks a monitoring report as the baseline
+func (h *MonitoringHandler) SetBaseline(c *fiber.Ctx) error {
 	reportID := c.Params("report_id")
 	ctx := context.Background()
 
-	baselineService := healthcheck.NewBaselineService(h.healthCheckRepo)
+	baselineService := monitoring.NewBaselineService(h.monitoringRepo)
 	err := baselineService.SetAsBaseline(ctx, reportID)
 
 	if err != nil {
@@ -166,11 +166,11 @@ func (h *HealthCheckHandler) SetBaseline(c *fiber.Ctx) error {
 }
 
 // GetBaseline retrieves the baseline report for a workflow
-func (h *HealthCheckHandler) GetBaseline(c *fiber.Ctx) error {
+func (h *MonitoringHandler) GetBaseline(c *fiber.Ctx) error {
 	workflowID := c.Params("id")
 	ctx := context.Background()
 
-	baselineService := healthcheck.NewBaselineService(h.healthCheckRepo)
+	baselineService := monitoring.NewBaselineService(h.monitoringRepo)
 	baseline, err := baselineService.GetBaseline(ctx, workflowID)
 
 	if err != nil {
@@ -183,12 +183,12 @@ func (h *HealthCheckHandler) GetBaseline(c *fiber.Ctx) error {
 }
 
 // CompareWithBaseline compares a report with the baseline
-func (h *HealthCheckHandler) CompareWithBaseline(c *fiber.Ctx) error {
+func (h *MonitoringHandler) CompareWithBaseline(c *fiber.Ctx) error {
 	reportID := c.Params("report_id")
 	ctx := context.Background()
 
 	// Get current report
-	current, err := h.healthCheckRepo.GetByID(ctx, reportID)
+	current, err := h.monitoringRepo.GetByID(ctx, reportID)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Report not found",
@@ -196,7 +196,7 @@ func (h *HealthCheckHandler) CompareWithBaseline(c *fiber.Ctx) error {
 	}
 
 	// Get baseline
-	baselineService := healthcheck.NewBaselineService(h.healthCheckRepo)
+	baselineService := monitoring.NewBaselineService(h.monitoringRepo)
 	baseline, err := baselineService.GetBaseline(ctx, current.WorkflowID)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -214,23 +214,23 @@ func (h *HealthCheckHandler) CompareWithBaseline(c *fiber.Ctx) error {
 	})
 }
 
-// GetHealthCheckReport retrieves a health check report by ID
-func (h *HealthCheckHandler) GetHealthCheckReport(c *fiber.Ctx) error {
+// GetMonitoringReport retrieves a monitoring report by ID
+func (h *MonitoringHandler) GetMonitoringReport(c *fiber.Ctx) error {
 	ctx := context.Background()
 	reportID := c.Params("report_id")
 
-	report, err := h.healthCheckRepo.GetByID(ctx, reportID)
+	report, err := h.monitoringRepo.GetByID(ctx, reportID)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Health check report not found",
+			"error": "Monitoring report not found",
 		})
 	}
 
 	return c.JSON(report)
 }
 
-// ListHealthChecks lists health check reports for a workflow
-func (h *HealthCheckHandler) ListHealthChecks(c *fiber.Ctx) error {
+// ListMonitoring lists monitoring reports for a workflow
+func (h *MonitoringHandler) ListMonitoring(c *fiber.Ctx) error {
 	ctx := context.Background()
 	workflowID := c.Params("id")
 
@@ -243,10 +243,10 @@ func (h *HealthCheckHandler) ListHealthChecks(c *fiber.Ctx) error {
 		}
 	}
 
-	reports, err := h.healthCheckRepo.ListByWorkflow(ctx, workflowID, limit)
+	reports, err := h.monitoringRepo.ListByWorkflow(ctx, workflowID, limit)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to fetch health checks",
+			"error": "Failed to fetch monitorings",
 		})
 	}
 

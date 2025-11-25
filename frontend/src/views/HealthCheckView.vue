@@ -204,7 +204,7 @@ onMounted(async () => {
     <div class="page-header">
       <div>
         <div class="breadcrumb">
-          <router-link to="/health-checks" class="breadcrumb-link">Health Checks</router-link>
+          <router-link to="/monitoring" class="breadcrumb-link">Monitoring</router-link>
           <span class="breadcrumb-separator">/</span>
           <span class="breadcrumb-current">{{ workflow?.name || 'Loading...' }}</span>
         </div>

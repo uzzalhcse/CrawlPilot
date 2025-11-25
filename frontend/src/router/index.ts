@@ -39,13 +39,13 @@ const router = createRouter({
           component: () => import('@/views/ExecutionDetailView.vue')
         },
         {
-          path: 'health-checks',
-          name: 'health-checks-overview',
+          path: 'monitoring',
+          name: 'monitoring-overview',
           component: () => import('@/views/HealthChecksOverview.vue')
         },
         {
-          path: 'health-checks/:id',
-          name: 'health-checks',
+          path: 'monitoring/:id',
+          name: 'monitoring-detail',
           component: () => import('@/views/HealthCheckView.vue')
         },
         {

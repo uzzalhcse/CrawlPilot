@@ -45,6 +45,10 @@ const selectedNode = ref<WorkflowNode | null>(null)
 const preservedPhaseProps = ref<Map<string, any>>(new Map())
 const preservedWorkflowProps = ref<Record<string, any>>({})
 
+// Canvas ref for auto-scrolling
+const canvasRef = ref<any>(null)
+
+
 // Generate unique node ID
 function generateNodeId(): string {
   return `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -63,13 +67,9 @@ watch(
 
 // Toggle Mode
 function toggleMode() {
-  console.log('🔄 [ToggleMode] Current mode:', mode.value, '→', mode.value === 'builder' ? 'json' : 'builder')
-  console.log('🔄 [ToggleMode] Current state - Nodes:', nodes.value.length, 'Edges:', edges.value.length)
-  
   if (mode.value === 'builder') {
     // Switch to JSON
     try {
-      console.log('📤 [Builder→JSON] Converting nodes to workflow config...')
       const config = convertNodesToWorkflowConfig(
         nodes.value, 
         edges.value, 
@@ -83,16 +83,6 @@ function toggleMode() {
         preservedWorkflowProps.value
       )
       
-      console.log('📤 [Builder→JSON] Conversion complete')
-      console.log('📤 [Builder→JSON] Phases:', config.phases?.length || 0)
-      config.phases?.forEach((phase: any, idx: number) => {
-        const extractNodes = phase.nodes?.filter((n: any) => n.type === 'extract') || []
-        extractNodes.forEach((node: any) => {
-          const fieldCount = node.params?.fields ? Object.keys(node.params.fields).length : 0
-          console.log(`📤   Phase ${idx + 1}: Extract node "${node.name}" has ${fieldCount} fields`)
-        })
-      })
-      
       jsonContent.value = JSON.stringify(config, null, 2)
       mode.value = 'json'
     } catch (e: any) {
@@ -101,7 +91,6 @@ function toggleMode() {
   } else {
     // Switch to Builder
     try {
-      console.log('📥 [JSON→Builder] Parsing JSON and loading workflow...')
       let parsed = JSON.parse(jsonContent.value)
       let config = parsed
 
@@ -215,8 +204,6 @@ function loadWorkflow(workflow: Workflow) {
   workflowStatus.value = (workflow.status as 'draft' | 'active') || 'draft'
   
   // Store the full config to preserve non-node settings (start_urls, etc.)
-  console.log('📥 [LoadWorkflow] Loading workflow:', workflow.name)
-  console.log('📥 [LoadWorkflow] Config phases:', workflow.config.phases?.length || 0)
   
   selectedNode.value = null
   nodes.value = []
@@ -275,7 +262,6 @@ function loadWorkflow(workflow: Workflow) {
             
             if (n.type === 'extract' && n.params?.fields) {
               const fieldKeys = Object.keys(n.params.fields)
-              console.log(`📥   Found extract node "${n.name}" with ${fieldKeys.length} fields, exploding...`)
               
               fieldKeys.forEach((key, fieldIndex) => {
                 const field = n.params.fields[key]
@@ -418,7 +404,13 @@ function loadWorkflow(workflow: Workflow) {
         id: labelId,
         type: 'phaseLabel',
         position: { x: currentPhaseX + (phaseWidth / 2) - 150, y: 20 }, // Better vertical position
-        data: { label: phaseName, index, phaseWidth },
+        data: { 
+          label: phaseName, 
+          index, 
+          phaseWidth,
+          nodeType: 'phaseLabel',
+          params: {} 
+        },
         draggable: false,
         selectable: false
       })
@@ -530,30 +522,97 @@ function loadWorkflow(workflow: Workflow) {
 }
 
 // Add node from palette
-function handleAddNode(template: NodeTemplate) {
+function handleAddNode(template: NodeTemplate, position?: { x: number; y: number }) {
   const id = generateNodeId()
 
-  // Calculate position - center of viewport or offset from last node
-  const lastNode = nodes.value[nodes.value.length - 1]
-  const position = lastNode
-    ? { x: lastNode.position.x + 50, y: lastNode.position.y + 50 }
-    : { x: 250, y: 100 }
+  // Calculate position - use provided position, or center of viewport/offset
+  let nodePosition = position
+  
+  if (!nodePosition) {
+    const lastNode = nodes.value[nodes.value.length - 1]
+    nodePosition = lastNode
+      ? { x: lastNode.position.x + 50, y: lastNode.position.y + 50 }
+      : { x: 250, y: 100 }
+  }
+
+  // Set node type based on template
+  const nodeType = template.type === 'extractField' ? 'extractField' : 'custom'
+
+  // Special data structure for extractField nodes
+  const nodeData = template.type === 'extractField' 
+    ? {
+        label: template.label,
+        nodeType: template.type,
+        field: {
+          selector: '',
+          type: 'text',
+          attribute: '',
+          ...template.defaultParams
+        },
+        params: { ...template.defaultParams }, // Keep params for PropertiesPanel compatibility
+        parentId: ''
+      }
+    : {
+        label: template.label,
+        nodeType: template.type,
+        params: { ...template.defaultParams }
+      }
 
   const newNode: WorkflowNode = {
     id,
-    type: 'custom',
-    position,
-    data: {
-      label: template.label,
-      nodeType: template.type,
-      params: { ...template.defaultParams }
-    }
+    type: nodeType,
+    position: nodePosition,
+    data: nodeData as any
   }
 
   nodes.value.push(newNode)
+  
+  // Auto-connect extractField to parent extract node
+  if (template.type === 'extractField') {
+    // Find the most recent extract node
+    const extractNode = [...nodes.value].reverse().find(n => n.data.nodeType === 'extract')
+    if (extractNode) {
+      // Update parentId in the node data
+      newNode.data.parentId = extractNode.id
+      
+      edges.value.push({
+        id: `${extractNode.id}-${id}`,
+        source: extractNode.id,
+        target: id,
+        animated: false,
+        style: { stroke: '#a855f7', strokeWidth: 2, opacity: 0.6 }
+      })
+    }
+  }
+  
   // Auto-select the new node
   selectedNode.value = newNode
+  
+  // Return node ID for auto-scroll
+  return id
 }
+
+// Handle drop event from canvas
+function handleDrop({ template, position }: { template: NodeTemplate; position: { x: number; y: number } }) {
+  const nodeId = handleAddNode(template, position)
+  // Auto-scroll to the newly added node
+  if (nodeId) {
+    setTimeout(() => scrollToNode(nodeId), 100)
+  }
+}
+
+// Auto-scroll to a specific node
+function scrollToNode(nodeId: string) {
+  if (canvasRef.value && canvasRef.value.fitView) {
+    canvasRef.value.fitView({ 
+      nodes: [nodeId],
+      duration: 400,
+      padding: 0.5 
+    })
+  }
+}
+
+
 
 // Handle node selection
 function handleNodeClick(node: WorkflowNode) {
@@ -562,14 +621,10 @@ function handleNodeClick(node: WorkflowNode) {
 
 // Handle node updates from panel
 function handleNodeUpdate(updatedNode: WorkflowNode) {
-  console.log('🔄 [WorkflowBuilder] handleNodeUpdate called for node:', updatedNode.id, updatedNode.data.nodeType)
-  
   const index = nodes.value.findIndex(n => n.id === updatedNode.id)
   if (index !== -1) {
     // Special handling for extract nodes - regenerate extractField nodes
     if (updatedNode.data.nodeType === 'extract') {
-      console.log('🔄 [Extract Node] Updating extract node and regenerating field nodes:', updatedNode.id)
-      
       const newFields = updatedNode.data.params?.fields
       
       // Always regenerate extractField nodes to ensure they are in sync
@@ -580,12 +635,9 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
           const fieldKey = n.data.params?.fieldKey || n.data.label
           if (fieldKey && n.position) {
             existingFieldPositions.set(fieldKey, { x: n.position.x, y: n.position.y })
-            console.log(`  📍 Saved position for existing field "${fieldKey}": x=${n.position.x}, y=${n.position.y}`)
           }
         }
       })
-      
-      console.log(`  💾 Collected ${existingFieldPositions.size} existing field positions`)
 
       // Remove old field nodes from this parent
       const isExtractFieldNode = (n: WorkflowNode) => n.type === 'extractField'
@@ -614,11 +666,8 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
       if (newFields) {
         const fieldKeys = Object.keys(newFields).sort() // Sort to maintain consistent order
         
-        console.log(`  🔨 Creating ${fieldKeys.length} field nodes from keys:`, fieldKeys)
-        
         // Collect all occupied Y positions from existing fields
         const occupiedYPositions = new Set(Array.from(existingFieldPositions.values()).map(pos => pos.y))
-        console.log(`  📊 Occupied Y positions:`, Array.from(occupiedYPositions).sort((a, b) => a - b))
         
         fieldKeys.forEach((key) => {
           const field = newFields[key]
@@ -631,7 +680,6 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
           
           if (existingPos) {
             // Use existing position for fields that already exist
-            console.log(`  ✅ Reusing position for existing field "${key}": x=${existingPos.x}, y=${existingPos.y}`)
             position = existingPos
           } else {
             // For new fields, find an available Y position
@@ -640,7 +688,6 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
             
             // Sort occupied positions to find gaps
             const sortedPositions = Array.from(occupiedYPositions).sort((a, b) => a - b)
-            console.log(`  🔍 Searching for gap in positions:`, sortedPositions)
             
             let foundPosition = false
             
@@ -658,7 +705,6 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
                     position = { x: baseX, y: candidateY }
                     occupiedYPositions.add(candidateY)
                     foundPosition = true
-                    console.log(`  ✨ Found gap! Placing "${key}" between y=${currentY} and y=${nextY} at y=${candidateY}`)
                     break
                   }
                 }
@@ -671,12 +717,10 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
                 const lastY = sortedPositions[sortedPositions.length - 1]
                 position = { x: baseX, y: lastY + 80 }
                 occupiedYPositions.add(position.y)
-                console.log(`  ➕ No gap found, placing "${key}" at bottom: y=${position.y}`)
               } else {
                 // No existing fields, center around parent
                 position = { x: baseX, y: parentY }
                 occupiedYPositions.add(position.y)
-                console.log(`  🎯 First field, centering at parent: y=${position.y}`)
               }
             }
           }
@@ -898,23 +942,24 @@ defineExpose({
 <template>
   <div class="flex flex-col h-screen bg-background">
     <!-- Top Toolbar -->
-    <div class="bg-card border-b border-border p-4 space-y-3 shrink-0 z-30">
+    <div class="bg-card/95 backdrop-blur-sm border-b border-border p-4 space-y-3 shrink-0 z-30 shadow-sm">
       <div class="flex items-center gap-4">
         <div class="flex-1 space-y-1">
           <Input
             v-model="workflowName"
             placeholder="Untitled Workflow"
-            class="text-lg font-semibold border-none shadow-none px-0 focus-visible:ring-0 h-auto"
+            class="text-lg font-semibold border-none shadow-none px-0 focus-visible:ring-0 h-auto bg-transparent"
           />
         </div>
         <div class="flex gap-2">
           <!-- Mode Toggle -->
-          <div class="flex items-center bg-muted rounded-lg p-1 mr-2">
+          <div class="flex items-center bg-muted rounded-lg p-0.5 mr-2">
             <Button 
               variant="ghost" 
               size="sm" 
               :class="{ 'bg-background shadow-sm': mode === 'builder' }"
               @click="mode !== 'builder' && toggleMode()"
+              class="data-[state=active]:bg-background"
             >
               <Layout class="w-4 h-4 mr-2" />
               Builder
@@ -924,6 +969,7 @@ defineExpose({
               size="sm" 
               :class="{ 'bg-background shadow-sm': mode === 'json' }"
               @click="mode !== 'json' && toggleMode()"
+              class="data-[state=active]:bg-background"
             >
               <Code class="w-4 h-4 mr-2" />
               JSON
@@ -935,15 +981,15 @@ defineExpose({
             variant="outline" 
             size="default"
             :class="workflowStatus === 'active' 
-              ? 'bg-green-100 text-green-900 border-green-300 hover:bg-green-200 hover:text-green-950' 
-              : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 hover:text-amber-950'"
+              ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/20' 
+              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20'"
             @click="handleToggleStatus"
           >
-            <div class="w-2 h-2 rounded-full mr-2" :class="workflowStatus === 'active' ? 'bg-green-600' : 'bg-amber-600'"></div>
+            <div class="w-2 h-2 rounded-full mr-2" :class="workflowStatus === 'active' ? 'bg-green-500' : 'bg-amber-500'"></div>
             {{ workflowStatus === 'active' ? 'Published' : 'Draft' }}
           </Button>
 
-          <Button @click="handleSave" variant="default" size="default">
+          <Button @click="handleSave" variant="default" size="default" class="bg-primary hover:bg-primary/90">
             <Save class="w-4 h-4 mr-2" />
             Save Workflow
           </Button>
@@ -958,7 +1004,7 @@ defineExpose({
           v-model="workflowDescription"
           placeholder="Add a description for this workflow..."
           rows="2"
-          class="text-sm resize-none"
+          class="text-sm resize-none bg-background/50"
         />
       </div>
     </div>
@@ -974,6 +1020,7 @@ defineExpose({
         <!-- Canvas -->
         <div class="flex-1 relative h-full">
           <WorkflowCanvas
+            ref="canvasRef"
             :nodes="nodes"
             :edges="edges"
             @update:nodes="nodes = $event"
@@ -981,6 +1028,7 @@ defineExpose({
             @node-click="handleNodeClick"
             @connect="handleConnect"
             @pane-click="selectedNode = null"
+            @drop="handleDrop"
           />
         </div>
 

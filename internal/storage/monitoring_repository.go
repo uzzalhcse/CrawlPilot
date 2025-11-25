@@ -9,25 +9,25 @@ import (
 	"go.uber.org/zap"
 )
 
-// HealthCheckRepository manages health check report persistence
-type HealthCheckRepository struct {
+// MonitoringRepository manages monitoring report persistence
+type MonitoringRepository struct {
 	db *PostgresDB
 }
 
-// NewHealthCheckRepository creates a new health check repository
-func NewHealthCheckRepository(db *PostgresDB) *HealthCheckRepository {
-	return &HealthCheckRepository{db: db}
+// NewMonitoringRepository creates a new monitoring repository
+func NewMonitoringRepository(db *PostgresDB) *MonitoringRepository {
+	return &MonitoringRepository{db: db}
 }
 
-// Create saves a new health check report
-func (r *HealthCheckRepository) Create(ctx context.Context, report *models.HealthCheckReport) error {
+// Create saves a new monitoring report
+func (r *MonitoringRepository) Create(ctx context.Context, report *models.MonitoringReport) error {
 	// Marshal JSON fields
 	resultsJSON, _ := json.Marshal(report.Results)
 	summaryJSON, _ := json.Marshal(report.Summary)
 	configJSON, _ := json.Marshal(report.Config)
 
 	query := `
-		INSERT INTO health_check_reports
+		INSERT INTO monitoring_reports
 		(id, workflow_id, execution_id, status, started_at, completed_at, duration_ms, results, summary, config)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
@@ -46,15 +46,15 @@ func (r *HealthCheckRepository) Create(ctx context.Context, report *models.Healt
 	)
 
 	if err != nil {
-		logger.Error("Failed to create health check report", zap.Error(err))
+		logger.Error("Failed to create monitoring report", zap.Error(err))
 		return err
 	}
 
 	return nil
 }
 
-// Update updates an existing health check report
-func (r *HealthCheckRepository) Update(ctx context.Context, report *models.HealthCheckReport) error {
+// Update updates an existing monitoring report
+func (r *MonitoringRepository) Update(ctx context.Context, report *models.MonitoringReport) error {
 	resultsJSON, err := json.Marshal(report.Results)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func (r *HealthCheckRepository) Update(ctx context.Context, report *models.Healt
 	}
 
 	query := `
-		UPDATE health_check_reports 
+		UPDATE monitoring_reports 
 		SET status = $1, completed_at = $2, duration_ms = $3, results = $4, summary = $5, config = $6
 		WHERE id = $7
 	`
@@ -87,26 +87,26 @@ func (r *HealthCheckRepository) Update(ctx context.Context, report *models.Healt
 	)
 
 	if err != nil {
-		logger.Error("Failed to update health check report", zap.Error(err))
+		logger.Error("Failed to update monitoring report", zap.Error(err))
 		return err
 	}
 
 	return nil
 }
 
-// GetByID retrieves a health check report by ID
-func (r *HealthCheckRepository) GetByID(ctx context.Context, id string) (*models.HealthCheckReport, error) {
+// GetByID retrieves a monitoring report by ID
+func (r *MonitoringRepository) GetByID(ctx context.Context, id string) (*models.MonitoringReport, error) {
 	query := `
 		SELECT 
 			hc.id, hc.workflow_id, w.name as workflow_name, hc.execution_id, 
 			hc.status, hc.started_at, hc.completed_at, hc.duration_ms, 
 			hc.results, hc.summary, hc.config
-		FROM health_check_reports hc
+		FROM monitoring_reports hc
 		LEFT JOIN workflows w ON hc.workflow_id = w.id
 		WHERE hc.id = $1
 	`
 
-	report := &models.HealthCheckReport{}
+	report := &models.MonitoringReport{}
 	var resultsJSON, summaryJSON, configJSON []byte
 
 	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
@@ -135,13 +135,13 @@ func (r *HealthCheckRepository) GetByID(ctx context.Context, id string) (*models
 	return report, nil
 }
 
-// ListByWorkflow lists health check reports for a workflow
-func (r *HealthCheckRepository) ListByWorkflow(ctx context.Context, workflowID string, limit int) ([]*models.HealthCheckReport, error) {
+// ListByWorkflow lists monitoring reports for a workflow
+func (r *MonitoringRepository) ListByWorkflow(ctx context.Context, workflowID string, limit int) ([]*models.MonitoringReport, error) {
 	query := `
 		SELECT 
 			hc.id, hc.workflow_id, hc.status, hc.started_at, 
 			hc.completed_at, hc.duration_ms, hc.summary
-		FROM health_check_reports hc
+		FROM monitoring_reports hc
 		WHERE hc.workflow_id = $1
 		ORDER BY hc.started_at DESC
 		LIMIT $2
@@ -153,9 +153,9 @@ func (r *HealthCheckRepository) ListByWorkflow(ctx context.Context, workflowID s
 	}
 	defer rows.Close()
 
-	reports := []*models.HealthCheckReport{}
+	reports := []*models.MonitoringReport{}
 	for rows.Next() {
-		report := &models.HealthCheckReport{}
+		report := &models.MonitoringReport{}
 		var summaryJSON []byte
 
 		err := rows.Scan(
@@ -180,31 +180,31 @@ func (r *HealthCheckRepository) ListByWorkflow(ctx context.Context, workflowID s
 }
 
 // SetAsBaseline marks a report as the baseline for its workflow
-func (r *HealthCheckRepository) SetAsBaseline(ctx context.Context, reportID string) error {
-	query := `UPDATE health_check_reports SET is_baseline = true WHERE id = $1`
+func (r *MonitoringRepository) SetAsBaseline(ctx context.Context, reportID string) error {
+	query := `UPDATE monitoring_reports SET is_baseline = true WHERE id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, reportID)
 	return err
 }
 
 // UnsetBaseline removes baseline status from all reports in a workflow
-func (r *HealthCheckRepository) UnsetBaseline(ctx context.Context, workflowID string) error {
-	query := `UPDATE health_check_reports SET is_baseline = false WHERE workflow_id = $1`
+func (r *MonitoringRepository) UnsetBaseline(ctx context.Context, workflowID string) error {
+	query := `UPDATE monitoring_reports SET is_baseline = false WHERE workflow_id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, workflowID)
 	return err
 }
 
 // GetBaseline retrieves the baseline report for a workflow
-func (r *HealthCheckRepository) GetBaseline(ctx context.Context, workflowID string) (*models.HealthCheckReport, error) {
+func (r *MonitoringRepository) GetBaseline(ctx context.Context, workflowID string) (*models.MonitoringReport, error) {
 	query := `
 		SELECT 
 			id, workflow_id, status, started_at, completed_at, 
 			duration_ms, results, summary, config
-		FROM health_check_reports
+		FROM monitoring_reports
 		WHERE workflow_id = $1 AND is_baseline = true
 		LIMIT 1
 	`
 
-	report := &models.HealthCheckReport{}
+	report := &models.MonitoringReport{}
 	var resultsJSON, summaryJSON, configJSON []byte
 
 	err := r.db.Pool.QueryRow(ctx, query, workflowID).Scan(

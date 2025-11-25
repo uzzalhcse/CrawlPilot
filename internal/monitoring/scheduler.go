@@ -1,4 +1,4 @@
-package healthcheck
+package monitoring
 
 import (
 	"context"
@@ -6,38 +6,38 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/uzzalhcse/crawlify/internal/healthcheck/notifications"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/monitoring/notifications"
 	"github.com/uzzalhcse/crawlify/internal/storage"
 	"github.com/uzzalhcse/crawlify/pkg/models"
 	"go.uber.org/zap"
 )
 
-// SchedulerService manages scheduled health check execution
+// SchedulerService manages scheduled monitoring execution
 type SchedulerService struct {
-	scheduleRepo    *storage.HealthCheckScheduleRepository
-	healthCheckRepo *storage.HealthCheckRepository
-	workflowRepo    *storage.WorkflowRepository
-	orchestrator    *Orchestrator
-	slackNotifier   *notifications.SlackNotifier
-	stopChan        chan struct{}
-	running         bool
+	scheduleRepo   *storage.MonitoringScheduleRepository
+	monitoringRepo *storage.MonitoringRepository
+	workflowRepo   *storage.WorkflowRepository
+	orchestrator   *Orchestrator
+	slackNotifier  *notifications.SlackNotifier
+	stopChan       chan struct{}
+	running        bool
 }
 
 // NewSchedulerService creates a new scheduler service
 func NewSchedulerService(
-	scheduleRepo *storage.HealthCheckScheduleRepository,
-	healthCheckRepo *storage.HealthCheckRepository,
+	scheduleRepo *storage.MonitoringScheduleRepository,
+	monitoringRepo *storage.MonitoringRepository,
 	workflowRepo *storage.WorkflowRepository,
 	orchestrator *Orchestrator,
 ) *SchedulerService {
 	return &SchedulerService{
-		scheduleRepo:    scheduleRepo,
-		healthCheckRepo: healthCheckRepo,
-		workflowRepo:    workflowRepo,
-		orchestrator:    orchestrator,
-		slackNotifier:   notifications.NewSlackNotifier(),
-		stopChan:        make(chan struct{}),
+		scheduleRepo:   scheduleRepo,
+		monitoringRepo: monitoringRepo,
+		workflowRepo:   workflowRepo,
+		orchestrator:   orchestrator,
+		slackNotifier:  notifications.NewSlackNotifier(),
+		stopChan:       make(chan struct{}),
 	}
 }
 
@@ -48,7 +48,7 @@ func (s *SchedulerService) Start() {
 	}
 
 	s.running = true
-	logger.Info("Health check scheduler started")
+	logger.Info("Monitoring scheduler started")
 
 	// Run schedule check every minute
 	ticker := time.NewTicker(1 * time.Minute)
@@ -59,7 +59,7 @@ func (s *SchedulerService) Start() {
 		case <-ticker.C:
 			s.checkAndRunSchedules()
 		case <-s.stopChan:
-			logger.Info("Health check scheduler stopped")
+			logger.Info("Monitoring scheduler stopped")
 			return
 		}
 	}
@@ -89,36 +89,36 @@ func (s *SchedulerService) checkAndRunSchedules() {
 	}
 }
 
-// executeScheduledHealthCheck runs a health check for a schedule
-func (s *SchedulerService) executeScheduledHealthCheck(schedule *models.HealthCheckSchedule) {
+// executeScheduledHealthCheck runs a monitoring for a schedule
+func (s *SchedulerService) executeScheduledHealthCheck(schedule *models.MonitoringSchedule) {
 	ctx := context.Background()
 
-	logger.Info("Executing scheduled health check",
+	logger.Info("Executing scheduled monitoring",
 		zap.String("schedule_id", schedule.ID),
 		zap.String("workflow_id", schedule.WorkflowID))
 
 	// Get workflow
 	workflow, err := s.workflowRepo.GetByID(ctx, schedule.WorkflowID)
 	if err != nil {
-		logger.Error("Failed to get workflow for scheduled health check",
+		logger.Error("Failed to get workflow for scheduled monitoring",
 			zap.String("workflow_id", schedule.WorkflowID),
 			zap.Error(err))
 		return
 	}
 
-	// Run health check
-	report, err := s.orchestrator.RunHealthCheck(ctx, workflow)
+	// Run monitoring
+	report, err := s.orchestrator.RunMonitoring(ctx, workflow)
 	if err != nil {
-		logger.Error("Scheduled health check failed",
+		logger.Error("Scheduled monitoring failed",
 			zap.String("workflow_id", schedule.WorkflowID),
 			zap.Error(err))
 		return
 	}
 
 	// Save report
-	err = s.healthCheckRepo.Create(ctx, report)
+	err = s.monitoringRepo.Create(ctx, report)
 	if err != nil {
-		logger.Error("Failed to save health check report",
+		logger.Error("Failed to save monitoring report",
 			zap.String("report_id", report.ID),
 			zap.Error(err))
 	}
@@ -140,16 +140,16 @@ func (s *SchedulerService) executeScheduledHealthCheck(schedule *models.HealthCh
 		s.sendNotifications(schedule.NotificationConfig, report, workflow.Name)
 	}
 
-	logger.Info("Scheduled health check completed",
+	logger.Info("Scheduled monitoring completed",
 		zap.String("schedule_id", schedule.ID),
 		zap.String("report_id", report.ID),
 		zap.String("status", string(report.Status)))
 }
 
 // sendNotifications sends notifications based on config
-func (s *SchedulerService) sendNotifications(config *models.NotificationConfig, report *models.HealthCheckReport, workflowName string) {
+func (s *SchedulerService) sendNotifications(config *models.NotificationConfig, report *models.MonitoringReport, workflowName string) {
 	// Check if we should notify based on config
-	if config.OnlyOnFailure && report.Status == models.HealthCheckStatusHealthy {
+	if config.OnlyOnFailure && report.Status == models.MonitoringStatusHealthy {
 		return
 	}
 
@@ -179,9 +179,9 @@ func calculateNextRun(cronSchedule string, fromTime time.Time) *time.Time {
 	return &next
 }
 
-// CreateSchedule creates a new health check schedule
-func (s *SchedulerService) CreateSchedule(ctx context.Context, workflowID, cronSchedule string, config *models.NotificationConfig) (*models.HealthCheckSchedule, error) {
-	schedule := &models.HealthCheckSchedule{
+// CreateSchedule creates a new monitoring schedule
+func (s *SchedulerService) CreateSchedule(ctx context.Context, workflowID, cronSchedule string, config *models.NotificationConfig) (*models.MonitoringSchedule, error) {
+	schedule := &models.MonitoringSchedule{
 		ID:                 uuid.New().String(),
 		WorkflowID:         workflowID,
 		Schedule:           cronSchedule,

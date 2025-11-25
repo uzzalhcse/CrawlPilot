@@ -19,17 +19,17 @@ type NodeExecutor interface {
 	Type() models.NodeType
 }
 
-// IHealthCheckValidator interface for nodes that support health check validation
+// IHealthCheckValidator interface for nodes that support monitoring validation
 type IHealthCheckValidator interface {
-	ValidateForHealthCheck(ctx context.Context, input *ValidationInput) (*models.NodeValidationResult, error)
+	ValidateForMonitoring(ctx context.Context, input *ValidationInput) (*models.NodeValidationResult, error)
 }
 
-// ValidationInput contains input for health check validation
+// ValidationInput contains input for monitoring validation
 type ValidationInput struct {
 	BrowserContext   *browser.BrowserContext
 	ExecutionContext *models.ExecutionContext
 	Params           map[string]interface{}
-	Config           *models.HealthCheckConfig
+	Config           *models.MonitoringConfig
 }
 
 // ExecutionInput contains everything a node needs to execute
