@@ -8,7 +8,9 @@ function generateId(): string {
 export function convertNodesToWorkflowConfig(
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
-    baseConfig: Partial<WorkflowConfig> = {}
+    baseConfig: Partial<WorkflowConfig> = {},
+    preservedPhaseProps: Map<string, any> = new Map(),
+    preservedWorkflowProps: Record<string, any> = {}
 ): WorkflowConfig {
     // Group nodes by phaseId if available, otherwise use heuristic
     const nodesByPhase: Record<string, WorkflowNode[]> = {}
@@ -58,6 +60,9 @@ export function convertNodesToWorkflowConfig(
         // Filter out virtual nodes (extractField) and UI-only nodes (phaseLabel)
         const realNodes = phaseNodes.filter(n => !n.data.isVirtual && n.type !== 'phaseLabel')
 
+        // Skip this phase if there are no real nodes after filtering
+        if (realNodes.length === 0) return
+
         // Reconstruct fields for extract nodes
         const extractNodes = realNodes.filter(n => n.data.nodeType === 'extract')
         extractNodes.forEach(extractNode => {
@@ -91,32 +96,51 @@ export function convertNodesToWorkflowConfig(
             }
         })
 
-        phases.push({
+        // Get preserved properties for this phase
+        const preserved = preservedPhaseProps.get(phaseId) || {}
+
+        // Create phase with preserved or default properties
+        const phase: WorkflowPhase = {
             id: phaseId,
-            type: phaseType,
-            name: phaseNames[phaseId] || `Phase ${phaseId}`,
+            type: preserved.type || phaseType, // Use preserved type if available
+            name: preserved.name || phaseNames[phaseId] || `Phase ${phaseId}`,
             nodes: realNodes.map(node => convertToBackendNode(node, edges, nodes)),
-            url_filter: getUrlFilterForPhase(phaseId)
+            // Preserve url_filter if it exists, otherwise use default
+            url_filter: preserved.url_filter !== undefined ? preserved.url_filter : getUrlFilterForPhase(phaseId),
+            // Preserve transition if it exists
+            transition: preserved.transition
+        }
+
+        // Merge any other custom properties from preserved config
+        Object.keys(preserved).forEach(key => {
+            if (!['id', 'type', 'name', 'nodes', 'url_filter', 'transition'].includes(key)) {
+                (phase as any)[key] = preserved[key]
+            }
         })
+
+        phases.push(phase)
     })
 
-    // Link phases
-    for (let i = 0; i < phases.length - 1; i++) {
-        phases[i].transition = {
-            condition: 'all_nodes_complete',
-            next_phase: phases[i + 1].id
+    // Link phases if transitions are not already preserved
+    for (let i = 0; i < phases.length; i++) {
+        if (!phases[i].transition && i < phases.length - 1) {
+            phases[i].transition = {
+                condition: 'all_nodes_complete',
+                next_phase: phases[i + 1].id
+            }
         }
     }
 
-    return {
+    const config: WorkflowConfig = {
         start_urls: baseConfig.start_urls || [],
         max_depth: baseConfig.max_depth || 3,
         rate_limit_delay: baseConfig.rate_limit_delay || 1000,
         storage: baseConfig.storage || { type: 'database' },
         phases,
-        ...baseConfig // Spread other props but phases/storage/etc might be overwritten if not careful. 
-        // Actually we want baseConfig to override defaults but phases we generated.
+        ...preservedWorkflowProps // Merge any preserved workflow-level properties (headers, etc.)
     }
+
+    return config
 }
 
 function getPhaseIdByType(type: string): string {

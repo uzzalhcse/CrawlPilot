@@ -41,6 +41,10 @@ const nodes = ref<WorkflowNode[]>([])
 const edges = ref<WorkflowEdge[]>([])
 const selectedNode = ref<WorkflowNode | null>(null)
 
+// Preserved properties from original JSON (headers, custom url_filter, etc.)
+const preservedPhaseProps = ref<Map<string, any>>(new Map())
+const preservedWorkflowProps = ref<Record<string, any>>({})
+
 // Generate unique node ID
 function generateNodeId(): string {
   return `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -59,15 +63,36 @@ watch(
 
 // Toggle Mode
 function toggleMode() {
+  console.log('🔄 [ToggleMode] Current mode:', mode.value, '→', mode.value === 'builder' ? 'json' : 'builder')
+  console.log('🔄 [ToggleMode] Current state - Nodes:', nodes.value.length, 'Edges:', edges.value.length)
+  
   if (mode.value === 'builder') {
     // Switch to JSON
     try {
-      const config = convertNodesToWorkflowConfig(nodes.value, edges.value, {
-        start_urls: workflowConfig.value.start_urls || props.workflow?.config?.start_urls,
-        max_depth: workflowConfig.value.max_depth || props.workflow?.config?.max_depth,
-        rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow?.config?.rate_limit_delay,
-        storage: workflowConfig.value.storage || props.workflow?.config?.storage,
+      console.log('📤 [Builder→JSON] Converting nodes to workflow config...')
+      const config = convertNodesToWorkflowConfig(
+        nodes.value, 
+        edges.value, 
+        {
+          start_urls: workflowConfig.value.start_urls || [],
+          max_depth: workflowConfig.value.max_depth || 3,
+          rate_limit_delay: workflowConfig.value.rate_limit_delay || 1000,
+          storage: workflowConfig.value.storage || { type: 'database' },
+        },
+        preservedPhaseProps.value,
+        preservedWorkflowProps.value
+      )
+      
+      console.log('📤 [Builder→JSON] Conversion complete')
+      console.log('📤 [Builder→JSON] Phases:', config.phases?.length || 0)
+      config.phases?.forEach((phase: any, idx: number) => {
+        const extractNodes = phase.nodes?.filter((n: any) => n.type === 'extract') || []
+        extractNodes.forEach((node: any) => {
+          const fieldCount = node.params?.fields ? Object.keys(node.params.fields).length : 0
+          console.log(`📤   Phase ${idx + 1}: Extract node "${node.name}" has ${fieldCount} fields`)
+        })
       })
+      
       jsonContent.value = JSON.stringify(config, null, 2)
       mode.value = 'json'
     } catch (e: any) {
@@ -76,6 +101,7 @@ function toggleMode() {
   } else {
     // Switch to Builder
     try {
+      console.log('📥 [JSON→Builder] Parsing JSON and loading workflow...')
       let parsed = JSON.parse(jsonContent.value)
       let config = parsed
 
@@ -189,7 +215,40 @@ function loadWorkflow(workflow: Workflow) {
   workflowStatus.value = (workflow.status as 'draft' | 'active') || 'draft'
   
   // Store the full config to preserve non-node settings (start_urls, etc.)
-  workflowConfig.value = { ...workflow.config }
+  console.log('📥 [LoadWorkflow] Loading workflow:', workflow.name)
+  console.log('📥 [LoadWorkflow] Config phases:', workflow.config.phases?.length || 0)
+  
+  selectedNode.value = null
+  nodes.value = []
+  edges.value = []
+  
+  // Preserve custom properties from workflow config
+  preservedWorkflowProps.value = {}
+  preservedPhaseProps.value = new Map()
+  
+  // Extract workflow-level custom properties (headers, etc.)
+  const standardWorkflowKeys = ['start_urls', 'max_depth', 'rate_limit_delay', 'storage', 'phases', 'url_discovery', 'data_extraction']
+  Object.keys(workflow.config).forEach(key => {
+    if (!standardWorkflowKeys.includes(key)) {
+      preservedWorkflowProps.value[key] = (workflow.config as any)[key]
+    }
+  })
+  
+  // Extract phase-level custom properties
+  if (workflow.config.phases) {
+    workflow.config.phases.forEach((phase: any) => {
+      const phasePreserved: any = {}
+      
+      // Store all phase properties for later merging
+      Object.keys(phase).forEach(key => {
+        if (key !== 'nodes') { // Don't preserve nodes, we rebuild those
+          phasePreserved[key] = phase[key]
+        }
+      })
+      
+      preservedPhaseProps.value.set(phase.id, phasePreserved)
+    })
+  }
 
   // Convert workflow config to nodes and edges
   const loadedNodes: WorkflowNode[] = []
@@ -216,6 +275,8 @@ function loadWorkflow(workflow: Workflow) {
             
             if (n.type === 'extract' && n.params?.fields) {
               const fieldKeys = Object.keys(n.params.fields)
+              console.log(`📥   Found extract node "${n.name}" with ${fieldKeys.length} fields, exploding...`)
+              
               fieldKeys.forEach((key, fieldIndex) => {
                 const field = n.params.fields[key]
                 const fieldNodeId = `${n.id}_field_${key}`
@@ -227,7 +288,7 @@ function loadWorkflow(workflow: Workflow) {
                   params: { ...field }, // Copy field params
                   parentId: n.id,
                   phaseId: phase.id,
-                  level: (n.level || 0) + 1,
+                  level: (n.level || 0) + 1 + fieldIndex, // Each field gets a unique level for vertical stacking
                   isVirtual: true, // Mark as virtual so we know to implode it later
                   fieldKey: key
                 })
@@ -254,7 +315,7 @@ function loadWorkflow(workflow: Workflow) {
   const nodePositions = new Map<string, { x: number; y: number }>()
   const nodeWidth = 320
   const horizontalGap = 100 // More spacing between nodes in same row
-  const verticalGap = 120 // Tighter vertical spacing for better density
+  const verticalGap = 60 // Tighter vertical spacing for extractField nodes
   const phaseGap = 250 // Optimized gap between phases
   const phaseLabelHeight = 60 // Reserved space for phase labels
   
@@ -262,12 +323,16 @@ function loadWorkflow(workflow: Workflow) {
 
   // Helper to layout a set of nodes (a phase)
   const layoutPhase = (phaseNodes: any[], startX: number) => {
-    // Group by level within this phase
+    // Separate field nodes from regular nodes - field nodes will be positioned separately
+    const regularNodes = phaseNodes.filter(n => n.type !== 'extractField')
+    const fieldNodes = phaseNodes.filter(n => n.type === 'extractField')
+    
+    // Group by level within this phase (only regular nodes)
     const phaseNodesByLevel = new Map<number, any[]>()
     let maxLevel = 0
     let maxNodesInRow = 0
 
-    phaseNodes.forEach(node => {
+    regularNodes.forEach(node => {
       const level = node.level || 0
       if (!phaseNodesByLevel.has(level)) {
         phaseNodesByLevel.set(level, [])
@@ -276,15 +341,17 @@ function loadWorkflow(workflow: Workflow) {
       maxLevel = Math.max(maxLevel, level)
     })
 
-    // Calculate width of this phase
+    // Calculate width of this phase (based on regular nodes only)
     for (let level = 0; level <= maxLevel; level++) {
       const count = phaseNodesByLevel.get(level)?.length || 0
       maxNodesInRow = Math.max(maxNodesInRow, count)
     }
     
-    const phaseWidth = Math.max(nodeWidth, (maxNodesInRow * nodeWidth) + ((maxNodesInRow - 1) * horizontalGap))
+    // Add extra width only if there are field nodes in this phase
+    const fieldNodeSpace = fieldNodes.length > 0 ? 300 : 0 // Reduced from 500
+    const phaseWidth = Math.max(nodeWidth, (maxNodesInRow * nodeWidth) + ((maxNodesInRow - 1) * horizontalGap)) + fieldNodeSpace
     
-    // Position nodes below phase label
+    // Position regular nodes below phase label
     let currentY = 100 + phaseLabelHeight
     
     for (let level = 0; level <= maxLevel; level++) {
@@ -293,7 +360,7 @@ function loadWorkflow(workflow: Workflow) {
 
       // Center nodes in the phase width
       const rowWidth = (nodesAtLevel.length * nodeWidth) + ((nodesAtLevel.length - 1) * horizontalGap)
-      const rowStartX = startX + (phaseWidth - rowWidth) / 2
+      const rowStartX = startX + (phaseWidth - rowWidth - fieldNodeSpace) / 2 // Use dynamic field node space
 
       nodesAtLevel.forEach((node, index) => {
         const x = rowStartX + (index * (nodeWidth + horizontalGap))
@@ -303,6 +370,33 @@ function loadWorkflow(workflow: Workflow) {
 
       currentY += verticalGap
     }
+    
+    // Now position field nodes to the right of their parent extract nodes
+    // Group field nodes by parent
+    const fieldNodesByParent = new Map<string, any[]>()
+    fieldNodes.forEach(fieldNode => {
+      if (!fieldNodesByParent.has(fieldNode.parentId)) {
+        fieldNodesByParent.set(fieldNode.parentId, [])
+      }
+      fieldNodesByParent.get(fieldNode.parentId)!.push(fieldNode)
+    })
+    
+    // Position each group of field nodes
+    fieldNodesByParent.forEach((fields, parentId) => {
+      const parentPos = nodePositions.get(parentId)
+      if (parentPos) {
+        // Calculate vertical centering offset
+        const totalHeight = (fields.length - 1) * 80 // Increased spacing to prevent overlap
+        const startY = parentPos.y - (totalHeight / 2) // Start position to center vertically
+        
+        fields.forEach((fieldNode, fieldIndex) => {
+          // Position field nodes far to the right of parent to avoid overlap
+          const x = parentPos.x + 600 // Far to the right
+          const y = startY + (fieldIndex * 80) // Increased from 60 to 80px spacing
+          nodePositions.set(fieldNode.id, { x, y })
+        })
+      }
+    })
 
     return phaseWidth
   }
@@ -362,15 +456,15 @@ function loadWorkflow(workflow: Workflow) {
         }
       })
 
-      // Create edges for virtual field nodes
+      // Create edges for virtual field nodes with consistent styling
       if (node.type === 'extractField' && node.parentId) {
         loadedEdges.push({
-          id: `${node.parentId}-${node.id}`,
+          id: `${node.parentId}_to_${node.id}`, // Use same ID format as handleNodeUpdate
           source: node.parentId,
           target: node.id,
-          type: 'smoothstep',
           animated: false,
-          style: { strokeDasharray: '5,5', stroke: '#94a3b8' }
+          style: { stroke: '#a855f7', strokeWidth: 1.5, opacity: 0.5 }, // Consistent purple styling
+          type: 'default'
         })
       }
 
@@ -386,8 +480,8 @@ function loadWorkflow(workflow: Workflow) {
       })
     }
     
-    // Create parent-child edge for nested nodes
-    if (node.parentId) {
+    // Create parent-child edge for nested nodes (but NOT for extractField nodes - they're handled separately)
+    if (node.parentId && node.type !== 'extractField') {
       const edgeId = `parent_${node.parentId}-${node.id}`
       // Only add if not already added by dependencies
       if (!loadedEdges.some(e => e.id === edgeId)) {
@@ -479,47 +573,113 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
       const newFields = updatedNode.data.params?.fields
       
       // Always regenerate extractField nodes to ensure they are in sync
-      // First, capture positions of existing field nodes to preserve them
-      const existingFieldPositions = new Map<string, { x: number, y: number }>()
+      // First, capture positions      // Collect existing field node positions BEFORE filtering
+      const existingFieldPositions = new Map<string, { x: number; y: number }>()
       nodes.value.forEach(n => {
-        if (n.data.nodeType === 'extractField' && 
-            (n.data.parentId === updatedNode.id || n.data.params?.parentId === updatedNode.id)) {
-          existingFieldPositions.set(n.data.params?.fieldKey || n.data.label, n.position)
+        if (n.type === 'extractField' && n.data.parentId === updatedNode.id) {
+          const fieldKey = n.data.params?.fieldKey || n.data.label
+          if (fieldKey && n.position) {
+            existingFieldPositions.set(fieldKey, { x: n.position.x, y: n.position.y })
+            console.log(`  📍 Saved position for existing field "${fieldKey}": x=${n.position.x}, y=${n.position.y}`)
+          }
         }
       })
       
-      // Remove old extractField nodes for this extract node
+      console.log(`  💾 Collected ${existingFieldPositions.size} existing field positions`)
+
+      // Remove old field nodes from this parent
+      const isExtractFieldNode = (n: WorkflowNode) => n.type === 'extractField'
       nodes.value = nodes.value.filter(n => {
-        const isExtractFieldNode = n.data.nodeType === 'extractField' || n.type === 'extractField'
-        if (!isExtractFieldNode) return true
+        if (!isExtractFieldNode(n)) return true
         
         const nodeParentId = n.data.parentId || n.data.params?.parentId
         return nodeParentId !== updatedNode.id
       })
 
-      // Also remove old edges connected to these field nodes
-      // We'll regenerate them to ensure everything is clean
-      // Note: We only remove edges where the source is the parent extract node and target is a field node
-      // This might be too aggressive if users manually connected things, but for virtual nodes it's safer
-      edges.value = edges.value.filter(e => e.source !== updatedNode.id || !e.target.includes('_field_'))
-      
       // Generate new extractField nodes and edges
       const newExtractFieldNodes: WorkflowNode[] = []
       const newEdges: any[] = []
 
+      // Remove old edges connected to field nodes from this extract node
+      // Only remove edges where source is the extract node AND target is a field node
+      edges.value = edges.value.filter(edge => {
+        // Keep edge if it's not from this extract node
+        if (edge.source !== updatedNode.id) return true
+        // Remove edge if target is a field node (will be regenerated)
+        if (edge.target.includes('_field_')) return false
+        // Keep all other edges
+        return true
+      })
+      
       if (newFields) {
-        const fieldKeys = Object.keys(newFields)
-        fieldKeys.forEach((key, index) => {
+        const fieldKeys = Object.keys(newFields).sort() // Sort to maintain consistent order
+        
+        console.log(`  🔨 Creating ${fieldKeys.length} field nodes from keys:`, fieldKeys)
+        
+        // Collect all occupied Y positions from existing fields
+        const occupiedYPositions = new Set(Array.from(existingFieldPositions.values()).map(pos => pos.y))
+        console.log(`  📊 Occupied Y positions:`, Array.from(occupiedYPositions).sort((a, b) => a - b))
+        
+        fieldKeys.forEach((key) => {
           const field = newFields[key]
           const fieldNodeId = `${updatedNode.id}_field_${key}`
           
-          // Use existing position if available, otherwise default layout
-          // Default layout: stack them vertically to the right of the parent
-          // Improved layout: Stagger them slightly to avoid complete overlap if many
-          const defaultX = (updatedNode.position?.x || 0) + 350
-          const defaultY = (updatedNode.position?.y || 0) + (index * 120) - ((fieldKeys.length * 120) / 2) + 60
+          // Check if this field already has a position
+          const existingPos = existingFieldPositions.get(key)
           
-          const position = existingFieldPositions.get(key) || { x: defaultX, y: defaultY }
+          let position: { x: number; y: number } = { x: 0, y: 0 } // Initialize with default
+          
+          if (existingPos) {
+            // Use existing position for fields that already exist
+            console.log(`  ✅ Reusing position for existing field "${key}": x=${existingPos.x}, y=${existingPos.y}`)
+            position = existingPos
+          } else {
+            // For new fields, find an available Y position
+            const baseX = (updatedNode.position?.x || 0) + 600
+            const parentY = updatedNode.position?.y || 0
+            
+            // Sort occupied positions to find gaps
+            const sortedPositions = Array.from(occupiedYPositions).sort((a, b) => a - b)
+            console.log(`  🔍 Searching for gap in positions:`, sortedPositions)
+            
+            let foundPosition = false
+            
+            // First, try to find a gap between existing positions
+            if (sortedPositions.length >= 2) {
+              for (let i = 0; i < sortedPositions.length - 1; i++) {
+                const currentY = sortedPositions[i]
+                const nextY = sortedPositions[i + 1]
+                const gap = nextY - currentY
+                
+                // If there's a gap of at least 80px, we can fit a field there
+                if (gap >= 80) {
+                  const candidateY = currentY + 80
+                  if (!occupiedYPositions.has(candidateY)) {
+                    position = { x: baseX, y: candidateY }
+                    occupiedYPositions.add(candidateY)
+                    foundPosition = true
+                    console.log(`  ✨ Found gap! Placing "${key}" between y=${currentY} and y=${nextY} at y=${candidateY}`)
+                    break
+                  }
+                }
+              }
+            }
+            
+            // If no gap found, place at the end
+            if (!foundPosition) {
+              if (sortedPositions.length > 0) {
+                const lastY = sortedPositions[sortedPositions.length - 1]
+                position = { x: baseX, y: lastY + 80 }
+                occupiedYPositions.add(position.y)
+                console.log(`  ➕ No gap found, placing "${key}" at bottom: y=${position.y}`)
+              } else {
+                // No existing fields, center around parent
+                position = { x: baseX, y: parentY }
+                occupiedYPositions.add(position.y)
+                console.log(`  🎯 First field, centering at parent: y=${position.y}`)
+              }
+            }
+          }
           
           newExtractFieldNodes.push({
             id: fieldNodeId,
@@ -546,18 +706,20 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
             }
           })
 
-          // Create edge from parent to field node
+          // Create edge from parent to field node with consistent styling
           newEdges.push({
-            id: `${updatedNode.id}-${fieldNodeId}`,
+            id: `${updatedNode.id}_to_${fieldNodeId}`,
             source: updatedNode.id,
             target: fieldNodeId,
-            animated: true,
-            style: { stroke: '#a855f7' } // Purple edge to match extract theme
+            animated: false,
+            style: { stroke: '#a855f7', strokeWidth: 1.5, opacity: 0.5 },
+            type: 'default'
           })
         })
       }
       
-      console.log(`  Regenerated ${newExtractFieldNodes.length} extractField nodes and edges`)
+      console.log(`  Regenerated ${newExtractFieldNodes.length} extractField nodes and ${newEdges.length} edges`)
+      console.log(`  Current edge count BEFORE adding: ${edges.value.length}`)
       
       // Update the extract node and add new extractField nodes
       nodes.value = [
@@ -569,6 +731,8 @@ function handleNodeUpdate(updatedNode: WorkflowNode) {
 
       // Add new edges
       edges.value = [...edges.value, ...newEdges]
+      
+      console.log(`  Current edge count AFTER adding: ${edges.value.length}`)
 
     } else {
       // Regular node update
@@ -651,12 +815,18 @@ function handleSave() {
       return
     }
   } else {
-    config = convertNodesToWorkflowConfig(nodes.value, edges.value, {
-      start_urls: workflowConfig.value.start_urls || props.workflow?.config?.start_urls,
-      max_depth: workflowConfig.value.max_depth || props.workflow?.config?.max_depth,
-      rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow?.config?.rate_limit_delay,
-      storage: workflowConfig.value.storage || props.workflow?.config?.storage,
-    })
+    config = convertNodesToWorkflowConfig(
+      nodes.value, 
+      edges.value, 
+      {
+        start_urls: workflowConfig.value.start_urls || props.workflow?.config?.start_urls,
+        max_depth: workflowConfig.value.max_depth || props.workflow?.config?.max_depth,
+        rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow?.config?.rate_limit_delay,
+        storage: workflowConfig.value.storage || props.workflow?.config?.storage,
+      },
+      preservedPhaseProps.value,
+      preservedWorkflowProps.value
+    )
   }
 
   emit('save', {
@@ -686,12 +856,18 @@ async function handleToggleStatus() {
   try {
     toast.loading(`Updating status to ${newStatus}...`, { id: 'update-status' })
     
-    const config = convertNodesToWorkflowConfig(nodes.value, edges.value, {
-      start_urls: workflowConfig.value.start_urls || props.workflow.config.start_urls,
-      max_depth: workflowConfig.value.max_depth || props.workflow.config.max_depth,
-      rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow.config.rate_limit_delay,
-      storage: workflowConfig.value.storage || props.workflow.config.storage,
-    })
+    const config = convertNodesToWorkflowConfig(
+      nodes.value, 
+      edges.value, 
+      {
+        start_urls: workflowConfig.value.start_urls || props.workflow.config.start_urls,
+        max_depth: workflowConfig.value.max_depth || props.workflow.config.max_depth,
+        rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow.config.rate_limit_delay,
+        storage: workflowConfig.value.storage || props.workflow.config.storage,
+      },
+      preservedPhaseProps.value,
+      preservedWorkflowProps.value
+    )
 
     await workflowsStore.updateWorkflow(props.workflow.id, {
       name: workflowName.value,
@@ -814,6 +990,7 @@ defineExpose({
           @update="handleNodeUpdate"
           @delete="handleNodeDelete"
           @close="selectedNode = null"
+          @save="handleSave"
         />
       </template>
 

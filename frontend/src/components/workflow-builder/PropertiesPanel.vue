@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import MonacoEditor from '@/components/ui/MonacoEditor.vue'
-import { Code2, FileText, X, Trash2, Settings2 } from 'lucide-vue-next'
+import { Code2, FileText, X, Trash2, Settings2, Save } from 'lucide-vue-next'
 
 // New imports from the provided snippet
 import { Textarea } from '@/components/ui/textarea'
@@ -35,6 +35,7 @@ interface Emits {
   (e: 'update', node: WorkflowNode): void
   (e: 'delete'): void
   (e: 'close'): void
+  (e: 'save'): void
 }
 
 const props = defineProps<Props>()
@@ -608,6 +609,14 @@ function closeVisualSelector() {
             {{ jsonError }}
           </div>
         </div>
+      
+      <!-- Footer with Save Button -->
+      <div class="p-4 border-t border-border bg-muted/20">
+        <Button @click="emit('save')" variant="default" size="default" class="w-full">
+          <Save class="w-4 h-4 mr-2" />
+          Save Workflow
+        </Button>
+      </div>
     </div>
   </div>
 </template>
