@@ -88,16 +88,18 @@ type PluginReview struct {
 
 // PluginFilters for searching/filtering plugins
 type PluginFilters struct {
-	Query      string     // Search query
-	Category   string     // Filter by category
-	PhaseType  PhaseType  // Filter by phase type
-	PluginType PluginType // Filter by plugin type
-	Tags       []string   // Filter by tags
-	IsVerified *bool      // Filter verified plugins
-	SortBy     string     // Sort field: popular, recent, rating, name
-	SortOrder  string     // asc, desc
-	Limit      int
-	Offset     int
+	Query        string     // Search query (deprecated, use SearchQuery)
+	SearchQuery  string     // Search query for name/description
+	Category     string     // Filter by category
+	PhaseType    PhaseType  // Filter by phase type
+	PluginType   PluginType // Filter by plugin type
+	Tags         []string   // Filter by tags
+	IsVerified   *bool      // Filter verified plugins (pointer for optional)
+	VerifiedOnly bool       // Filter verified plugins only (boolean)
+	SortBy       string     // Sort field: popular, recent, rating, name
+	SortOrder    string     // asc, desc
+	Limit        int
+	Offset       int
 }
 
 // JSONArray is a custom type for JSON array in database

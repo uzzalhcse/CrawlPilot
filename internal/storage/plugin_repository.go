@@ -2,12 +2,12 @@ package storage
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/uzzalhcse/crawlify/pkg/models"
 )
 
 // PluginRepository handles database operations for plugins
-// TODO: Implement full repository with pgx queries
 type PluginRepository struct {
 	db *PostgresDB
 }
@@ -67,16 +67,86 @@ func (r *PluginRepository) GetPluginBySlug(ctx context.Context, slug string) (*m
 	return &plugin, err
 }
 
-// ListPlugins lists plugins with filtering
+// ListPlugins lists plugins with comprehensive filtering
 func (r *PluginRepository) ListPlugins(ctx context.Context, filters models.PluginFilters) ([]*models.Plugin, error) {
-	// Simple implementation - just get all plugins for now
-	query := `SELECT * FROM plugins ORDER BY total_downloads DESC LIMIT $1`
-	limit := 50
-	if filters.Limit > 0 {
-		limit = filters.Limit
+	// Build dynamic query with filters
+	query := `
+		SELECT 
+			id, name, slug, description, author_name, author_email,
+			repository_url, documentation_url, phase_type, plugin_type,
+			category, tags, is_verified, total_downloads, total_installs,
+			average_rating, created_at, updated_at
+		FROM plugins 
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argCount := 1
+
+	// Filter by phase type
+	if filters.PhaseType != "" {
+		query += ` AND phase_type = $` + fmt.Sprintf("%d", argCount)
+		args = append(args, filters.PhaseType)
+		argCount++
 	}
 
-	rows, err := r.db.Pool.Query(ctx, query, limit)
+	// Filter by category
+	if filters.Category != "" {
+		query += ` AND category = $` + fmt.Sprintf("%d", argCount)
+		args = append(args, filters.Category)
+		argCount++
+	}
+
+	// Filter by tags (array contains)
+	if len(filters.Tags) > 0 {
+		query += ` AND tags && $` + fmt.Sprintf("%d", argCount)
+		args = append(args, filters.Tags)
+		argCount++
+	}
+
+	// Filter by verified status
+	if filters.VerifiedOnly {
+		query += ` AND is_verified = true`
+	}
+
+	// Search query (name or description)
+	if filters.SearchQuery != "" {
+		query += ` AND (name ILIKE $` + fmt.Sprintf("%d", argCount) + ` OR description ILIKE $` + fmt.Sprintf("%d", argCount) + `)`
+		searchPattern := "%" + filters.SearchQuery + "%"
+		args = append(args, searchPattern)
+		argCount++
+	}
+
+	// Sorting
+	sortBy := "total_downloads DESC" // Default sort
+	if filters.SortBy != "" {
+		switch filters.SortBy {
+		case "name":
+			sortBy = "name ASC"
+		case "created_at":
+			sortBy = "created_at DESC"
+		case "rating":
+			sortBy = "average_rating DESC"
+		case "installs":
+			sortBy = "total_installs DESC"
+		}
+	}
+	query += ` ORDER BY ` + sortBy
+
+	// Pagination
+	limit := 50
+	if filters.Limit > 0 && filters.Limit <= 100 {
+		limit = filters.Limit
+	}
+	query += ` LIMIT $` + fmt.Sprintf("%d", argCount)
+	args = append(args, limit)
+	argCount++
+
+	if filters.Offset > 0 {
+		query += ` OFFSET $` + fmt.Sprintf("%d", argCount)
+		args = append(args, filters.Offset)
+	}
+
+	rows, err := r.db.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -341,13 +411,66 @@ func (r *PluginRepository) CreateReview(ctx context.Context, review *models.Plug
 }
 
 func (r *PluginRepository) ListReviews(ctx context.Context, pluginID string, limit, offset int) ([]*models.PluginReview, error) {
-	// Stub - returns empty list
-	return []*models.PluginReview{}, nil
+	query := `
+		SELECT id, plugin_id, user_id, rating, review_text, created_at, updated_at
+		FROM plugin_reviews
+		WHERE plugin_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+	rows, err := r.db.Pool.Query(ctx, query, pluginID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reviews []*models.PluginReview
+	for rows.Next() {
+		var review models.PluginReview
+		err := rows.Scan(
+			&review.ID, &review.PluginID, &review.UserID,
+			&review.Rating, &review.ReviewText,
+			&review.CreatedAt, &review.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		reviews = append(reviews, &review)
+	}
+
+	return reviews, rows.Err()
 }
 
 func (r *PluginRepository) GetCategories(ctx context.Context) ([]map[string]interface{}, error) {
-	// Stub - returns empty list
-	return []map[string]interface{}{}, nil
+	query := `
+		SELECT 
+			COALESCE(category, 'Uncategorized') as category,
+			COUNT(*) as plugin_count
+		FROM plugins
+		GROUP BY category
+		ORDER BY plugin_count DESC
+	`
+	rows, err := r.db.Pool.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var categories []map[string]interface{}
+	for rows.Next() {
+		var category string
+		var count int
+		err := rows.Scan(&category, &count)
+		if err != nil {
+			return nil, err
+		}
+		categories = append(categories, map[string]interface{}{
+			"name":  category,
+			"count": count,
+		})
+	}
+
+	return categories, rows.Err()
 }
 
 func (r *PluginRepository) GetPopularPlugins(ctx context.Context, limit int) ([]*models.Plugin, error) {
@@ -355,6 +478,9 @@ func (r *PluginRepository) GetPopularPlugins(ctx context.Context, limit int) ([]
 }
 
 func (r *PluginRepository) SearchPlugins(ctx context.Context, searchQuery string, limit int) ([]*models.Plugin, error) {
-	// Stub - just returns all plugins
-	return r.ListPlugins(ctx, models.PluginFilters{Limit: limit})
+	// Use the comprehensive ListPlugins with search query filter
+	return r.ListPlugins(ctx, models.PluginFilters{
+		SearchQuery: searchQuery,
+		Limit:       limit,
+	})
 }
