@@ -247,6 +247,7 @@ export interface WorkflowNode {
   position: { x: number; y: number }
   data: NodeData
   draggable?: boolean
+  connectable?: boolean
   selectable?: boolean
 }
 

@@ -363,15 +363,16 @@ onUnmounted(() => {
       <!-- Main Content -->
       <Tabs v-model="activeTab" class="space-y-3 w-full max-w-full">
         <TabsList class="h-8">
-          <TabsTrigger value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="text-xs">Live View</TabsTrigger>
+          <TabsTrigger value="live" class="text-xs">Live View</TabsTrigger>
           <TabsTrigger value="data" class="text-xs">Extracted Data</TabsTrigger>
           <TabsTrigger value="tree" class="text-xs">Node Tree</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="space-y-3">
+        <TabsContent value="live" class="space-y-3">
           <ExecutionLiveView 
             :execution-id="executionId" 
             :workflow-config="execution.workflow_config || {}" 
+            :execution-status="execution.status"
           />
         </TabsContent>
 

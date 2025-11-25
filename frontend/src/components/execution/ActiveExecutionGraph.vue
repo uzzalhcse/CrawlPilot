@@ -269,7 +269,10 @@ const buildGraphFromExecutionTree = () => {
         status: execution.status,
         error: execution.error,
         result: execution.result
-      }
+      },
+      draggable: false,
+      connectable: false,
+      selectable: true
     })
 
     // Create edge from parent

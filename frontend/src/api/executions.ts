@@ -65,6 +65,7 @@ export interface Bottleneck {
 export interface NodeTreeNode {
   id: string
   node_id: string
+  node_execution_id: string
   node_type: string
   status: string
   started_at: string
@@ -74,6 +75,7 @@ export interface NodeTreeNode {
   items_extracted: number
   error_message?: string
   parent_node_execution_id?: string
+  result?: any
   children?: NodeTreeNode[]
 }
 

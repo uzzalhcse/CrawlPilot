@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref } from 'vue'
 import { useExecutionStream } from '@/composables/useExecutionStream'
+import { useExecutionsStore } from '@/stores/executions'
 import PhaseStepper from './PhaseStepper.vue'
 import LiveLogViewer from './LiveLogViewer.vue'
 import ActiveExecutionGraph from './ActiveExecutionGraph.vue'
@@ -11,12 +12,65 @@ import { Wifi, WifiOff } from 'lucide-vue-next'
 const props = defineProps<{
   executionId: string
   workflowConfig?: any
+  executionStatus?: string
 }>()
 
+const executionsStore = useExecutionsStore()
 const { connect, disconnect, isConnected, logs, currentPhase, activeNodes, nodeStatuses, executionTree } = useExecutionStream(props.executionId)
 
-onMounted(() => {
+// For completed executions, load the tree from API
+const apiExecutionTree = ref<any[]>([])
+
+onMounted(async () => {
   connect()
+  
+  console.log('[ExecutionLiveView] Mounted. Status:', props.executionStatus) // DEBUG
+  
+  // Check if execution is completed and load tree from API
+  if (props.executionStatus && (props.executionStatus === 'completed' || props.executionStatus === 'failed')) {
+    console.log('[ExecutionLiveView] Fetching node tree for completed execution') // DEBUG
+    await executionsStore.fetchNodeTree(props.executionId)
+    console.log('[ExecutionLiveView] Node tree response:', executionsStore.nodeTree) // DEBUG
+    if (executionsStore.nodeTree) {
+      // Convert API tree format to executionTree format
+      apiExecutionTree.value = convertNodeTreeToExecutionTree(executionsStore.nodeTree.tree || [])
+      console.log('[ExecutionLiveView] Converted tree:', apiExecutionTree.value) // DEBUG
+    }
+  }
+})
+
+// Convert NodeTree API format to executionTree format
+function convertNodeTreeToExecutionTree(nodes: any[]): any[] {
+  const result = nodes.map(node => {
+    // Skip nodes without proper IDs
+    if (!node.id) {
+      console.warn('[ExecutionLiveView] Skipping node with missing ID:', node) // DEBUG
+      return null
+    }
+    
+    return {
+      id: node.id, // This is the node_execution_id from the database
+      node_id: node.node_id || node.id,
+      node_execution_id: node.id, // API returns 'id' which is the node_execution_id
+      parent_node_execution_id: node.parent_node_execution_id,
+      node_type: node.node_type || '',
+      status: node.status || 'completed',
+      error: node.error_message,
+      result: node.result,
+      children: node.children ? convertNodeTreeToExecutionTree(node.children) : []
+    }
+  }).filter(n => n !== null) // Remove null entries
+  
+  console.log('[ExecutionLiveView] Converted nodes:', result.length, result) // DEBUG
+  return result
+}
+
+// Use API tree if execution is completed, otherwise use live SSE tree
+const effectiveExecutionTree = computed(() => {
+  if (apiExecutionTree.value.length > 0) {
+    return apiExecutionTree.value
+  }
+  return executionTree.value
 })
 
 // Compute phases based on workflow config + current state
@@ -86,7 +140,7 @@ const phases = computed(() => {
         :workflow-config="workflowConfig" 
         :active-nodes="activeNodes"
         :node-statuses="nodeStatuses"
-        :execution-tree="executionTree"
+        :execution-tree="effectiveExecutionTree"
       />
     </Card>
 
