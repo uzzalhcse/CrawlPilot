@@ -207,7 +207,7 @@ onMounted(() => {
     </aside>
 
     <!-- Main Content -->
-    <div :class="['flex flex-1 flex-col transition-all duration-300', isCollapsed ? 'ml-14' : 'ml-56']">
+    <div :class="['flex flex-1 flex-col transition-all duration-300 min-w-0', isCollapsed ? 'ml-14' : 'ml-56']">
       <!-- Page Content -->
       <main class="flex-1 overflow-y-auto bg-background">
         <RouterView />
