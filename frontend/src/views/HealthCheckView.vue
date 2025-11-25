@@ -208,14 +208,16 @@ onMounted(async () => {
               Schedule
             </Button>
           </DialogTrigger>
-          <DialogContent class="max-w-2xl">
+          <DialogContent class="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle>Schedule Settings</DialogTitle>
             </DialogHeader>
-            <ScheduleSettings 
-              v-if="workflow"
-              :workflow-id="workflowId"
-            />
+            <div class="overflow-y-auto flex-1 -mx-6 px-6">
+              <ScheduleSettings 
+                v-if="workflow"
+                :workflow-id="workflowId"
+              />
+            </div>
           </DialogContent>
         </Dialog>
         

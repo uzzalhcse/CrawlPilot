@@ -3,10 +3,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useThemeStore } from '@/stores/theme'
 import {
-  LayoutDashboard,
   Workflow,
   PlayCircle,
-  BarChart3,
   Settings,
   ChevronDown,
   Search,
@@ -16,12 +14,9 @@ import {
   Home,
   Store,
   FileText,
-  Zap,
   Calendar,
-  MessageSquare,
   Server,
   HardDrive,
-  CreditCard,
   HelpCircle
 } from 'lucide-vue-next'
 
@@ -35,6 +30,8 @@ const menuItems = [
   { icon: Workflow, label: 'Workflows', route: '/workflows', badge: null },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
   { icon: Calendar, label: 'Monitoring', route: '/monitoring' },
+  { icon: Calendar, label: 'Schedules', route: '/schedules' },
+  { icon: FileText, label: 'Logs', route: '/logs' },
 ]
 
 const developmentItems = [

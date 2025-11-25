@@ -289,8 +289,7 @@ async function testNotification() {
 
 <style scoped>
 .schedule-settings {
-  max-width: 900px;
-  margin: 0 auto;
+  max-width: 100%;
 }
 
 /* Loading State */
@@ -299,18 +298,18 @@ async function testNotification() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4rem 2rem;
+  padding: 2rem 1rem;
   text-align: center;
 }
 
 .spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid #e5e7eb;
-  border-top-color: #3b82f6;
+  width: 32px;
+  height: 32px;
+  border: 2px solid hsl(var(--border));
+  border-top-color: hsl(var(--primary));
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-bottom: 1rem;
+  animation: spin 0.6s linear infinite;
+  margin-bottom: 0.75rem;
 }
 
 @keyframes spin {
@@ -319,45 +318,44 @@ async function testNotification() {
 
 /* Settings Container */
 .settings-container {
-  background: hsl(var(--background));
-  border-radius: 12px;
-  overflow: hidden;
+  background: transparent;
 }
 
 /* Header Section */
 .settings-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 2rem;
-  background: linear-gradient(135deg, hsl(var(--primary) / 0.05), hsl(var(--primary) / 0.02));
+  align-items: flex-start;
+  padding: 0 0 1.25rem 0;
   border-bottom: 1px solid hsl(var(--border));
 }
 
 .header-content h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.5rem;
-  font-weight: 700;
+  margin: 0 0 0.25rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
   color: hsl(var(--foreground));
 }
 
 .header-content p {
   margin: 0;
   color: hsl(var(--muted-foreground));
-  font-size: 0.95rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 .header-toggle {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .toggle-switch {
   position: relative;
   display: inline-block;
-  width: 52px;
-  height: 28px;
+  width: 40px;
+  height: 22px;
 }
 
 .toggle-switch input {
@@ -374,19 +372,19 @@ async function testNotification() {
   right: 0;
   bottom: 0;
   background-color: hsl(var(--muted));
-  transition: 0.3s;
-  border-radius: 34px;
+  transition: 0.2s;
+  border-radius: 11px;
 }
 
 .slider:before {
   position: absolute;
   content: "";
-  height: 20px;
-  width: 20px;
-  left: 4px;
-  bottom: 4px;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
   background-color: white;
-  transition: 0.3s;
+  transition: 0.2s;
   border-radius: 50%;
 }
 
@@ -395,30 +393,31 @@ async function testNotification() {
 }
 
 .toggle-switch input:checked + .slider:before {
-  transform: translateX(24px);
+  transform: translateX(18px);
 }
 
 .toggle-label {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: hsl(var(--foreground));
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
 }
 
 /* Config Sections */
 .config-section {
   display: flex;
-  gap: 1.5rem;
-  padding: 2rem;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem 0;
   border-bottom: 1px solid hsl(var(--border));
 }
 
 .config-section:last-of-type {
   border-bottom: none;
+  padding-bottom: 0;
 }
 
 .section-icon {
-  font-size: 2rem;
-  flex-shrink: 0;
+  display: none;
 }
 
 .section-content {
@@ -426,24 +425,25 @@ async function testNotification() {
 }
 
 .section-content h4 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.1rem;
+  margin: 0 0 0.25rem 0;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: hsl(var(--foreground));
 }
 
 .section-description {
-  margin: 0 0 1.5rem 0;
+  margin: 0 0 1rem 0;
   color: hsl(var(--muted-foreground));
-  font-size: 0.9rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 /* Frequency Selector */
 .frequency-selector {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .frequency-option {
@@ -459,56 +459,57 @@ async function testNotification() {
 .option-content {
   display: flex;
   flex-direction: column;
-  padding: 1rem;
-  border: 2px solid hsl(var(--border));
-  border-radius: 8px;
-  transition: all 0.2s;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  transition: all 0.15s;
   background: hsl(var(--background));
 }
 
 .frequency-option.active .option-content {
   border-color: hsl(var(--primary));
-  background: hsl(var(--primary) / 0.05);
+  background: hsl(var(--primary) / 0.04);
 }
 
 .option-label {
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-weight: 500;
+  font-size: 0.8125rem;
   color: hsl(var(--foreground));
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.125rem;
 }
 
 .option-description {
-  font-size: 0.8rem;
+  font-size: 0.6875rem;
   color: hsl(var(--muted-foreground));
 }
 
 .cron-display {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
   background: hsl(var(--muted) / 0.3);
-  border-radius: 6px;
+  border-radius: 4px;
+  border: 1px solid hsl(var(--border));
 }
 
 .cron-display code {
   font-family: 'Monaco', 'Courier New', monospace;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
   color: hsl(var(--foreground));
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .cron-label {
-  font-size: 0.8rem;
+  font-size: 0.6875rem;
   color: hsl(var(--muted-foreground));
 }
 
 /* Form Grid */
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: 1fr;
+  gap: 1rem;
 }
 
 .form-field.full-width {
@@ -517,9 +518,9 @@ async function testNotification() {
 
 .form-field label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.375rem;
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
   color: hsl(var(--foreground));
 }
 
@@ -529,11 +530,11 @@ async function testNotification() {
 
 .input-field {
   width: 100%;
-  padding: 0.65rem 0.85rem;
+  padding: 0.5rem 0.75rem;
   border: 1px solid hsl(var(--border));
   border-radius: 6px;
-  font-size: 0.9rem;
-  transition: all 0.2s;
+  font-size: 0.8125rem;
+  transition: all 0.15s;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
 }
@@ -541,14 +542,15 @@ async function testNotification() {
 .input-field:focus {
   outline: none;
   border-color: hsl(var(--primary));
-  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.08);
 }
 
 .field-hint {
   display: block;
-  margin-top: 0.4rem;
-  font-size: 0.8rem;
+  margin-top: 0.375rem;
+  font-size: 0.6875rem;
   color: hsl(var(--muted-foreground));
+  line-height: 1.4;
 }
 
 .field-hint a {
@@ -563,46 +565,52 @@ async function testNotification() {
 .checkbox-field {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 0.625rem;
   cursor: pointer;
-  padding: 1rem;
+  padding: 0.75rem;
   border: 1px solid hsl(var(--border));
   border-radius: 6px;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
 
 .checkbox-field:hover {
-  background: hsl(var(--muted) / 0.3);
+  background: hsl(var(--muted) / 0.2);
 }
 
 .checkbox-field input {
-  margin-top: 0.2rem;
+  margin-top: 0.125rem;
 }
 
 .checkbox-label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.125rem;
+}
+
+.checkbox-label strong {
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .checkbox-description {
-  font-size: 0.8rem;
+  font-size: 0.6875rem;
   color: hsl(var(--muted-foreground));
   font-weight: normal;
+  line-height: 1.4;
 }
 
 /* Test Notification */
 .test-notification {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid hsl(var(--border) / 0.5);
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid hsl(var(--border));
 }
 
 .test-hint {
-  font-size: 0.85rem;
+  font-size: 0.6875rem;
   color: hsl(var(--muted-foreground));
 }
 
@@ -610,47 +618,49 @@ async function testNotification() {
 .message {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  margin: 1.5rem 2rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  border-radius: 6px;
+  font-size: 0.75rem;
 }
 
 .message-icon {
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: bold;
 }
 
 .message-success {
-  background: hsl(142 76% 36% / 0.1);
-  color: hsl(142 76% 36%);
-  border: 1px solid hsl(142 76% 36% / 0.3);
+  background: hsl(142 76% 36% / 0.08);
+  color: hsl(142 76% 30%);
+  border: 1px solid hsl(142 76% 36% / 0.2);
 }
 
 .message-error {
-  background: hsl(var(--destructive) / 0.1);
+  background: hsl(var(--destructive) / 0.08);
   color: hsl(var(--destructive));
-  border: 1px solid hsl(var(--destructive) / 0.3);
+  border: 1px solid hsl(var(--destructive) / 0.2);
 }
 
 /* Action Buttons */
 .action-buttons {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 1.5rem 2rem;
-  background: hsl(var(--muted) / 0.2);
+  gap: 0.5rem;
+  padding: 1.25rem 0 0 0;
+  background: transparent;
+  border-top: 1px solid hsl(var(--border));
+  margin-top: 1.25rem;
 }
 
 .btn {
-  padding: 0.65rem 1.5rem;
+  padding: 0.5rem 1rem;
   border: none;
   border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.9rem;
+  font-weight: 500;
+  font-size: 0.75rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
 
 .btn:disabled {
@@ -665,8 +675,6 @@ async function testNotification() {
 
 .btn-primary:not(:disabled):hover {
   background: hsl(var(--primary) / 0.9);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px hsl(var(--primary) / 0.3);
 }
 
 .btn-outline {
@@ -676,16 +684,17 @@ async function testNotification() {
 }
 
 .btn-outline:not(:disabled):hover {
-  background: hsl(var(--muted) / 0.5);
+  background: hsl(var(--muted) / 0.4);
 }
 
 .btn-danger-outline {
   background: transparent;
-  border: 1px solid hsl(var(--destructive));
+  border: 1px solid hsl(var(--destructive) / 0.5);
   color: hsl(var(--destructive));
 }
 
 .btn-danger-outline:not(:disabled):hover {
-  background: hsl(var(--destructive) / 0.1);
+  background: hsl(var(--destructive) / 0.08);
+  border-color: hsl(var(--destructive));
 }
 </style>

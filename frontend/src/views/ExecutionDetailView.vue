@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useExecutionsStore } from '@/stores/executions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
@@ -30,25 +29,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { 
-  ArrowLeft, 
   Loader2, 
   CheckCircle, 
   XCircle, 
   Clock,
   StopCircle,
   Download,
-  RefreshCw,
   Play,
   Pause,
-  FileJson,
   ChevronLeft,
   ChevronRight,
   Maximize2
 } from 'lucide-vue-next'
 import ExecutionLiveView from '@/components/execution/ExecutionLiveView.vue'
+import PageLayout from '@/components/layout/PageLayout.vue'
+import PageHeader from '@/components/layout/PageHeader.vue'
 
 const route = useRoute()
-const router = useRouter()
 const executionsStore = useExecutionsStore()
 const executionId = route.params.id as string
 
@@ -143,11 +140,6 @@ watch(() => execution.value?.status, (newStatus, oldStatus) => {
   }
 })
 
-const progressPercentage = computed(() => {
-  const stats = executionsStore.executionStats
-  if (!stats || stats.total_urls === 0) return 0
-  return Math.round((stats.completed / stats.total_urls) * 100)
-})
 
 const getStatusVariant = (status: string) => {
   switch (status) {
@@ -184,9 +176,6 @@ const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleString()
 }
 
-const handleBack = () => {
-  router.push('/executions')
-}
 
 const handleStop = async () => {
   try {
@@ -254,8 +243,9 @@ const handlePageChange = (page: number) => {
   loadExtractedData()
 }
 
-const handlePageSizeChange = (value: string) => {
-  pageSize.value = parseInt(value)
+const handlePageSizeChange = (value: any) => {
+  if (!value) return
+  pageSize.value = parseInt(String(value))
   currentPage.value = 1
   loadExtractedData()
 }
@@ -282,22 +272,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="container mx-auto py-6 space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <Button variant="ghost" size="icon" @click="handleBack">
-          <ArrowLeft class="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">Execution Details</h1>
-          <div class="flex items-center gap-2 text-muted-foreground">
-            <span class="font-mono text-sm">{{ executionId }}</span>
-            <span v-if="execution">• {{ execution.workflow_name }}</span>
-          </div>
+  <PageLayout>
+    <PageHeader
+      :title="execution?.workflow_name || 'Execution Details'"
+      :description="executionId"
+    >
+      <template #breadcrumb>
+        <div class="flex items-center text-sm text-muted-foreground">
+          <router-link to="/executions" class="hover:text-foreground transition-colors">Executions</router-link>
+          <span class="mx-2">/</span>
+          <span class="text-foreground font-mono text-xs">{{ executionId.slice(0, 8) }}...</span>
         </div>
-      </div>
-      <div class="flex items-center gap-2">
+      </template>
+      <template #actions>
         <Button 
           v-if="execution?.status === 'paused'" 
           variant="default" 
@@ -325,116 +312,116 @@ onUnmounted(() => {
           <StopCircle class="mr-2 h-4 w-4" />
           Stop
         </Button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div v-if="executionsStore.loading && !execution" class="flex items-center justify-center py-12">
       <Loader2 class="h-8 w-8 animate-spin text-primary" />
     </div>
 
-    <template v-else-if="execution">
+    <div v-else-if="execution" class="space-y-3">
       <!-- Status Bar -->
-      <Card class="p-4 flex items-center justify-between bg-muted/30">
-        <div class="flex items-center gap-4">
-          <Badge :variant="getStatusVariant(execution.status)" class="flex items-center gap-2 px-3 py-1 text-sm">
+      <Card class="p-3 mt-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <Badge :variant="getStatusVariant(execution.status)" class="flex items-center gap-1.5 px-2 py-0.5 text-xs">
             <component 
               :is="getStatusIcon(execution.status)" 
-              class="h-4 w-4"
+              class="h-3 w-3"
               :class="{ 'animate-spin': execution.status === 'running' }"
             />
             <span class="uppercase">{{ execution.status }}</span>
           </Badge>
-          <div class="text-sm text-muted-foreground">
+          <div class="text-xs text-muted-foreground">
             Started: {{ formatDate(execution.started_at) }}
           </div>
-          <div v-if="execution.completed_at" class="text-sm text-muted-foreground">
+          <div v-if="execution.completed_at" class="text-xs text-muted-foreground">
             Completed: {{ formatDate(execution.completed_at) }}
           </div>
         </div>
         
-        <div class="flex items-center gap-6">
+        <div class="flex items-center gap-4">
           <div class="text-right">
-            <div class="text-sm font-medium">{{ executionsStore.executionStats?.items_extracted || 0 }}</div>
-            <div class="text-xs text-muted-foreground">Items Extracted</div>
+            <div class="text-xs font-medium">{{ executionsStore.executionStats?.items_extracted || 0 }}</div>
+            <div class="text-[10px] text-muted-foreground">Items Extracted</div>
           </div>
           <div class="text-right">
-            <div class="text-sm font-medium">{{ executionsStore.executionStats?.total_urls || 0 }}</div>
-            <div class="text-xs text-muted-foreground">Total URLs</div>
+            <div class="text-xs font-medium">{{ executionsStore.executionStats?.total_urls || 0 }}</div>
+            <div class="text-[10px] text-muted-foreground">Total URLs</div>
           </div>
           <div class="text-right">
-            <div class="text-sm font-medium">{{ executionsStore.executionStats?.completed || 0 }}</div>
-            <div class="text-xs text-muted-foreground">Completed</div>
+            <div class="text-xs font-medium">{{ executionsStore.executionStats?.completed || 0 }}</div>
+            <div class="text-[10px] text-muted-foreground">Completed</div>
           </div>
            <div class="text-right">
-            <div class="text-sm font-medium text-red-500">{{ executionsStore.executionStats?.failed || 0 }}</div>
-            <div class="text-xs text-muted-foreground">Failed</div>
+            <div class="text-xs font-medium text-red-500">{{ executionsStore.executionStats?.failed || 0 }}</div>
+            <div class="text-[10px] text-muted-foreground">Failed</div>
           </div>
         </div>
       </Card>
 
       <!-- Main Content -->
-      <Tabs v-model="activeTab" class="space-y-4">
-        <TabsList>
-          <TabsTrigger value="live" v-if="execution.status === 'running' || execution.status === 'paused'">Live View</TabsTrigger>
-          <TabsTrigger value="data">Extracted Data</TabsTrigger>
+      <Tabs v-model="activeTab" class="space-y-3 w-full max-w-full">
+        <TabsList class="h-8">
+          <TabsTrigger value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="text-xs">Live View</TabsTrigger>
+          <TabsTrigger value="data" class="text-xs">Extracted Data</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="space-y-4">
+        <TabsContent value="live" v-if="execution.status === 'running' || execution.status === 'paused'" class="space-y-3">
           <ExecutionLiveView 
             :execution-id="executionId" 
             :workflow-config="execution.workflow_config || {}" 
           />
         </TabsContent>
 
-        <TabsContent value="data">
-          <Card class="p-6">
-            <div class="mb-4 flex items-center justify-between">
-              <h3 class="text-lg font-semibold">Extracted Data ({{ totalItems }} items)</h3>
+        <TabsContent value="data" class="min-w-0 w-full max-w-full">
+          <Card class="p-4 w-full max-w-full">
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-sm font-semibold">Extracted Data ({{ totalItems }} items)</h3>
               <div class="flex items-center gap-2">
                  <Select :model-value="String(pageSize)" @update:model-value="handlePageSizeChange">
-                  <SelectTrigger class="w-[100px]">
+                  <SelectTrigger class="w-[90px] h-8 text-xs">
                     <SelectValue placeholder="Page Size" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="10">10 / page</SelectItem>
-                    <SelectItem value="50">50 / page</SelectItem>
-                    <SelectItem value="100">100 / page</SelectItem>
+                    <SelectItem value="10" class="text-xs">10 / page</SelectItem>
+                    <SelectItem value="50" class="text-xs">50 / page</SelectItem>
+                    <SelectItem value="100" class="text-xs">100 / page</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button @click="handleDownloadData" size="sm" variant="outline">
-                  <Download class="mr-2 h-4 w-4" />
+                <Button @click="handleDownloadData" size="sm" variant="outline" class="h-8 text-xs">
+                  <Download class="mr-1.5 h-3 w-3" />
                   Download JSON
                 </Button>
               </div>
             </div>
             
-            <div v-if="parsedExtractedData.length === 0" class="py-12 text-center text-muted-foreground">
+            <div v-if="parsedExtractedData.length === 0" class="py-8 text-center text-muted-foreground text-xs">
               No data extracted yet.
             </div>
             
-            <div v-else class="space-y-4">
-              <div class="rounded-md border">
+            <div v-else class="space-y-3">
+              <div class="rounded-md border overflow-x-auto w-full max-w-full">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead class="w-[180px]">Timestamp</TableHead>
-                      <TableHead v-for="col in dataColumns" :key="col">{{ col }}</TableHead>
+                      <TableHead class="w-[160px] text-xs h-9">Timestamp</TableHead>
+                      <TableHead v-for="col in dataColumns" :key="col" class="text-xs h-9">{{ col }}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     <TableRow v-for="item in parsedExtractedData" :key="item.id">
-                      <TableCell class="whitespace-nowrap text-muted-foreground text-xs">
+                      <TableCell class="whitespace-nowrap text-muted-foreground text-[11px] py-2">
                         {{ formatDate(item.extracted_at) }}
                       </TableCell>
-                      <TableCell v-for="col in dataColumns" :key="col" class="max-w-[300px] truncate">
+                      <TableCell v-for="col in dataColumns" :key="col" class="max-w-[300px] truncate text-xs py-2">
                         <template v-if="isComplexValue(item.parsedData[col])">
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            class="h-6 text-xs"
+                            class="h-6 text-[11px] px-2"
                             @click="openDetailDialog(col, item.parsedData[col])"
                           >
-                            <Maximize2 class="mr-2 h-3 w-3" />
+                            <Maximize2 class="mr-1 h-3 w-3" />
                             View Details
                           </Button>
                         </template>
@@ -449,7 +436,7 @@ onUnmounted(() => {
 
               <!-- Pagination Controls -->
               <div class="flex items-center justify-between">
-                <div class="text-sm text-muted-foreground">
+                <div class="text-xs text-muted-foreground">
                   Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ Math.min(currentPage * pageSize, totalItems) }} of {{ totalItems }} entries
                 </div>
                 <div class="flex items-center gap-2">
@@ -458,19 +445,21 @@ onUnmounted(() => {
                     size="sm" 
                     :disabled="currentPage === 1"
                     @click="handlePageChange(currentPage - 1)"
+                    class="h-8 text-xs"
                   >
-                    <ChevronLeft class="h-4 w-4" />
+                    <ChevronLeft class="h-3 w-3" />
                     Previous
                   </Button>
-                  <div class="text-sm font-medium">Page {{ currentPage }}</div>
+                  <div class="text-xs font-medium">Page {{ currentPage }}</div>
                   <Button 
                     variant="outline" 
                     size="sm" 
                     :disabled="currentPage * pageSize >= totalItems"
                     @click="handlePageChange(currentPage + 1)"
+                    class="h-8 text-xs"
                   >
                     Next
-                    <ChevronRight class="h-4 w-4" />
+                    <ChevronRight class="h-3 w-3" />
                   </Button>
                 </div>
               </div>
@@ -478,7 +467,7 @@ onUnmounted(() => {
           </Card>
         </TabsContent>
       </Tabs>
-    </template>
+    </div>
 
     <div v-else-if="executionsStore.error" class="py-12 text-center">
       <p class="text-destructive mb-4">{{ executionsStore.error }}</p>
@@ -486,6 +475,7 @@ onUnmounted(() => {
         Retry
       </Button>
     </div>
+  </PageLayout>
 
     <!-- Detail Dialog -->
     <Dialog :open="isDialogOpen" @update:open="isDialogOpen = $event">
@@ -501,5 +491,4 @@ onUnmounted(() => {
         </div>
       </DialogContent>
     </Dialog>
-  </div>
 </template>
