@@ -34,21 +34,16 @@ const menuItems = [
   { icon: Store, label: 'Store', route: '/store' },
   { icon: Workflow, label: 'Workflows', route: '/workflows', badge: null },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
-  { icon: FileText, label: 'Saved tasks', route: '/tasks' },
-  { icon: Zap, label: 'Integrations', route: '/integrations' },
   { icon: Calendar, label: 'Monitoring', route: '/monitoring' },
 ]
 
 const developmentItems = [
   { icon: Workflow, label: 'My Workflows', route: '/my-workflows' },
-  { icon: BarChart3, label: 'Analytics', route: '/analytics' },
-  { icon: MessageSquare, label: 'Messaging', route: '/messaging' },
 ]
 
 const bottomItems = [
   { icon: Server, label: 'Proxy', route: '/proxy' },
   { icon: HardDrive, label: 'Storage', route: '/storage' },
-  { icon: CreditCard, label: 'Billing', route: '/billing' },
   { icon: Settings, label: 'Settings', route: '/settings' },
   { icon: HelpCircle, label: 'Help', route: '/help' },
 ]
@@ -123,17 +118,6 @@ onMounted(() => {
         </button>
       </div>
 
-      <!-- Get Started Progress -->
-      <div v-if="!isCollapsed" class="p-3 border-b border-sidebar-border">
-        <div class="flex items-center justify-between text-xs mb-1.5">
-          <span class="text-muted-foreground">Get started</span>
-          <span class="text-muted-foreground">1/4 steps</span>
-        </div>
-        <div class="h-1 bg-muted rounded-full overflow-hidden">
-          <div class="h-full bg-primary" style="width: 25%"></div>
-        </div>
-      </div>
-
       <!-- Navigation -->
       <nav class="flex-1 overflow-y-auto py-2 scrollbar-hide">
         <div class="px-2 space-y-0.5">
@@ -206,21 +190,6 @@ onMounted(() => {
 
       <!-- Footer -->
       <div class="border-t border-sidebar-border">
-        <!-- Usage Stats -->
-        <div v-if="!isCollapsed" class="p-3 text-xs space-y-1">
-          <div class="flex justify-between text-muted-foreground">
-            <span>RAM</span>
-            <span>0 MB / 8 GB</span>
-          </div>
-          <div class="flex justify-between text-muted-foreground">
-            <span>Usage</span>
-            <span>$0.00 / $5.00</span>
-          </div>
-          <button class="w-full mt-2 px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-md text-xs font-medium flex items-center justify-between transition-colors">
-            <span>Upgrade to Starter</span>
-            <ChevronRight class="w-3 h-3" />
-          </button>
-        </div>
 
         <!-- Logo and Toggle -->
         <div class="p-3 flex items-center justify-between">

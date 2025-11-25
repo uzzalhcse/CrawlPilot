@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Activity, RefreshCw, Calendar, GitCompare, CheckCircle, XCircle, AlertCircle, Clock } from 'lucide-vue-next'
+import { Activity, RefreshCw, Calendar, GitCompare } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +12,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import StatsBar from '@/components/layout/StatsBar.vue'
@@ -33,6 +34,8 @@ const workflowStore = useWorkflowsStore()
 
 const selectedReport = ref<HealthCheckReportType | null>(null)
 const refreshing = ref(false)
+const statusFilter = ref<'all' | 'healthy' | 'degraded' | 'failed'>('all')
+const showScheduleDialog = ref(false)
 
 const workflow = computed(() => workflowStore.workflows.find((w: any) => w.id === workflowId.value))
 
@@ -40,6 +43,11 @@ const sortedReports = computed(() => {
   return [...healthCheckStore.reports].sort((a, b) => 
     new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
   )
+})
+
+const filteredReports = computed(() => {
+  if (statusFilter.value === 'all') return sortedReports.value
+  return sortedReports.value.filter(r => r.status === statusFilter.value)
 })
 
 const statusStats = computed(() => {
@@ -192,6 +200,25 @@ onMounted(async () => {
           <RefreshCw :class="['h-4 w-4 mr-2', refreshing && 'animate-spin']" />
           Refresh
         </Button>
+        
+        <Dialog v-model:open="showScheduleDialog">
+          <DialogTrigger as-child>
+            <Button variant="outline" size="sm">
+              <Calendar class="h-4 w-4 mr-2" />
+              Schedule
+            </Button>
+          </DialogTrigger>
+          <DialogContent class="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Schedule Settings</DialogTitle>
+            </DialogHeader>
+            <ScheduleSettings 
+              v-if="workflow"
+              :workflow-id="workflowId"
+            />
+          </DialogContent>
+        </Dialog>
+        
         <HealthCheckButton v-if="workflow" :workflow-id="workflowId" @click="refresh" />
       </template>
     </PageHeader>
@@ -202,20 +229,76 @@ onMounted(async () => {
       <div class="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
         <!-- Recent Checks Sidebar (1/3 width) -->
         <Card class="lg:col-span-1 overflow-hidden flex flex-col">
-          <div class="p-3 border-b flex items-center justify-between flex-shrink-0">
-            <h3 class="text-sm font-semibold">Recent Checks</h3>
-            <Badge variant="secondary" class="text-xs">{{ sortedReports.length }}</Badge>
+          <div class="p-3 border-b flex-shrink-0">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-semibold">Recent Checks</h3>
+              <Badge variant="secondary" class="text-xs">{{ sortedReports.length }}</Badge>
+            </div>
+            
+            <!-- Filter Tabs -->
+            <div class="flex gap-1">
+              <button
+                @click="statusFilter = 'all'"
+                :class="[
+                  'flex-1 px-2 py-1 text-xs rounded transition-colors',
+                  statusFilter === 'all' 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-muted hover:bg-muted/80'
+                ]"
+              >
+                All
+                <span class="ml-1 opacity-75">({{ sortedReports.length }})</span>
+              </button>
+              <button
+                @click="statusFilter = 'healthy'"
+                :class="[
+                  'flex-1 px-2 py-1 text-xs rounded transition-colors',
+                  statusFilter === 'healthy' 
+                    ? 'bg-green-600 dark:bg-green-700 text-white' 
+                    : 'bg-muted hover:bg-muted/80'
+                ]"
+              >
+                ✓
+                <span class="ml-1 opacity-75">({{ statusStats.healthy }})</span>
+              </button>
+              <button
+                @click="statusFilter = 'degraded'"
+                :class="[
+                  'flex-1 px-2 py-1 text-xs rounded transition-colors',
+                  statusFilter === 'degraded' 
+                    ? 'bg-amber-600 dark:bg-amber-700 text-white' 
+                    : 'bg-muted hover:bg-muted/80'
+                ]"
+              >
+                ⚠
+                <span class="ml-1 opacity-75">({{ statusStats.degraded }})</span>
+              </button>
+              <button
+                @click="statusFilter = 'failed'"
+                :class="[
+                  'flex-1 px-2 py-1 text-xs rounded transition-colors',
+                  statusFilter === 'failed' 
+                    ? 'bg-red-600 dark:bg-red-700 text-white' 
+                    : 'bg-muted hover:bg-muted/80'
+                ]"
+              >
+                ✗
+                <span class="ml-1 opacity-75">({{ statusStats.failed }})</span>
+              </button>
+            </div>
           </div>
           
           <ScrollArea class="flex-1">
-            <div v-if="sortedReports.length === 0" class="p-8 text-center">
+            <div v-if="filteredReports.length === 0" class="p-8 text-center">
               <Activity class="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-20" />
-              <p class="text-xs text-muted-foreground">No checks yet</p>
+              <p class="text-xs text-muted-foreground">
+                {{ statusFilter === 'all' ? 'No checks yet' : `No ${statusFilter} checks` }}
+              </p>
             </div>
             
             <div v-else class="p-2 space-y-1">
               <button
-                v-for="report in sortedReports.slice(0, 20)"
+                v-for="report in filteredReports.slice(0, 20)"
                 :key="report.id"
                 :class="[
                   'w-full text-left p-2 rounded-md transition-colors text-xs',
@@ -295,22 +378,6 @@ onMounted(async () => {
                 <BaselineComparison 
                   v-if="selectedReport"
                   :report-id="selectedReport.id"
-                  :workflow-id="workflowId"
-                />
-              </AccordionContent>
-            </AccordionItem>
-
-            <!-- Schedule Settings -->
-            <AccordionItem value="schedule" class="border rounded-md">
-              <AccordionTrigger class="hover:no-underline px-3 py-2 text-xs font-medium">
-                <div class="flex items-center gap-2">
-                  <Calendar class="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                  <span>Schedule Settings</span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent class="px-3 pb-2">
-                <ScheduleSettings 
-                  v-if="workflow"
                   :workflow-id="workflowId"
                 />
               </AccordionContent>
