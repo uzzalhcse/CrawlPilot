@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { ref, watch, markRaw, onMounted } from 'vue'
-import { VueFlow, useVueFlow, Panel } from '@vue-flow/core'
+import { VueFlow, useVueFlow, type Edge, type Node, Panel } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
 import ExecutionNode from './ExecutionNode.vue'
 import NodeDetailPanel from './NodeDetailPanel.vue'
-import type { WorkflowNode, WorkflowEdge } from '@/types'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import type { WorkflowConfig, WorkflowNode, WorkflowEdge, NodeType } from '@/types'
 
 // Import Vue Flow styles
 import '@vue-flow/core/dist/style.css'
@@ -15,23 +22,32 @@ import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 
 const props = defineProps<{
-  workflowConfig: any
-  activeNodes: Set<string>
-  nodeStatuses: Map<string, any>
-  executionTree?: any[] // NEW: Array of NodeExecution from useExecutionStream
+  workflowConfig?: WorkflowConfig
+  activeNodes?: Set<string>
+  nodeStatuses?: Map<string, 'pending' | 'running' | 'completed' | 'failed'>
+  executionTree?: any[]
 }>()
 
-const nodes = ref<WorkflowNode[]>([])
-const edges = ref<WorkflowEdge[]>([])
-const selectedNode = ref<any>(null)
+console.log('[GRAPH] Component mounted. executionTree:', props.executionTree) // DEBUG
+console.log('[GRAPH] workflowConfig:', props.workflowConfig) // DEBUG
+
+const { fitView } = useVueFlow()
+
+
+const nodes = ref<Node[]>([])
+const edges = ref<Edge[]>([])
+
+// Selected node for detail panel
+const selectedNode = ref<Node | null>(null)
 const showDetailPanel = ref(false)
+
+// Configurable max nodes per level
+const maxNodesPerLevel = ref(20)
 
 // Custom node types
 const nodeTypes: any = {
   custom: markRaw(ExecutionNode)
 }
-
-const { fitView } = useVueFlow()
 
 // Initialize graph from config
 const initGraph = () => {
@@ -199,93 +215,134 @@ const buildGraphFromExecutionTree = () => {
     console.warn('[GRAPH] No execution tree data, skipping') // DEBUG
     return
   }
-  console.log('[GRAPH] Building dynamic graph from', props.executionTree.length, 'root nodes') // DEBUG
 
   const loadedNodes: WorkflowNode[] = []
   const loadedEdges: WorkflowEdge[] = []
   const nodePositions = new Map<string, { x: number, y: number }>()
+  const nodesByLevel = new Map<number, any[]>()
 
-  // Flatten tree to get all nodes
-  const allExecutions: any[] = []
-  const flattenTree = (nodes: any[]) => {
+  // Flatten tree and assign depths
+  const flattenTree = (nodes: any[], depth: number = 0) => {
     nodes.forEach(node => {
-      allExecutions.push(node)
+      const nodeWithDepth = { ...node, depth }
+      
+      if (!nodesByLevel.has(depth)) {
+        nodesByLevel.set(depth, [])
+      }
+      nodesByLevel.get(depth)!.push(nodeWithDepth)
+      
       if (node.children && node.children.length > 0) {
-        flattenTree(node.children)
+        flattenTree(node.children, depth + 1)
       }
     })
   }
+
   flattenTree(props.executionTree)
-
-  // Simple layout: arrange by level (depth in tree)
-  const levelMap = new Map<number, any[]>()
-  const calculateLevel = (node: any, level: number = 0): number => {
-    if (!levelMap.has(level)) levelMap.set(level, [])
-    levelMap.get(level)!.push(node)
+  console.log('[GRAPH] Building dynamic graph from', props.executionTree.length, 'root nodes')
+  
+  // Calculate positions by level (centered)
+  const nodeWidth = 250
+  const nodeHeight = 150
+  const horizontalGap = 20
+  
+  nodesByLevel.forEach((nodes, depth) => {
+    const nodesToShow = nodes.slice(0, maxNodesPerLevel.value)
+    const hiddenCount = nodes.length - maxNodesPerLevel.value
     
-    let maxChildLevel = level
-    if (node.children && node.children.length > 0) {
-      node.children.forEach((child: any) => {
-        const childLevel = calculateLevel(child, level + 1)
-       if (childLevel > maxChildLevel) maxChildLevel = childLevel
-      })
-    }
-    return maxChildLevel
-  }
-
-  props.executionTree.forEach(root => calculateLevel(root, 0))
-
-  // Position nodes
-  const nodeWidth = 280
-  const horizontalGap = 100
-  const verticalGap = 200
-  let currentY = 100
-
-  levelMap.forEach((levelNodes, level) => {
-    const totalWidth = (levelNodes.length * nodeWidth) + ((levelNodes.length - 1) * horizontalGap)
-    const startX = Math.max(100, (1200 - totalWidth) / 2)
-
-    levelNodes.forEach((node, index) => {
-      nodePositions.set(node.node_execution_id, {
-        x: startX + (index * (nodeWidth + horizontalGap)),
-        y: currentY
-      })
+    // Calculate total width needed for this level
+    const totalNodes = nodesToShow.length + (hiddenCount > 0 ? 1 : 0) // +1 for overflow node
+    const totalWidth = (totalNodes * nodeWidth) + ((totalNodes - 1) * horizontalGap)
+    
+    // Start from center
+    const startX = -totalWidth / 2
+    
+    nodesToShow.forEach((execution, index) => {
+      const x = startX + (index * (nodeWidth + horizontalGap)) + (nodeWidth / 2)
+      const y = depth * nodeHeight
+      nodePositions.set(execution.node_execution_id, { x, y })
     })
-    currentY += verticalGap
+    
+    // If there are hidden nodes, add overflow summary node position
+    if (hiddenCount > 0) {
+      const x = startX + (nodesToShow.length * (nodeWidth + horizontalGap)) + (nodeWidth / 2)
+      const y = depth * nodeHeight
+      nodePositions.set(`overflow-level-${depth}`, { x, y })
+    }
   })
 
-  // Create Vue Flow nodes
-  allExecutions.forEach(execution => {
-    const position = nodePositions.get(execution.node_execution_id) || { x: 0, y: 0 }
+  // Create Vue Flow nodes (limited per level)
+  nodesByLevel.forEach((nodes, depth) => {
+    const nodesToShow = nodes.slice(0, maxNodesPerLevel.value)
+    const hiddenCount = nodes.length - maxNodesPerLevel.value
     
-    loadedNodes.push({
-      id: execution.node_execution_id,
-      type: 'custom',
-      position,
-      data: {
-        label: execution.node_id,
-        nodeType: execution.node_type || 'unknown',
-        params: {},
-        status: execution.status,
-        error: execution.error,
-        result: execution.result
-      },
-      draggable: false,
-      connectable: false,
-      selectable: true
-    })
+    nodesToShow.forEach(execution => {
+      const position = nodePositions.get(execution.node_execution_id) || { x: 0, y: 0 }
+      
+      loadedNodes.push({
+        id: execution.node_execution_id,
+        type: 'custom',
+        position,
+        data: {
+          label: execution.node_id,
+          nodeType: execution.node_type || 'unknown',
+          params: {},
+          status: execution.status,
+          error: execution.error,
+          result: execution.result
+        },
+        draggable: false,
+        connectable: false,
+        selectable: true
+      })
 
-    // Create edge from parent
-    if (execution.parent_node_execution_id) {
-      loadedEdges.push({
-        id: `${execution.parent_node_execution_id}-${execution.node_execution_id}`,
-        source: execution.parent_node_execution_id,
-        target: execution.node_execution_id,
-        animated: execution.status === 'running',
-        style: { 
-          stroke: execution.status === 'completed' ? '#22c55e' : 
-                  execution.status === 'failed' ? '#ef4444' : '#94a3b8' 
+      // Create edge from parent (only if parent is shown)
+      if (execution.parent_node_execution_id) {
+        const parentDepth = execution.depth - 1
+        const parentLevelNodes = nodesByLevel.get(parentDepth) || []
+        const parentIndex = parentLevelNodes.findIndex((n: any) => n.node_execution_id === execution.parent_node_execution_id)
+        
+        // Only create edge if parent is in the visible nodes (first 20)
+        if (parentIndex < maxNodesPerLevel.value) {
+          loadedEdges.push({
+            id: `${execution.parent_node_execution_id}-${execution.node_execution_id}`,
+            source: execution.parent_node_execution_id,
+            target: execution.node_execution_id,
+            animated: execution.status === 'running',
+            style: { 
+              stroke: execution.status === 'completed' ? '#22c55e' : 
+                      execution.status === 'failed' ? '#ef4444' : '#94a3b8' 
+            }
+          })
         }
+      }
+    })
+    
+    // Add overflow summary node if needed
+    if (hiddenCount > 0) {
+      const position = nodePositions.get(`overflow-level-${depth}`)!
+      const hiddenNodes = nodes.slice(maxNodesPerLevel.value)
+      const completedCount = hiddenNodes.filter((n: any) => n.status === 'completed').length
+      const failedCount = hiddenNodes.filter((n: any) => n.status === 'failed').length
+      
+      loadedNodes.push({
+        id: `overflow-level-${depth}`,
+        type: 'custom',
+        position,
+        data: {
+          label: `... and ${hiddenCount} more`,
+          nodeType: 'filter', // Use a valid type
+          params: {},
+          status: 'completed', // Use valid status
+          result: {
+            total: hiddenCount,
+            completed: completedCount,
+            failed: failedCount,
+            hiddenNodes: hiddenNodes // Store for potential expansion
+          }
+        },
+        draggable: false,
+        connectable: false,
+        selectable: true
       })
     }
   })
@@ -293,6 +350,7 @@ const buildGraphFromExecutionTree = () => {
   nodes.value = loadedNodes
   edges.value = loadedEdges
   
+  console.log('[GRAPH] Created', loadedNodes.length, 'nodes and', loadedEdges.length, 'edges')
   setTimeout(() => fitView(), 100)
 }
 
@@ -349,6 +407,14 @@ watch(() => props.executionTree, (newTree) => {
     buildGraphFromExecutionTree()
   }
 }, { deep: true })
+
+// Watch for max nodes per level changes
+watch(maxNodesPerLevel, () => {
+  console.log('[GRAPH] maxNodesPerLevel changed, rebuilding graph')
+  if (props.executionTree && props.executionTree.length > 0) {
+    buildGraphFromExecutionTree()
+  }
+})
 </script>
 
 <template>
@@ -366,6 +432,24 @@ watch(() => props.executionTree, (newTree) => {
       <Background pattern-color="#cbd5e1" :gap="20" />
       <Controls />
       <MiniMap />
+      
+      <Panel position="top-left">
+        <div class="bg-card/90 backdrop-blur p-3 rounded border shadow-sm text-sm">
+          <label class="text-xs font-medium mb-2 block">Max Nodes Per Level</label>
+          <Select v-model="maxNodesPerLevel">
+            <SelectTrigger class="w-[140px] h-8 text-xs">
+              <SelectValue placeholder="Select limit" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem :value="10">10 nodes</SelectItem>
+              <SelectItem :value="20">20 nodes</SelectItem>
+              <SelectItem :value="50">50 nodes</SelectItem>
+              <SelectItem :value="100">100 nodes</SelectItem>
+              <SelectItem :value="999">All nodes</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </Panel>
       
       <Panel position="top-right">
         <div class="bg-card/90 backdrop-blur p-2 rounded border shadow-sm text-xs space-y-1">
