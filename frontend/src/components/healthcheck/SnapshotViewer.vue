@@ -1,224 +1,244 @@
 <template>
-  <TransitionRoot appear :show="isOpen" as="template">
-    <Dialog as="div" @close="close" class="relative z-50">
-      <TransitionChild
-        as="template"
-        enter="duration-300 ease-out"
-        enter-from="opacity-0"
-        enter-to="opacity-100"
-        leave="duration-200 ease-in"
-        leave-from="opacity-100"
-        leave-to="opacity-0"
-      >
-        <div class="fixed inset-0 bg-black/70" />
-      </TransitionChild>
+  <Dialog :open="isOpen" @update:open="(val) => !val && close()">
+    <DialogContent class="max-w-5xl h-[85vh] p-0 gap-0 flex flex-col">
+      <!-- Header -->
+      <DialogHeader class="px-6 py-4 border-b flex-shrink-0">
+        <DialogTitle class="flex items-center gap-2.5 text-xl">
+          <div class="p-2 rounded-lg bg-primary/10">
+            <Camera class="h-5 w-5 text-primary" />
+          </div>
+          Diagnostic Snapshot
+        </DialogTitle>
+      </DialogHeader>
 
-      <div class="fixed inset-0 overflow-y-auto">
-        <div class="flex min-h-full items-center justify-center p-4">
-          <TransitionChild
-            as="template"
-            enter="duration-300 ease-out"
-            enter-from="opacity-0 scale-95"
-            enter-to="opacity-100 scale-100"
-            leave="duration-200 ease-in"
-            leave-from="opacity-100 scale-100"
-            leave-to="opacity-0 scale-95"
-          >
-            <DialogPanel class="snapshot-modal">
-              <!-- Header -->
-              <div class="modal-header">
-                <DialogTitle class="modal-title">
-                  <Camera class="w-6 h-6" />
-                  <span>Diagnostic Snapshot</span>
-                </DialogTitle>
-                <button @click="close" class="close-button">
-                  <X class="w-5 h-5" />
-                </button>
-              </div>
-
-              <!-- Loading State -->
-              <div v-if="loading" class="loading-state">
-                <div class="spinner" />
-                <p>Loading snapshot...</p>
-              </div>
-
-              <!-- Error State -->
-              <div v-else-if="error" class="error-state">
-                <AlertCircle class="w-12 h-12 text-red-500" />
-                <p class="text-red-600">{{ error }}</p>
-              </div>
-
-              <!-- Content -->
-              <div v-else-if="snapshot && snapshot.id" class="modal-content">                <!-- Tabs -->
-                <div class="tabs">
-                  <button
-                    v-for="tab in tabs"
-                    :key="tab.id"
-                    @click="activeTab = tab.id"
-                    :class="['tab', { active: activeTab === tab.id }]"
-                  >
-                    <component :is="tab.icon" class="w-4 h-4" />
-                    <span>{{ tab.label }}</span>
-                  </button>
-                </div>
-
-                <!--Tab Content -->
-                <div class="tab-content">
-                  <!-- Screenshot Tab -->
-                  <div v-if="activeTab === 'screenshot'" class="screenshot-tab">
-                    <div v-if="!snapshot.screenshot_path" class="empty-state">
-                      <ImageOff class="w-12 h-12 text-gray-400" />
-                      <p>No screenshot available</p>
-                    </div>
-                    <div v-else class="screenshot-container">
-                      <div class="screenshot-actions">
-                        <button @click="viewFullScreen" class="action-button" title="Open in new tab">
-                          <Maximize2 class="w-4 h-4" />
-                          <span>Full Screen</span>
-                        </button>
-                      </div>
-                      <img 
-                        :src="screenshotUrl" 
-                        alt="Page screenshot"
-                        :class="['screenshot-image', { 'zoomed': imageZoom }]"
-                        @click="imageZoom = !imageZoom"
-                      />
-                    </div>
-                  </div>
-
-                  <!-- DOM Tab -->
-                  <div v-if="activeTab === 'dom'" class="dom-tab">
-                    <div class="dom-actions">
-                      <button @click="viewDOM" class="action-button">
-                        <Eye class="w-4 h-4" />
-                        <span>View in New Tab</span>
-                      </button>
-                      <button @click="downloadDOM" class="action-button">
-                        <Download class="w-4 h-4" />
-                        <span>Download HTML</span>
-                      </button>
-                    </div>
-                    <div class="dom-info">
-                      <FileCode class="w-5 h-5" />
-                      <span>Full HTML snapshot with styles and scripts</span>
-                    </div>
-                  </div>
-
-                  <!-- Console Tab -->
-                  <div v-if="activeTab === 'console'" class="console-tab">
-                    <div v-if="snapshot.console_logs && snapshot.console_logs.length > 0" class="console-logs">
-                      <div
-                        v-for="(log, index) in snapshot.console_logs"
-                        :key="index"
-                        :class="['console-log', `log-${log.type}`]"
-                      >
-                        <div class="log-icon">
-                          <AlertCircle v-if="log.type === 'error'" class="w-4 h-4" />
-                          <AlertTriangle v-else-if="log.type === 'warn'" class="w-4 h-4" />
-                          <Info v-else class="w-4 h-4" />
-                        </div>
-                        <div class="log-content">
-                          <div class="log-message">{{ log.message }}</div>
-                          <div class="log-meta">
-                            <span>{{ log.type }}</span>
-                            <span>•</span>
-                            <span>{{ formatDate(log.timestamp) }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div v-else class="empty-state">
-                      <Terminal class="w-12 h-12" />
-                      <p>No console logs captured</p>
-                    </div>
-                  </div>
-
-                  <!-- Details Tab -->
-                  <div v-if="activeTab === 'details'" class="details-tab">
-                    <!-- AI Auto-Fix Section -->
-                    <div class="autofix-section">
-                      <h3 class="section-title">AI Auto-Fix</h3>
-                      <AutoFixPanel :snapshot="snapshot" />
-                    </div>
-
-                    <div class="detail-grid">
-                      <!-- Page Info -->
-                      <div class="detail-section">
-                        <h4 class="section-title">Page Information</h4>
-                        <div class="detail-item">
-                          <span class="detail-label">URL:</span>
-                          <a :href="snapshot.url" target="_blank" class="detail-value link">
-                            {{ snapshot.url }}
-                            <ExternalLink class="w-3 h-3" />
-                          </a>
-                        </div>
-                        <div class="detail-item" v-if="snapshot.page_title">
-                          <span class="detail-label">Title:</span>
-                          <span class="detail-value">{{ snapshot.page_title }}</span>
-                        </div>
-                        <div class="detail-item" v-if="snapshot.status_code">
-                          <span class="detail-label">Status Code:</span>
-                          <span class="detail-value">{{ snapshot.status_code }}</span>
-                        </div>
-                      </div>
-
-                      <!-- Error Info -->
-                      <div class="detail-section">
-                        <h4 class="section-title">Error Details</h4>
-                        <div class="detail-item" v-if="snapshot.selector_value">
-                          <span class="detail-label">Selector</span>
-                          <div class="flex items-center gap-2">
-                            <code class="detail-value code">{{ snapshot.selector_value }}</code>
-                            <!-- Required/Optional Badge -->
-                            <span 
-                              v-if="snapshot.field_required !== undefined"
-                              :class="[
-                                'text-xs px-2 py-0.5 rounded-full font-medium',
-                                snapshot.field_required 
-                                  ? 'bg-red-100 text-red-700 border border-red-300' 
-                                  : 'bg-yellow-100 text-yellow-700 border border-yellow-300'
-                              ]"
-                              :title="snapshot.field_required ? 'This is a required field - missing it causes health check failure' : 'This is an optional field - missing it only triggers a warning'"
-                            >
-                              {{ snapshot.field_required ? '🔴 REQUIRED' : '🟡 OPTIONAL' }}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div class="detail-item" v-if="snapshot.elements_found !== undefined">
-                          <span class="detail-label">Elements Found</span>
-                          <span class="detail-value">{{ snapshot.elements_found }}</span>
-                        </div>
-                        <div class="detail-item" v-if="snapshot.error_message">
-                          <span class="detail-label">Error:</span>
-                          <span class="detail-value error">{{ snapshot.error_message }}</span>
-                        </div>
-                      </div>
-
-                      <!-- Metadata -->
-                      <div class="detail-section" v-if="snapshot.metadata">
-                        <h4 class="section-title">Metadata</h4>
-                        <div class="detail-item" v-for="(value, key) in snapshot.metadata" :key="key">
-                          <span class="detail-label">{{ formatKey(key) }}:</span>
-                          <span class="detail-value">{{ formatValue(value) }}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </DialogPanel>
-          </TransitionChild>
-        </div>
+      <!-- Loading State -->
+      <div v-if="loading" class="flex flex-col items-center justify-center gap-4 py-16 flex-1">
+        <RefreshCw class="h-10 w-10 animate-spin text-primary" />
+        <p class="text-sm text-muted-foreground">Loading snapshot...</p>
       </div>
-    </Dialog>
-  </TransitionRoot>
+
+      <!-- Error State -->
+      <div v-else-if="error" class="flex flex-col items-center justify-center gap-4 py-16 flex-1">
+        <div class="p-3 rounded-full bg-red-50 dark:bg-red-950">
+          <AlertCircle class="h-10 w-10 text-red-600 dark:text-red-400" />
+        </div>
+        <p class="text-sm font-medium text-red-600 dark:text-red-400">{{ error }}</p>
+      </div>
+
+      <!-- Content -->
+      <div v-else-if="snapshot && snapshot.id" class="flex flex-col flex-1 overflow-hidden">
+        <!-- Tabs -->
+        <Tabs v-model="activeTab" class="flex-1 flex flex-col overflow-hidden">
+          <div class="border-b px border-b flex-shrink-0">
+            <TabsList class="h-12 w-full justify-start rounded-none bg-transparent p-0 border-0">
+              <TabsTrigger 
+                value="screenshot" 
+                class="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 h-12 gap-2"
+              >
+                <Camera class="h-4 w-4" />
+                Screenshot
+              </TabsTrigger>
+              <TabsTrigger 
+                value="dom"
+                class="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 h-12 gap-2"
+              >
+                <FileCode class="h-4 w-4" />
+                DOM
+              </TabsTrigger>
+              <TabsTrigger 
+                value="console"
+                class="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 h-12 gap-2"
+              >
+                <Terminal class="h-4 w-4" />
+                Console
+              </TabsTrigger>
+              <TabsTrigger 
+                value="details"
+                class="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 h-12 gap-2"
+              >
+                <Info class="h-4 w-4" />
+                Details
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <ScrollArea class="flex-1">
+            <!-- Screenshot Tab -->
+            <TabsContent value="screenshot" class="m-0 p-6 space-y-4">
+              <div v-if="!snapshot.screenshot_path" class="flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground">
+                <ImageOff class="h-12 w-12 opacity-30" />
+                <p class="text-sm">No screenshot available</p>
+              </div>
+              <div v-else class="space-y-3">
+                <div class="flex gap-2">
+                  <Button @click="viewFullScreen" variant="outline" size="sm">
+                    <Maximize2 class="h-4 w-4 mr-2" />
+                    Full Screen
+                  </Button>
+                </div>
+                <Card class="overflow-hidden border-2">
+                  <img 
+                    :src="screenshotUrl" 
+                    alt="Page screenshot"
+                    :class="['w-full cursor-zoom-in transition-transform', imageZoom && 'scale-150 origin-top-left cursor-zoom-out']"
+                    @click="imageZoom = !imageZoom"
+                  />
+                </Card>
+              </div>
+            </TabsContent>
+
+            <!-- DOM Tab -->
+            <TabsContent value="dom" class="m-0 p-6 space-y-4">
+              <div class="flex gap-2">
+                <Button @click="viewDOM" size="sm">
+                  <Eye class="h-4 w-4 mr-2" />
+                  View in New Tab
+                </Button>
+                <Button @click="downloadDOM" variant="outline" size="sm">
+                  <Download class="h-4 w-4 mr-2" />
+                  Download HTML
+                </Button>
+              </div>
+              <Card class="p-4 border-2">
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                  <FileCode class="h-5 w-5" />
+                  <span>Full HTML snapshot with styles and scripts</span>
+                </div>
+              </Card>
+            </TabsContent>
+
+            <!-- Console Tab -->
+            <TabsContent value="console" class="m-0 p-6 space-y-3">
+              <div v-if="snapshot.console_logs && snapshot.console_logs.length > 0" class="space-y-2">
+                <Card
+                  v-for="(log, index) in snapshot.console_logs"
+                  :key="index"
+                  :class="[
+                    'p-4 border-l-4',
+                    {
+                      'border-l-red-500 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800': log.type === 'error',
+                      'border-l-amber-500 bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800': log.type === 'warn',
+                      'border-l-blue-500 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800': log.type === 'info' || log.type === 'log',
+                    }
+                  ]"
+                >
+                  <div class="flex gap-3">
+                    <AlertCircle v-if="log.type === 'error'" class="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <AlertTriangle v-else-if="log.type === 'warn'" class="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <Info v-else class="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <div class="flex-1 space-y-1">
+                      <div class="font-mono text-sm font-medium">{{ log.message }}</div>
+                      <div class="flex gap-2 text-xs opacity-75">
+                        <span>{{ log.type }}</span>
+                        <span>•</span>
+                        <span>{{ formatDate(log.timestamp) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+              <div v-else class="flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground">
+                <Terminal class="h-12 w-12 opacity-30" />
+                <p class="text-sm">No console logs captured</p>
+              </div>
+            </TabsContent>
+
+            <!-- Details Tab -->
+            <TabsContent value="details" class="m-0 p-6 space-y-6">
+              <!-- AI Auto-Fix Section -->
+              <div class="space-y-3">
+                <h3 class="text-base font-semibold flex items-center gap-2">
+                  <div class="p-1.5 rounded bg-purple-500/10">
+                    <Sparkles class="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  </div>
+                  AI Auto-Fix
+                </h3>
+                <AutoFixPanel :snapshot="snapshot" />
+              </div>
+
+              <Separator />
+
+              <div class="grid gap-6 md:grid-cols-2">
+                <!-- Page Info -->
+                <Card class="p-4 border-2">
+                  <h4 class="font-semibold mb-4 text-sm">Page Information</h4>
+                  <div class="space-y-3">
+                    <div class="space-y-1">
+                      <div class="text-xs font-medium text-muted-foreground">URL</div>
+                      <a :href="snapshot.url" target="_blank" class="flex items-center gap-1.5 text-sm text-primary hover:underline break-all">
+                        {{ snapshot.url }}
+                        <ExternalLink class="h-3 w-3 flex-shrink-0" />
+                      </a>
+                    </div>
+                    <div v-if="snapshot.page_title" class="space-y-1">
+                      <div class="text-xs font-medium text-muted-foreground">Title</div>
+                      <div class="text-sm">{{ snapshot.page_title }}</div>
+                    </div>
+                    <div v-if="snapshot.status_code" class="space-y-1">
+                      <div class="text-xs font-medium text-muted-foreground">Status Code</div>
+                      <Badge variant="outline">{{ snapshot.status_code }}</Badge>
+                    </div>
+                  </div>
+                </Card>
+
+                <!-- Error Info -->
+                <Card class="p-4 border-2">
+                  <h4 class="font-semibold mb-4 text-sm">Error Details</h4>
+                  <div class="space-y-3">
+                    <div v-if="snapshot.selector_value" class="space-y-2">
+                      <div class="text-xs font-medium text-muted-foreground">Selector</div>
+                      <div class="flex items-start gap-2 flex-wrap">
+                        <code class="text-xs bg-muted px-2 py-1 rounded border font-mono break-all flex-1 min-w-0">{{ snapshot.selector_value }}</code>
+                        <Badge 
+                          v-if="snapshot.field_required !== undefined"
+                          :variant="snapshot.field_required ? 'destructive' : 'secondary'"
+                          :title="snapshot.field_required ? 'Required field - causes failure' : 'Optional field - causes warning'"
+                          class="flex-shrink-0"
+                        >
+                          {{ snapshot.field_required ? 'REQUIRED' : 'OPTIONAL' }}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div v-if="snapshot.elements_found !== undefined" class="space-y-1">
+                      <div class="text-xs font-medium text-muted-foreground">Elements Found</div>
+                      <div class="text-sm">{{ snapshot.elements_found }}</div>
+                    </div>
+                    <div v-if="snapshot.error_message" class="space-y-1">
+                      <div class="text-xs font-medium text-muted-foreground">Error</div>
+                      <div class="text-sm text-red-600 dark:text-red-400 break-words">{{ snapshot.error_message }}</div>
+                    </div>
+                  </div>
+                </Card>
+
+                <!-- Metadata -->
+                <Card v-if="snapshot.metadata" class="p-4 border-2 md:col-span-2">
+                  <h4 class="font-semibold mb-4 text-sm">Metadata</h4>
+                  <div class="grid gap-3 md:grid-cols-2">
+                    <div v-for="(value, key) in snapshot.metadata" :key="key" class="space-y-1 min-w-0">
+                      <div class="text-xs font-medium text-muted-foreground">{{ formatKey(key) }}</div>
+                      <div class="text-sm break-words whitespace-pre-wrap max-w-full overflow-hidden">{{ formatValue(value) }}</div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            </TabsContent>
+          </ScrollArea>
+        </Tabs>
+      </div>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { X, Camera, FileCode, Terminal, Info, AlertCircle, AlertTriangle, Eye, Download, ExternalLink, ImageOff, Maximize2 } from 'lucide-vue-next'
-import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
+import { Camera, FileCode, Terminal, Info, AlertCircle, AlertTriangle, Eye, Download, ExternalLink, ImageOff, Maximize2, RefreshCw, Sparkles } from 'lucide-vue-next'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { workflowsApi } from '@/api/workflows'
 import type { HealthCheckSnapshot } from '@/types'
 import AutoFixPanel from './AutoFixPanel.vue'
@@ -241,13 +261,6 @@ const imageZoom = ref(false)
 
 const isOpen = computed(() => props.open)
 
-const tabs = [
-  { id: 'screenshot', label: 'Screenshot', icon: Camera },
-  { id: 'dom', label: 'DOM', icon: FileCode },
-  { id: 'console', label: 'Console', icon: Terminal },
-  { id: 'details', label: 'Details', icon: Info }
-]
-
 const screenshotUrl = computed(() => {
   if (!snapshot.value?.id) return ''
   return workflowsApi.getScreenshotUrl(snapshot.value.id)
@@ -258,7 +271,6 @@ const domUrl = computed(() => {
   return workflowsApi.getDOMUrl(snapshot.value.id)
 })
 
-// Load snapshot when dialog opens
 watch(() => props.snapshotId, async (newId) => {
   if (!newId || !props.open) {
     snapshot.value = null
@@ -279,16 +291,13 @@ watch(() => props.snapshotId, async (newId) => {
   }
 })
 
-// Also watch when dialog opens/closes
 watch(() => props.open, (isOpen) => {
   if (!isOpen) {
-    // Reset state when closing
     snapshot.value = null
     error.value = null
     imageZoom.value = false
     activeTab.value = 'screenshot'
   } else if (props.snapshotId) {
-    // Load snapshot when opening
     loadSnapshot()
   }
 })
@@ -312,7 +321,6 @@ async function loadSnapshot() {
 
 function close() {
   emit('close')
-  // State will be reset by the watch on props.open
 }
 
 function viewDOM() {
@@ -350,183 +358,3 @@ function formatValue(value: any): string {
   return String(value)
 }
 </script>
-
-<style scoped>
-.snapshot-modal {
-  @apply w-full max-w-5xl transform overflow-hidden rounded-2xl;
-  @apply bg-white dark:bg-gray-800 shadow-2xl transition-all;
-}
-
-.modal-header {
-  @apply flex items-center justify-between p-6 border-b;
-  @apply border-gray-200 dark:border-gray-700;
-}
-
-.modal-title {
-  @apply flex items-center gap-3 text-xl font-semibold;
-  @apply text-gray-900 dark:text-white;
-}
-
-.close-button {
-  @apply p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700;
-  @apply transition-colors text-gray-500 dark:text-gray-400;
-}
-
-.loading-state, .error-state {
-  @apply flex flex-col items-center justify-center gap-4 p-12;
-}
-
-.spinner {
-  @apply w-12 h-12 border-4 border-blue-200 dark:border-blue-900;
-  @apply border-t-blue-500 rounded-full animate-spin;
-}
-
-.modal-content {
-  @apply flex flex-col;
-  max-height: 80vh;
-}
-
-.tabs {
-  @apply flex gap-2 p-4 border-b border-gray-200 dark:border-gray-700;
-  @apply bg-gray-50 dark:bg-gray-900/50;
-}
-
-.tab {
-  @apply flex items-center gap-2 px-4 py-2 rounded-lg font-medium;
-  @apply text-gray-600 dark:text-gray-400 transition-all;
-  @apply hover:bg-white dark:hover:bg-gray-800;
-}
-
-.tab.active {
-  @apply bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400;
-  @apply shadow-sm;
-}
-
-.tab-content {
-  @apply flex-1 overflow-y-auto p-6;
-}
-
-.screenshot-container {
-  @apply relative;
-}
-
-.screenshot-actions {
-  @apply flex gap-2 mb-3;
-}
-
-.action-button {
-  @apply flex items-center gap-2 px-3 py-2 rounded-lg;
-  @apply bg-gray-100 dark:bg-gray-700;
-  @apply hover:bg-gray-200 dark:hover:bg-gray-600;
-  @apply text-gray-700 dark:text-gray-200;
-  @apply transition-colors text-sm font-medium;
-}
-
-.screenshot-image {
-  @apply w-full rounded-lg cursor-zoom-in transition-transform;
-}
-
-.screenshot-image.zoomed {
-  @apply cursor-zoom-out scale-150 origin-top-left;
-}
-
-.empty-state {
-  @apply flex flex-col items-center gap-3 text-gray-400 dark:text-gray-600;
-}
-
-.dom-tab {
-  @apply space-y-4;
-}
-
-.dom-actions {
-  @apply flex gap-3;
-}
-
-.action-button {
-  @apply flex items-center gap-2 px-4 py-2 rounded-lg;
-  @apply bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400;
-  @apply hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors;
-  @apply font-medium;
-}
-
-.dom-info {
-  @apply flex items-center gap-2 p-4 rounded-lg;
-  @apply bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400;
-}
-
-.console-logs {
-  @apply space-y-2;
-}
-
-.console-log {
-  @apply flex gap-3 p-4 rounded-lg font-mono text-sm;
-  @apply border-l-4;
-}
-
-.log-error {
-  @apply bg-red-50 dark:bg-red-900/20 border-red-500 text-red-700 dark:text-red-400;
-}
-
-.log-warn {
-  @apply bg-yellow-50 dark:bg-yellow-900/20 border-yellow-500 text-yellow-700 dark:text-yellow-400;
-}
-
-.log-info, .log-log {
-  @apply bg-blue-50 dark:bg-blue-900/20 border-blue-500 text-blue-700 dark:text-blue-400;
-}
-
-.log-content {
-  @apply flex-1 space-y-1;
-}
-
-.log-message {
-  @apply font-medium;
-}
-
-.log-meta {
-  @apply flex gap-2 text-xs opacity-75;
-}
-
-.details-tab {
-  @apply space-y-6;
-}
-
-.detail-grid {
-  @apply grid gap-6 md:grid-cols-2;
-}
-
-.detail-section {
-  @apply space-y-3;
-}
-
-.section-title {
-  @apply text-sm font-semibold text-gray-900 dark:text-white;
-  @apply pb-2 border-b border-gray-200 dark:border-gray-700;
-}
-
-.detail-item {
-  @apply flex flex-col gap-1;
-}
-
-.detail-label {
-  @apply text-xs font-medium text-gray-500 dark:text-gray-400;
-}
-
-.detail-value {
-  @apply text-sm text-gray-900 dark:text-gray-100;
-}
-
-.detail-value.link {
-  @apply flex items-center gap-1 text-blue-600 dark:text-blue-400;
-  @apply hover:underline;
-}
-
-.detail-value.code {
-  @apply bg-gray-100 dark:bg-gray-900 p-2 rounded font-mono text-xs;
-  @apply break-all;
-}
-
-.detail-value.error {
-  @apply text-red-600 dark:text-red-400;
-}
-</style>

@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { CheckCircle2, XCircle, AlertTriangle, Clock, Camera } from 'lucide-vue-next'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Card } from '@/components/ui/card'
+
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import type { HealthCheckReport } from '@/types'
 
 const props = defineProps<{
@@ -16,26 +21,26 @@ const props = defineProps<{
 const statusConfig = computed(() => {
   switch (props.report.status) {
     case 'healthy':
-      return { icon: CheckCircle2, variant: 'default', color: 'text-green-600', label: 'Healthy' }
+      return { icon: CheckCircle2, color: 'text-green-600 dark:text-green-400', label: 'Healthy' }
     case 'degraded':
-      return { icon: AlertTriangle, variant: 'secondary', color: 'text-yellow-600', label: 'Degraded' }
+      return { icon: AlertTriangle, color: 'text-amber-600 dark:text-amber-400', label: 'Degraded' }
     case 'failed':
-      return { icon: XCircle, variant: 'destructive', color: 'text-red-600', label: 'Failed' }
+      return { icon: XCircle, color: 'text-red-600 dark:text-red-400', label: 'Failed' }
     default:
-      return { icon: Clock, variant: 'outline', color: 'text-blue-600', label: 'Running' }
+      return { icon: Clock, color: 'text-blue-600 dark:text-blue-400', label: 'Running' }
   }
 })
 
 const nodeStatusConfig = (status: string) => {
   switch (status) {
     case 'pass':
-      return { icon: CheckCircle2, color: 'text-green-600', label: 'Pass' }
+      return { icon: CheckCircle2, color: 'text-green-600 dark:text-green-400', label: 'Pass' }
     case 'fail':
-      return { icon: XCircle, color: 'text-red-600', label: 'Fail' }
+      return { icon: XCircle, color: 'text-red-600 dark:text-red-400', label: 'Fail' }
     case 'warning':
-      return { icon: AlertTriangle, color: 'text-yellow-600', label: 'Warning' }
+      return { icon: AlertTriangle, color: 'text-amber-600 dark:text-amber-400', label: 'Warning' }
     default:
-      return { icon: Clock, color: 'text-gray-600', label: 'Skip' }
+      return { icon: Clock, color: 'text-muted-foreground', label: 'Skip' }
   }
 }
 
@@ -44,124 +49,113 @@ const formatDuration = (ms?: number) => {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
 }
-
-const formatDate = (dateStr: string) => {
-  return new Date(dateStr).toLocaleString()
-}
 </script>
 
 <template>
-  <Card>
-    <CardHeader>
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <component :is="statusConfig.icon" :class="['h-6 w-6', statusConfig.color]" />
-          <div>
-            <CardTitle>Health Check Report</CardTitle>
-            <CardDescription>{{ formatDate(report.started_at) }}</CardDescription>
+  <div class="space-y-4">
+    <!-- Critical Issues -->
+    <div v-if="report.summary?.critical_issues && report.summary.critical_issues.length > 0" class="space-y-2">
+      <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Critical Issues</h3>
+      <Card
+        v-for="(issue, idx) in report.summary.critical_issues.slice(0, 5)"
+        :key="idx"
+        class="p-3 border-l-2 border-l-red-500 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800"
+      >
+        <div class="space-y-1.5">
+          <div class="text-sm font-medium text-red-900 dark:text-red-100">{{ issue.code }}: {{ issue.message }}</div>
+          <div v-if="issue.selector" class="text-xs">
+            <span class="text-muted-foreground">Selector:</span>
+            <code class="ml-1 bg-red-100 dark:bg-red-900 px-1.5 py-0.5 rounded text-xs">{{ issue.selector }}</code>
           </div>
+          <div v-if="issue.suggestion" class="text-xs text-muted-foreground italic">💡 {{ issue.suggestion }}</div>
         </div>
-        <Badge :variant="statusConfig.variant as any">{{ statusConfig.label }}</Badge>
-      </div>
-    </CardHeader>
+      </Card>
+    </div>
 
-    <CardContent class="space-y-4">
-      <!-- Summary -->
-      <div v-if="report.summary" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="text-center p-3 bg-gray-50 rounded-lg">
-          <div class="text-2xl font-bold">{{ report.summary.total_nodes }}</div>
-          <div class="text-sm text-gray-600">Total Nodes</div>
-        </div>
-        <div class="text-center p-3 bg-green-50 rounded-lg">
-          <div class="text-2xl font-bold text-green-600">{{ report.summary.passed_nodes }}</div>
-          <div class="text-sm text-gray-600">Passed</div>
-        </div>
-        <div class="text-center p-3 bg-yellow-50 rounded-lg">
-          <div class="text-2xl font-bold text-yellow-600">{{ report.summary.warning_nodes }}</div>
-          <div class="text-sm text-gray-600">Warnings</div>
-        </div>
-        <div class="text-center p-3 bg-red-50 rounded-lg">
-          <div class="text-2xl font-bold text-red-600">{{ report.summary.failed_nodes }}</div>
-          <div class="text-sm text-gray-600">Failed</div>
-        </div>
-      </div>
-
-      <!-- Duration -->
-      <div class="text-sm text-gray-600">
-        Duration: <span class="font-medium">{{ formatDuration(report.duration_ms) }}</span>
-      </div>
-
-      <!-- Critical Issues -->
-      <div v-if="report.summary?.critical_issues && report.summary.critical_issues.length > 0" class="space-y-2">
-        <h4 class="font-semibold text-sm">Critical Issues</h4>
-        <Alert v-for="(issue, idx) in report.summary.critical_issues.slice(0, 5)" :key="idx" variant="destructive">
-          <AlertDescription>
-            <div class="font-medium">{{ issue.code }}: {{ issue.message }}</div>
-            <div v-if="issue.selector" class="text-sm mt-1">Selector: <code class="bg-red-100 px-1 rounded">{{ issue.selector }}</code></div>
-            <div v-if="issue.suggestion" class="text-sm mt-1 italic">💡 {{ issue.suggestion }}</div>
-          </AlertDescription>
-        </Alert>
-      </div>
-
-      <!-- Phase Results -->
-      <div v-if="report.phase_results" class="space-y-3">
-        <h4 class="font-semibold text-sm">Phase Results</h4>
-        <div v-for="(phaseResult, phaseId) in report.phase_results" :key="phaseId" class="border rounded-lg p-3">
-          <div class="font-medium mb-2">{{ phaseResult.phase_name || phaseId }}</div>
-          
-          <div class="space-y-2">
-            <div v-for="nodeResult in phaseResult.node_results" :key="nodeResult.node_id" class="flex items-start gap-2 text-sm">
-              <component 
-                :is="nodeStatusConfig(nodeResult.status).icon" 
-                :class="['h-4 w-4 mt-0.5 flex-shrink-0', nodeStatusConfig(nodeResult.status).color]" 
-              />
-              <div class="flex-1">
-                <div class="flex items-center justify-between">
-                  <div class="font-medium">{{ nodeResult.node_name || nodeResult.node_id }}</div>
-                  
-                  <!-- Camera icon for failed/warning nodes with snapshots -->
-                  <button
-                    v-if="(nodeResult.status === 'fail' || nodeResult.status === 'warning') && hasSnapshot && hasSnapshot(nodeResult.node_id)"
-                    @click.stop="openSnapshot && openSnapshot(getSnapshotId!(nodeResult.node_id))"
-                    class="snapshot-button"
-                    title="View diagnostic snapshot"
-                  >
-                    <Camera class="w-4 h-4" />
-                  </button>
-                </div>
-                <div class="text-gray-600 text-xs">{{ nodeResult.node_type }} • {{ formatDuration(nodeResult.duration_ms) }}</div>
-                
-                <!-- Node Issues -->
-                <div v-if="nodeResult.issues && nodeResult.issues.length > 0" class="mt-1 space-y-1">
-                  <div v-for="(issue, idx) in nodeResult.issues" :key="idx" class="text-xs p-2 bg-red-50 rounded">
-                    <div class="font-medium">{{ issue.code }}: {{ issue.message }}</div>
-                    <div v-if="issue.suggestion" class="text-gray-600 mt-0.5">💡 {{ issue.suggestion }}</div>
-                  </div>
-                </div>
-
-                <!-- Node Metrics -->
-                <div v-if="Object.keys(nodeResult.metrics).length > 0" class="mt-1 text-xs text-gray-500">
-                  <span v-for="(value, key) in nodeResult.metrics" :key="key" class="mr-3">
-                    {{ key }}: <span class="font-medium">{{ typeof value === 'object' ? JSON.stringify(value).slice(0, 50) : value }}</span>
+    <!-- Phase Results -->
+    <div v-if="report.phase_results" class="space-y-3">
+      <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phase Results</h3>
+      
+      <Accordion type="multiple" class="space-y-2" default-value="phase-0">
+        <AccordionItem 
+          v-for="(phaseResult, phaseId, index) in report.phase_results" 
+          :key="phaseId"
+          :value="`phase-${index}`"
+          class="border rounded-lg"
+        >
+          <AccordionTrigger class="px-4 py-2.5 hover:no-underline text-sm font-medium">
+            <div class="flex items-center justify-between w-full pr-2">
+              <span>{{ phaseResult.phase_name || phaseId }}</span>
+              <div class="flex items-center gap-2 text-xs">
+                <div v-if="phaseResult.node_results" class="flex items-center gap-3">
+                  <span class="text-green-600 dark:text-green-400">
+                    ✓ {{ phaseResult.node_results.filter(n => n.status === 'pass').length }}
+                  </span>
+                  <span v-if="phaseResult.node_results.filter(n => n.status === 'warning').length > 0" class="text-amber-600 dark:text-amber-400">
+                    ⚠ {{ phaseResult.node_results.filter(n => n.status === 'warning').length }}
+                  </span>
+                  <span v-if="phaseResult.node_results.filter(n => n.status === 'fail').length > 0" class="text-red-600 dark:text-red-400">
+                    ✗ {{ phaseResult.node_results.filter(n => n.status === 'fail').length }}
                   </span>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
+          </AccordionTrigger>
+          
+          <AccordionContent class="px-4 pb-3 pt-1">
+            <div class="space-y-2">
+              <div 
+                v-for="nodeResult in phaseResult.node_results" 
+                :key="nodeResult.node_id"
+                class="flex items-start gap-2 p-2.5 rounded-md border bg-card hover:bg-accent/50 transition-colors"
+              >
+                <component 
+                  :is="nodeStatusConfig(nodeResult.status).icon" 
+                  :class="['h-4 w-4 mt-0.5 flex-shrink-0', nodeStatusConfig(nodeResult.status).color]" 
+                />
+                <div class="flex-1 min-w-0 space-y-1">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-medium truncate">{{ nodeResult.node_name || nodeResult.node_id }}</span>
+                    
+                    <!-- Snapshot button -->
+                    <button
+                      v-if="(nodeResult.status === 'fail' || nodeResult.status === 'warning') && hasSnapshot && hasSnapshot(nodeResult.node_id)"
+                      @click.stop="openSnapshot && openSnapshot(getSnapshotId!(nodeResult.node_id))"
+                      class="flex-shrink-0 p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-primary"
+                      title="View diagnostic snapshot"
+                    >
+                      <Camera class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  
+                  <div class="text-xs text-muted-foreground">
+                    {{ nodeResult.node_type }} • {{ formatDuration(nodeResult.duration_ms) }}
+                  </div>
+                  
+                  <!-- Node Issues -->
+                  <div v-if="nodeResult.issues && nodeResult.issues.length > 0" class="space-y-1 mt-1.5">
+                    <div 
+                      v-for="(issue, idx) in nodeResult.issues" 
+                      :key="idx"
+                      class="text-xs p-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded"
+                    >
+                      <div class="font-medium">{{ issue.code }}: {{ issue.message }}</div>
+                      <div v-if="issue.suggestion" class="text-muted-foreground mt-0.5">💡 {{ issue.suggestion }}</div>
+                    </div>
+                  </div>
+
+                  <!-- Node Metrics -->
+                  <div v-if="Object.keys(nodeResult.metrics).length > 0" class="mt-1 text-xs text-muted-foreground">
+                    <span v-for="(value, key) in nodeResult.metrics" :key="key" class="mr-3">
+                      {{ key }}: <span class="font-medium">{{ typeof value === 'object' ? JSON.stringify(value).slice(0, 50) : value }}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    </div>
+  </div>
 </template>
-
-<style scoped>
-.snapshot-button {
-  @apply p-1.5 rounded-lg transition-all;
-  @apply text-gray-500 hover:text-blue-600;
-  @apply hover:bg-blue-50 dark:hover:bg-blue-900/20;
-}
-
-.snapshot-button:hover {
-  @apply scale-110;
-}
-</style>
