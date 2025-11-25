@@ -492,25 +492,62 @@ function loadWorkflow(workflow: Workflow) {
     }
   })
 
-  // For phase-based workflows: Create visual connections between phases
-  if (phaseNodeIds.length > 1) {
-    for (let i = 0; i < phaseNodeIds.length - 1; i++) {
-      const currentPhaseNodes = phaseNodeIds[i]
-      const nextPhaseNodes = phaseNodeIds[i + 1]
+  // For phase-based workflows: Create visual connections
+  if (phaseNodeIds.length > 0) {
+    // 1. Connect sequential nodes WITHIN each phase
+    phaseNodeIds.forEach((ids, phaseIndex) => {
+      const regularNodesInPhase = ids.filter(id => {
+        const node = allNodes.find(n => n.id === id)
+        // Only connect regular nodes (not fields, not labels)
+        return node && node.type !== 'extractField' && node.type !== 'phaseLabel'
+      })
       
-      // Connect last node of current phase to first node of next phase
+      // Connect each node to the next one sequentially
+      for (let i = 0; i < regularNodesInPhase.length - 1; i++) {
+        const sourceId = regularNodesInPhase[i]
+        const targetId = regularNodesInPhase[i + 1]
+        
+        // Check if already connected via dependencies or parent-child
+        const edgeExists = loadedEdges.some(e => 
+          (e.source === sourceId && e.target === targetId) ||
+          (e.target === targetId && e.source === sourceId)
+        )
+        
+        if (!edgeExists) {
+          loadedEdges.push({
+            id: `seq_phase${phaseIndex}_${i}_to_${i + 1}`,
+            source: sourceId,
+            target: targetId,
+            animated: false,
+            style: { strokeWidth: 2 }
+          })
+        }
+      }
+    })
+    
+    // 2. Connect between phases (last node of phase -> first node of next phase)
+    for (let i = 0; i < phaseNodeIds.length - 1; i++) {
+      const currentPhaseNodes = phaseNodeIds[i].filter(id => {
+        const node = allNodes.find(n => n.id === id)
+        return node && node.type !== 'extractField' && node.type !== 'phaseLabel'
+      })
+      const nextPhaseNodes = phaseNodeIds[i + 1].filter(id => {
+        const node = allNodes.find(n => n.id === id)
+        return node && node.type !== 'extractField' && node.type !== 'phaseLabel'
+      })
+      
       if (currentPhaseNodes.length > 0 && nextPhaseNodes.length > 0) {
         const sourceId = currentPhaseNodes[currentPhaseNodes.length - 1]
         const targetId = nextPhaseNodes[0]
         
-        // Only add if not already connected via dependencies
         const edgeExists = loadedEdges.some(e => e.source === sourceId && e.target === targetId)
         if (!edgeExists) {
           loadedEdges.push({
             id: `phase_${i}_to_${i + 1}`,
             source: sourceId,
             target: targetId,
-            animated: true
+            animated: true,
+            style: { strokeDasharray: '5,5', strokeWidth: 2 }
           })
         }
       }

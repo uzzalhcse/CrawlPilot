@@ -17,6 +17,11 @@
                 "name": "Discover Main Product Categories",
                 "nodes": [
                     {
+                        "id": "navigate_to_homepage",
+                        "type": "navigate",
+                        "name": "Navigate to Homepage"
+                    },
+                    {
                         "id": "discover_main_categories",
                         "type": "extract_links",
                         "name": "Extract Category Links",
@@ -40,6 +45,11 @@
                 "type": "discovery",
                 "name": "Discover Product Listing Pages",
                 "nodes": [
+                    {
+                        "id": "navigate_to_category",
+                        "type": "navigate",
+                        "name": "Navigate to Category Page"
+                    },
                     {
                         "id": "discover_product_listings",
                         "type": "extract_links",
@@ -66,6 +76,11 @@
                 "type": "extraction",
                 "name": "Extract Product Details",
                 "nodes": [
+                    {
+                        "id": "navigate_to_product",
+                        "type": "navigate",
+                        "name": "Navigate to Product Page"
+                    },
                     {
                         "id": "extract_aqua_product_data",
                         "type": "extract",

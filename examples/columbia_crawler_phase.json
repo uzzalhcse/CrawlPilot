@@ -17,6 +17,11 @@
                 "name": "Discover Main Product Categories",
                 "nodes": [
                     {
+                        "id": "navigate_to_homepage",
+                        "type": "navigate",
+                        "name": "Navigate to Homepage"
+                    },
+                    {
                         "id": "discover_main_categories",
                         "type": "extract_links",
                         "name": "Extract Category Links",
@@ -41,17 +46,22 @@
                 "name": "Paginate Through Product Listings",
                 "nodes": [
                     {
+                        "id": "navigate_to_category",
+                        "type": "navigate",
+                        "name": "Navigate to Category Page"
+                    },
+                    {
                         "id": "paginate_product_pages",
                         "type": "paginate",
                         "name": "Paginate Through Product Listings",
                         "params": {
-                          "selector": "div.direction_.next_ a.btn_",
-                          "link_selector": "ul.block-thumbnail-t--items a",
-                          "max_pages": 1,
-                          "type": "auto",
-                          "wait_after": 2000,
-                          "marker": "product",
-                          "limit": 1
+                            "selector": "div.direction_.next_ a.btn_",
+                            "link_selector": "ul.block-thumbnail-t--items a",
+                            "max_pages": 1,
+                            "type": "auto",
+                            "wait_after": 2000,
+                            "marker": "product",
+                            "limit": 1
                         }
                     }
                 ],
@@ -70,6 +80,11 @@
                 "type": "extraction",
                 "name": "Extract Product Details",
                 "nodes": [
+                    {
+                        "id": "navigate_to_product",
+                        "type": "navigate",
+                        "name": "Navigate to Product Page"
+                    },
                     {
                         "id": "wait_for_product_content",
                         "type": "wait",

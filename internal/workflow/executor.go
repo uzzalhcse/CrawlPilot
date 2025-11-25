@@ -138,6 +138,7 @@ func (e *Executor) PublishEvent(executionID, eventType string, data map[string]i
 		Timestamp:   time.Now(),
 		Data:        data,
 	}
+	fmt.Println("Publishing event:", eventType, "data:", data)
 
 	e.eventBroadcaster.Publish(event)
 }
@@ -363,10 +364,25 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		browserCtx.SetHeaders(workflow.Config.Headers)
 	}
 
-	// Navigate to URL
-	_, err = browserCtx.Navigate(item.URL)
-	if err != nil {
-		return fmt.Errorf("failed to navigate to URL: %w", err)
+	// BACKWARD COMPATIBILITY: Auto-navigate if no navigate node exists in this phase
+	// Check if phase has a navigate node
+	hasNavigateNode := false
+	for _, node := range phaseToExecute.Nodes {
+		if node.Type == models.NodeTypeNavigate {
+			hasNavigateNode = true
+			break
+		}
+	}
+
+	// Only auto-navigate if phase doesn't have explicit navigate node
+	if !hasNavigateNode {
+		logger.Debug("No navigate node found, auto-navigating", zap.String("url", item.URL))
+		_, err = browserCtx.Navigate(item.URL)
+		if err != nil {
+			return fmt.Errorf("failed to navigate to URL: %w", err)
+		}
+	} else {
+		logger.Debug("Navigate node found in phase, skipping auto-navigation")
 	}
 
 	// Apply rate limiting
@@ -597,15 +613,7 @@ func (e *Executor) executeNodeGroup(ctx context.Context, nodes []models.Node, br
 func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
 	logger.Debug("Executing node", zap.String("node_id", node.ID), zap.String("type", string(node.Type)))
 
-	e.PublishEvent(executionID, "node_started", map[string]interface{}{
-		"node_id":   node.ID,
-		"node_type": node.Type,
-		"node_name": node.Name,
-		"params":    node.Params,
-		"url_id":    item.ID,
-	})
-
-	// Create node execution record
+	// Create node execution record FIRST
 	var nodeExecID string
 	var parentNodeExecIDForEvents *string // Capture parent BEFORE we update context
 	if e.nodeExecRepo != nil {
@@ -613,20 +621,13 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 
 		// Determine parent node execution ID
 		// Priority 1: If this is the first node processing a discovered URL, use the discovering node's execution ID from the URL queue
-		// === CRITICAL: Capture parent ID BEFORE creating this node's record ===
-		// This prevents circular references where a node becomes its own parent
-		parentNodeExecIDForEvents = getParentNodeExecID(execCtx, item)
-
-		// Now determine parent for the database record
 		var parentNodeExecID *string
-		// Priority 1: If URL has a parent from discovery, use that for the first node
 		if item.ParentNodeExecutionID != nil && *item.ParentNodeExecutionID != "" {
-			if _, ok := execCtx.Get("_last_node_exec_id"); !ok {
-				parentNodeExecID = item.ParentNodeExecutionID
-			}
-		}
-		// Priority 2: Use last executed node from context (sequential)
-		if parentNodeExecID == nil {
+			// Check if there's a node execution record for the discovering node
+			parentNodeExecID = item.ParentNodeExecutionID
+		} else {
+			// Priority 2: Use the last node execution ID from the execution context
+			// This is used for sequential node execution within the same phase
 			if lastNodeID, ok := execCtx.Get("_last_node_exec_id"); ok {
 				if lastNodeIDStr, ok := lastNodeID.(string); ok {
 					parentNodeExecID = &lastNodeIDStr
@@ -652,12 +653,24 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 			logger.Error("Failed to create node execution record", zap.Error(err))
 		} else {
 			nodeExecID = nodeExec.ID
+			parentNodeExecIDForEvents = nodeExec.ParentNodeExecutionID // Capture for events
 			// Store in context for later retrieval (e.g., when saving extracted data)
 			execCtx.Set("_node_exec_id", nodeExecID)
 			// Track this as the last executed node for sequential tracking
 			execCtx.Set("_last_node_exec_id", nodeExecID)
 		}
 	}
+
+	// NOW publish node_started event with node_execution_id
+	e.PublishEvent(executionID, "node_started", map[string]interface{}{
+		"node_id":                  node.ID,
+		"node_type":                node.Type,
+		"node_name":                node.Name,
+		"params":                   node.Params,
+		"url_id":                   item.ID,
+		"node_execution_id":        nodeExecID,
+		"parent_node_execution_id": parentNodeExecIDForEvents,
+	})
 
 	var result interface{}
 	var err error

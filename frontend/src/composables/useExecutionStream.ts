@@ -129,6 +129,15 @@ export function useExecutionStream(executionId: string) {
                 logs: []
             })
 
+            // Build execution tree - Add node immediately when it starts!
+            if (data.node_execution_id) {
+                console.log('[TREE] Adding running node:', data.node_execution_id, 'parent:', data.parent_node_execution_id) // DEBUG
+                addNodeExecution(data.node_execution_id, data.node_id, data.parent_node_execution_id, data.node_type, 'running')
+                console.log('[TREE] Current tree:', executionTree.value) // DEBUG
+            } else {
+                console.warn('[TREE] No node_execution_id in started event!', data) // DEBUG
+            }
+
             logs.value.push(createLogEntry(`Node started: ${data.node_name || data.node_id}`, 'debug', data))
         })
 

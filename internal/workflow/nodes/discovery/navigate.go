@@ -27,16 +27,24 @@ func (e *NavigateExecutor) Type() models.NodeType {
 
 // Validate validates the node parameters
 func (e *NavigateExecutor) Validate(params map[string]interface{}) error {
-	url := nodes.GetStringParam(params, "url")
-	if url == "" {
-		return fmt.Errorf("url is required for navigate node")
-	}
+	// URL is optional - can be provided via params or will use URL from execution context
 	return nil
 }
 
 // Execute navigates to a URL
 func (e *NavigateExecutor) Execute(ctx context.Context, input *nodes.ExecutionInput) (*nodes.ExecutionOutput, error) {
 	targetURL := nodes.GetStringParam(input.Params, "url")
+
+	// If no URL in params, get it from execution context (from URLQueueItem)
+	if targetURL == "" {
+		if input.URLItem != nil {
+			targetURL = input.URLItem.URL
+		}
+	}
+
+	if targetURL == "" {
+		return nil, fmt.Errorf("no URL provided: specify 'url' param or use URL from queue")
+	}
 
 	_, err := input.BrowserContext.Navigate(targetURL)
 	if err != nil {

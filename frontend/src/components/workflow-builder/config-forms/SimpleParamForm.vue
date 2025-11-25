@@ -42,7 +42,7 @@ const emit = defineEmits<{
       <SelectInput
         v-if="field.type === 'select' && field.options"
         :id="`param-${field.key}`"
-        :model-value="params[field.key] || field.defaultValue"
+        :model-value="params?.[field.key] || field.defaultValue"
         :options="field.options"
         :placeholder="field.placeholder"
         @update:model-value="emit('update:params', field.key, $event)"
@@ -65,7 +65,7 @@ const emit = defineEmits<{
         v-else
         :id="`param-${field.key}`"
         :type="field.type as any"
-        :model-value="params[field.key]"
+        :model-value="params?.[field.key] || field.defaultValue || ''"
         :placeholder="field.placeholder"
         @update:model-value="emit('update:params', field.key, $event)"
       />

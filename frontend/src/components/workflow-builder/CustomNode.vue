@@ -96,10 +96,10 @@ function getHeaderClass() {
 }
 
 const keyParams = computed(() => {
-  const params = props.data.params
+  const params = props.data.params || {} // Add default empty object
   const result: Array<{ key: string, label: string, value: string, icon: any }> = []
   
-  if (params.selector) {
+  if (params?.selector) {
     result.push({
       key: 'selector',
       label: 'Selector',
@@ -108,7 +108,7 @@ const keyParams = computed(() => {
     })
   }
   
-  if (params.timeout || params.duration) {
+  if (params?.timeout || params?.duration) {
     const time = params.timeout || params.duration
     result.push({
       key: 'time',
@@ -118,7 +118,7 @@ const keyParams = computed(() => {
     })
   }
   
-  if (params.schema) {
+  if (params?.schema) {
     result.push({
       key: 'schema',
       label: 'Source',
@@ -127,7 +127,7 @@ const keyParams = computed(() => {
     })
   }
   
-  if (params.marker) {
+  if (params?.marker) {
     result.push({
       key: 'marker',
       label: 'Marker',
@@ -136,7 +136,7 @@ const keyParams = computed(() => {
     })
   }
 
-  if (params.max_pages) {
+  if (params?.max_pages) {
     result.push({
       key: 'max_pages',
       label: 'Pages',
@@ -146,7 +146,7 @@ const keyParams = computed(() => {
   }
 
   // Preview extraction fields
-  if (props.data.nodeType === 'extract' && params.fields) {
+  if (props.data.nodeType === 'extract' && params?.fields) {
     const fieldKeys = Object.keys(params.fields)
     if (fieldKeys.length > 0) {
       result.push({
