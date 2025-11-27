@@ -44,8 +44,8 @@ while IFS= read -r api_key || [ -n "$api_key" ]; do
     
     # Insert key (ON CONFLICT DO NOTHING handles duplicates)
     result=$(PGPASSWORD=$DB_PASS psql -h $DB_HOST -U $DB_USER -d $DB_NAME -t -c \
-        "INSERT INTO gemini_api_keys (name, api_key) VALUES ('$name', '$api_key') ON CONFLICT (api_key) DO NOTHING RETURNING id;" 2>&1)
-    
+        "INSERT INTO ai_api_keys (name, api_key, provider) VALUES ('$name', '$api_key', 'gemini') ON CONFLICT (api_key) DO NOTHING RETURNING id;" 2>&1)
+
     if [ -z "$result" ]; then
         echo "  ⚠️  Skipped duplicate: $name (key already exists)"
         skipped=$((skipped + 1))
@@ -68,7 +68,10 @@ echo ""
 echo "Current database status:"
 PGPASSWORD=$DB_PASS psql -h $DB_HOST -U $DB_USER -d $DB_NAME -c \
     "SELECT 
+        provider,
         COUNT(*) as total_keys,
         COUNT(*) FILTER (WHERE is_active = true) as active_keys,
         COUNT(*) FILTER (WHERE is_rate_limited = true) as rate_limited_keys
-     FROM gemini_api_keys;"
+     FROM ai_api_keys
+     GROUP BY provider;"
+
