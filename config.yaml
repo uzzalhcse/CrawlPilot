@@ -30,7 +30,7 @@ browser:
   max_concurrency: 10
   context_lifetime: 300
   proxy:
-    enabled: true
+    enabled: false
     server: "82.22.73.66:7272"
     username: "lnvmpyru"
     password: "5un1tb1azapa"

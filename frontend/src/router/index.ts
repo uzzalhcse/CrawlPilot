@@ -84,6 +84,11 @@ const router = createRouter({
           component: () => import('@/views/BrowserProfileDetailView.vue')
         },
         {
+          path: 'error-recovery',
+          name: 'error-recovery-settings',
+          component: () => import('@/views/ErrorRecoverySettings.vue')
+        },
+        {
           path: '/:pathMatch(.*)*',
           name: 'not-found',
           component: () => import('@/views/NotFoundView.vue')

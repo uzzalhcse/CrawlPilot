@@ -16,6 +16,7 @@ import (
 	"github.com/uzzalhcse/crawlify/internal/ai"
 	"github.com/uzzalhcse/crawlify/internal/browser"
 	"github.com/uzzalhcse/crawlify/internal/config"
+	"github.com/uzzalhcse/crawlify/internal/error_recovery"
 	"github.com/uzzalhcse/crawlify/internal/logger"
 	"github.com/uzzalhcse/crawlify/internal/monitoring"
 	"github.com/uzzalhcse/crawlify/internal/queue"
@@ -101,10 +102,9 @@ func main() {
 		return err
 	})
 
-	// Initialize handlers
+	// Initialize handlers (note: executionHandler will be created after aiClient)
 	workflowHandler := handlers.NewWorkflowHandler(workflowRepo)
 	workflowVersionHandler := handlers.NewWorkflowVersionHandler(workflowVersionRepo, workflowRepo) // NEW
-	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedItemsRepo, nodeExecRepo, browserPool, urlQueue)
 	analyticsHandler := handlers.NewAnalyticsHandler(nodeExecRepo, extractedItemsRepo, urlQueue)
 	selectorHandler := handlers.NewSelectorHandler(browserPool)
 
@@ -166,14 +166,54 @@ func main() {
 	}
 	defer aiClient.Close()
 
+	// Initialize Error Recovery System (after aiClient)
+	errorRecoveryRepo := storage.NewErrorRecoveryRepository(db)
+	ctx := context.Background()
+	rules, err := errorRecoveryRepo.ListRules(ctx)
+	if err != nil {
+		rules = []error_recovery.ContextAwareRule{}
+	}
+	defaultRules := error_recovery.GetDefaultRules()
+	existingNames := make(map[string]bool)
+	for _, r := range rules {
+		existingNames[r.Name] = true
+	}
+	for _, dr := range defaultRules {
+		if !existingNames[dr.Name] {
+			errorRecoveryRepo.CreateRule(ctx, &dr)
+			rules = append(rules, dr)
+		}
+	}
+	errorRecoverySystem := error_recovery.NewErrorRecoverySystem(
+		error_recovery.SystemConfig{
+			Enabled: true,
+			AnalyzerConfig: error_recovery.AnalyzerConfig{
+				WindowSize:            100,
+				ErrorRateThreshold:    0.10,
+				ConsecutiveErrorLimit: 5,
+				SameErrorThreshold:    10,
+				DomainErrorThreshold:  0.20,
+			},
+			MinSuccessRate: 0.90,
+			MinUsageCount:  5,
+			AIEnabled:      true,
+		},
+		rules,
+		aiClient,
+	)
+	errorRecoveryHandler := handlers.NewErrorRecoveryHandler(errorRecoveryRepo)
+
+	// Create ExecutionHandler with errorRecoverySystem
+	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedItemsRepo, nodeExecRepo, browserPool, urlQueue, errorRecoverySystem)
+
 	autoFixService := ai.NewAutoFixService(aiClient, zapLogger)
 	fixSuggestionRepo := storage.NewFixSuggestionRepository(db)
 	autoFixHandler := handlers.NewAutoFixHandler(
 		snapshotRepo,
 		fixSuggestionRepo,
-		workflowRepo,        // NEW
-		workflowVersionRepo, // NEW
-		monitoringRepo,      // NEW
+		workflowRepo,
+		workflowVersionRepo,
+		monitoringRepo,
 		autoFixService,
 		snapshotStoragePath,
 	)
@@ -190,7 +230,7 @@ func main() {
 	browserProfileHandler := handlers.NewBrowserProfileHandler(browserProfileRepo, browserPool.GetLauncher())
 
 	// Routes
-	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler, browserProfileHandler)
+	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler, browserProfileHandler, errorRecoveryHandler)
 
 	// Monitoring
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -240,7 +280,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler, browserProfileHandler *handlers.BrowserProfileHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler, browserProfileHandler *handlers.BrowserProfileHandler, errorRecoveryHandler *handlers.ErrorRecoveryHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -355,6 +395,16 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, work
 	profiles.Post("/:id/test", browserProfileHandler.TestProfile)
 	profiles.Post("/:id/launch", browserProfileHandler.LaunchProfile)
 	profiles.Post("/:id/stop", browserProfileHandler.StopProfile)
+
+	// Error Recovery routes
+	errorRecovery := api.Group("/error-recovery")
+	errorRecovery.Get("/rules", errorRecoveryHandler.ListRules)
+	errorRecovery.Get("/rules/:id", errorRecoveryHandler.GetRule)
+	errorRecovery.Post("/rules", errorRecoveryHandler.CreateRule)
+	errorRecovery.Put("/rules/:id", errorRecoveryHandler.UpdateRule)
+	errorRecovery.Delete("/rules/:id", errorRecoveryHandler.DeleteRule)
+	errorRecovery.Get("/config/:key", errorRecoveryHandler.GetConfig)
+	errorRecovery.Put("/config", errorRecoveryHandler.UpdateConfig)
 }
 
 func errorHandler(c *fiber.Ctx, err error) error {

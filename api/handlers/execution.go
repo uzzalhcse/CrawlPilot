@@ -16,15 +16,16 @@ import (
 )
 
 type ExecutionHandler struct {
-	workflowRepo       *storage.WorkflowRepository
-	executionRepo      *storage.ExecutionRepository
-	extractedItemsRepo *storage.ExtractedItemsRepository
-	nodeExecRepo       *storage.NodeExecutionRepository
-	browserPool        *browser.BrowserPool
-	urlQueue           *queue.URLQueue
-	executor           *workflow.Executor
-	executions         sync.Map // Track running executions
-	executionCancels   sync.Map // Map[executionID]context.CancelFunc - NEW for pause support
+	workflowRepo        *storage.WorkflowRepository
+	executionRepo       *storage.ExecutionRepository
+	extractedItemsRepo  *storage.ExtractedItemsRepository
+	nodeExecRepo        *storage.NodeExecutionRepository
+	browserPool         *browser.BrowserPool
+	urlQueue            *queue.URLQueue
+	executor            *workflow.Executor
+	executions          sync.Map    // Track running executions
+	executionCancels    sync.Map    // Map[executionID]context.CancelFunc - NEW for pause support
+	errorRecoverySystem interface{} // Error recovery system
 }
 
 func NewExecutionHandler(
@@ -34,15 +35,17 @@ func NewExecutionHandler(
 	nodeExecRepo *storage.NodeExecutionRepository,
 	browserPool *browser.BrowserPool,
 	urlQueue *queue.URLQueue,
+	errorRecoverySystem interface{},
 ) *ExecutionHandler {
 	return &ExecutionHandler{
-		workflowRepo:       workflowRepo,
-		executionRepo:      executionRepo,
-		extractedItemsRepo: extractedItemsRepo,
-		nodeExecRepo:       nodeExecRepo,
-		browserPool:        browserPool,
-		urlQueue:           urlQueue,
-		executor:           workflow.NewExecutor(browserPool, urlQueue, extractedItemsRepo, nodeExecRepo, executionRepo),
+		workflowRepo:        workflowRepo,
+		executionRepo:       executionRepo,
+		extractedItemsRepo:  extractedItemsRepo,
+		nodeExecRepo:        nodeExecRepo,
+		browserPool:         browserPool,
+		urlQueue:            urlQueue,
+		executor:            workflow.NewExecutor(browserPool, urlQueue, extractedItemsRepo, nodeExecRepo, executionRepo, errorRecoverySystem),
+		errorRecoverySystem: errorRecoverySystem,
 	}
 }
 

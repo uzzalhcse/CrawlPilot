@@ -31,6 +31,7 @@ type BrowserContext struct {
 	pool          *BrowserPool
 	headedBrowser playwright.Browser // For headed sessions
 	isHeaded      bool
+	lastResponse  playwright.Response // Track last navigation response
 }
 
 func NewBrowserPool(cfg *config.BrowserConfig, profileRepo *storage.BrowserProfileRepository) (*BrowserPool, error) {
@@ -358,7 +359,7 @@ func (bc *BrowserContext) SetHeaders(headers map[string]string) error {
 	return bc.Context.SetExtraHTTPHeaders(headers)
 }
 
-// Navigate navigates to a URL
+// Navigate navigates to a URL and stores the response
 func (bc *BrowserContext) Navigate(url string, options ...playwright.PageGotoOptions) (playwright.Response, error) {
 	var opts playwright.PageGotoOptions
 	if len(options) > 0 {
@@ -370,7 +371,9 @@ func (bc *BrowserContext) Navigate(url string, options ...playwright.PageGotoOpt
 		}
 	}
 
-	return bc.Page.Goto(url, opts)
+	resp, err := bc.Page.Goto(url, opts)
+	bc.lastResponse = resp // Store response for status checking
+	return resp, err
 }
 
 // WaitForSelector waits for a selector to appear

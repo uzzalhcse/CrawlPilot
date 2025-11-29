@@ -1,0 +1,136 @@
+{
+    "name": "Sandbox E-commerce Site Crawler - Phase-Based",
+    "description": "Comprehensive crawler for Sandbox e-commerce site using phase-based architecture",
+    "config": {
+        "start_urls": [
+            "http://localhost:8091/products"
+        ],
+        "max_depth": 3,
+        "rate_limit_delay": 2000,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        },
+        "phases": [
+            {
+                "id": "discover_categories",
+                "type": "discovery",
+                "name": "Discover Main Product Categories",
+                "nodes": [
+                    {
+                        "id": "navigate_to_homepage",
+                        "type": "navigate",
+                        "name": "Navigate to Homepage"
+                    },
+                    {
+                        "id": "discover_main_categories",
+                        "type": "extract_links",
+                        "name": "Extract Category Links",
+                        "params": {
+                            "selector": "ul.space-y-2 li a.block",
+                            "marker": "category",
+                            "limit": 50
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "discover_products"
+                }
+            },
+            {
+                "id": "discover_products",
+                "type": "discovery",
+                "name": "Discover Product Listing Pages",
+                "nodes": [
+                    {
+                        "id": "navigate_to_category",
+                        "type": "navigate",
+                        "name": "Navigate to Category Page"
+                    },
+                    {
+                        "id": "discover_product_listings",
+                        "type": "extract_links",
+                        "name": "Extract Product Links",
+                        "params": {
+                            "selector": "a.group",
+                            "marker": "product",
+                            "limit": 100
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "category"
+                    ]
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "extract_product_data"
+                }
+            },
+            {
+                "id": "extract_product_data",
+                "type": "extraction",
+                "name": "Extract Product Details",
+                "nodes": [
+                    {
+                        "id": "navigate_to_product",
+                        "type": "navigate",
+                        "name": "Navigate to Product Page"
+                    },
+                    {
+                        "id": "extract_aqua_product_data",
+                        "type": "extract",
+                        "name": "Extract Aqua Product Details",
+                        "params": {
+                            "schema": "aqua_product",
+                            "fields": {
+                                "page_title": {
+                                    "selector": "title",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "product_name": {
+                                    "selector": ".text-4xl.font-bold.mb-2",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "images": {
+                                    "selector": ".bg-white.rounded-lg.shadow-lg.overflow-hidden.sticky.top-20 img",
+                                    "type": "attr",
+                                    "attribute": "src",
+                                    "multiple": true
+                                },
+                                "category": {
+                                    "selector": ".text-gray-900.font-semibold",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "description": {
+                                    "selector": ".text-gray-700.leading-relaxed.mb-4",
+                                    "type": "text",
+                                    "transform": "clean_html"
+                                },
+                                "list_price": {
+                                    "selector": ".text-5xl.font-bold.text-gray-900",
+                                    "type": "text",
+                                    "transform": "trim",
+                                    "default": "Open Price"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "product"
+                    ]
+                }
+            }
+        ]
+    },
+    "status": "active"
+}

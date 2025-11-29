@@ -26,14 +26,15 @@ import (
 var ErrURLRequeued = errors.New("url requeued for later processing")
 
 type Executor struct {
-	browserPool        *browser.BrowserPool
-	urlQueue           *queue.URLQueue
-	parser             *Parser
-	extractedItemsRepo *storage.ExtractedItemsRepository
-	nodeExecRepo       *storage.NodeExecutionRepository
-	executionRepo      *storage.ExecutionRepository
-	registry           *NodeRegistry // NEW: Plugin registry for extensible node execution
-	eventBroadcaster   *EventBroadcaster
+	browserPool         *browser.BrowserPool
+	urlQueue            *queue.URLQueue
+	parser              *Parser
+	extractedItemsRepo  *storage.ExtractedItemsRepository
+	nodeExecRepo        *storage.NodeExecutionRepository
+	executionRepo       *storage.ExecutionRepository
+	registry            *NodeRegistry // NEW: Plugin registry for extensible node execution
+	eventBroadcaster    *EventBroadcaster
+	errorRecoverySystem interface{} // NEW: Error recovery system (using interface{} to avoid circular import)
 }
 
 // ExecutionEvent represents a real-time event during workflow execution
@@ -97,7 +98,7 @@ func (eb *EventBroadcaster) Publish(event ExecutionEvent) {
 	eb.broadcast <- event
 }
 
-func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedItemsRepo *storage.ExtractedItemsRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository) *Executor {
+func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedItemsRepo *storage.ExtractedItemsRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository, errorRecoverySystem interface{}) *Executor {
 	// Create registry and register default nodes
 	registry := NewNodeRegistry()
 	if err := registry.RegisterDefaultNodes(); err != nil {
@@ -105,14 +106,15 @@ func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, ext
 	}
 
 	return &Executor{
-		browserPool:        browserPool,
-		urlQueue:           urlQueue,
-		parser:             NewParser(),
-		extractedItemsRepo: extractedItemsRepo,
-		nodeExecRepo:       nodeExecRepo,
-		executionRepo:      executionRepo,
-		registry:           registry,
-		eventBroadcaster:   NewEventBroadcaster(),
+		browserPool:         browserPool,
+		urlQueue:            urlQueue,
+		parser:              NewParser(),
+		extractedItemsRepo:  extractedItemsRepo,
+		nodeExecRepo:        nodeExecRepo,
+		executionRepo:       executionRepo,
+		registry:            registry,
+		eventBroadcaster:    NewEventBroadcaster(),
+		errorRecoverySystem: errorRecoverySystem,
 	}
 }
 
@@ -389,7 +391,64 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		logger.Debug("No navigate node found, auto-navigating", zap.String("url", item.URL))
 		_, err = browserCtx.Navigate(item.URL)
 		if err != nil {
-			return fmt.Errorf("failed to navigate to URL: %w", err)
+			// Try error recovery before failing
+			if recoveryErr := e.tryRecoverFromError(ctx, err, item, nil); recoveryErr == nil {
+				// Recovery successful, retry navigation
+				logger.Info("🔄 Retrying navigation after error recovery")
+				_, err = browserCtx.Navigate(item.URL)
+				if err != nil {
+					return fmt.Errorf("failed to navigate to URL after recovery: %w", err)
+				}
+				logger.Info("✅ Navigation retry successful", zap.String("url", item.URL))
+			} else {
+				return fmt.Errorf("failed to navigate to URL: %w", err)
+			}
+		}
+
+		// Check HTTP status code even if navigation didn't error
+		if statusErr := browserCtx.CheckHTTPStatus(); statusErr != nil {
+			logger.Warn("📄 HTTP error detected after navigation",
+				zap.String("url", item.URL),
+				zap.Error(statusErr))
+
+			// Get response details for error recovery
+			statusCode, _ := browserCtx.GetResponseStatus()
+			responseBody, _ := browserCtx.GetPageBody()
+			responseHeaders, _ := browserCtx.GetResponseHeaders()
+
+			// Convert headers to map[string][]string format
+			headersMulti := make(map[string][]string)
+			for k, v := range responseHeaders {
+				headersMulti[k] = []string{v}
+			}
+
+			responseInfo := &ResponseInfo{
+				StatusCode: statusCode,
+				Body:       responseBody,
+				Headers:    headersMulti,
+			}
+
+			// Try error recovery for HTTP errors
+			if recoveryErr := e.tryRecoverFromError(ctx, statusErr, item, responseInfo); recoveryErr == nil {
+				// Recovery successful, retry navigation
+				logger.Info("🔄 Retrying navigation after HTTP error recovery")
+				_, retryErr := browserCtx.Navigate(item.URL)
+				if retryErr != nil {
+					return fmt.Errorf("failed to navigate after HTTP error recovery: %w", retryErr)
+				}
+
+				// Check status again after retry
+				if retryStatusErr := browserCtx.CheckHTTPStatus(); retryStatusErr != nil {
+					return fmt.Errorf("HTTP error persists after recovery: %w", retryStatusErr)
+				}
+
+				logger.Info("✅ Navigation retry successful after HTTP error recovery", zap.String("url", item.URL))
+			} else {
+				// Recovery failed or not applicable
+				return fmt.Errorf("HTTP error with no recovery: %w", statusErr)
+			}
+		} else {
+			logger.Info("✅ Auto-navigation completed successfully", zap.String("url", item.URL))
 		}
 	} else {
 		logger.Debug("Navigate node found in phase, skipping auto-navigation")
@@ -739,6 +798,65 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 						zap.Bool("has_result", result != nil),
 						zap.Int("discovered_urls", len(output.DiscoveredURLs)),
 					)
+
+					// Check HTTP status after navigate nodes
+					if node.Type == models.NodeTypeNavigate {
+						if statusErr := browserCtx.CheckHTTPStatus(); statusErr != nil {
+							logger.Warn("📄 HTTP error detected after navigate node execution",
+								zap.String("node_id", node.ID),
+								zap.String("url", item.URL),
+								zap.Error(statusErr))
+
+							// Get response details
+							statusCode, _ := browserCtx.GetResponseStatus()
+							responseBody, _ := browserCtx.GetPageBody()
+							responseHeaders, _ := browserCtx.GetResponseHeaders()
+
+							// Convert headers
+							headersMulti := make(map[string][]string)
+							for k, v := range responseHeaders {
+								headersMulti[k] = []string{v}
+							}
+
+							responseInfo := &ResponseInfo{
+								StatusCode: statusCode,
+								Body:       responseBody,
+								Headers:    headersMulti,
+							}
+
+							// Try error recovery
+							if recoveryErr := e.tryRecoverFromError(ctx, statusErr, item, responseInfo); recoveryErr == nil {
+								logger.Info("🔄 Retrying navigate node after HTTP error recovery",
+									zap.String("node_id", node.ID))
+
+								// Re-execute the navigate node
+								retryOutput, retryErr := executor.Execute(ctx, input)
+								if retryErr != nil {
+									err = fmt.Errorf("failed to retry navigate after HTTP error recovery: %w", retryErr)
+									return err
+								}
+
+								// Check status again
+								if retryStatusErr := browserCtx.CheckHTTPStatus(); retryStatusErr != nil {
+									err = fmt.Errorf("HTTP error persists after recovery: %w", retryStatusErr)
+									return err
+								}
+
+								logger.Info("✅ Navigate node retry successful after HTTP error recovery",
+									zap.String("node_id", node.ID))
+
+								// Use retry output
+								output = retryOutput
+								result = output.Result
+							} else {
+								err = fmt.Errorf("HTTP error with no recovery available: %w", statusErr)
+								return err
+							}
+						} else {
+							logger.Debug("✅ HTTP status OK after navigate",
+								zap.String("node_id", node.ID))
+						}
+					}
 
 					// Handle discovered URLs
 					if len(output.DiscoveredURLs) > 0 {

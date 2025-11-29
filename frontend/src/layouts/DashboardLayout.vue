@@ -20,6 +20,7 @@ import {
   HelpCircle,
   GlobeIcon,
   Package,
+  Shield,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -38,6 +39,7 @@ const menuItems = [
 
 const antiBotItems = [
   { icon: GlobeIcon, label: 'Browsers', route: '/browser-profiles' },
+  { icon: Shield, label: 'Error Recovery', route: '/error-recovery' },
 ]
 
 const bottomItems = [
