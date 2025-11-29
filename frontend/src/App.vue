@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
-import { Toaster } from 'vue-sonner'
+import { Toaster } from '@/components/ui/sonner'
 </script>
 
 <template>
   <RouterView />
-  <Toaster position="top-right" :duration="3000" richColors />
+  <Toaster position="top-right" />
 </template>
