@@ -82,6 +82,7 @@ function toggleMode() {
             max_depth: workflowConfig.value.max_depth || 3,
             rate_limit_delay: workflowConfig.value.rate_limit_delay || 1000,
             storage: workflowConfig.value.storage || { type: 'database' },
+            browser_profile_id: workflowConfig.value.browser_profile_id,
           },
           preservedPhaseProps.value,
           preservedWorkflowProps.value
@@ -209,6 +210,13 @@ function loadWorkflow(workflow: Workflow) {
   workflowStatus.value = (workflow.status as 'draft' | 'active') || 'draft'
   
   // Store the full config to preserve non-node settings (start_urls, etc.)
+  workflowConfig.value = {
+    start_urls: workflow.config.start_urls,
+    max_depth: workflow.config.max_depth,
+    rate_limit_delay: workflow.config.rate_limit_delay,
+    storage: workflow.config.storage,
+    browser_profile_id: workflow.browser_profile_id
+  }
   
   selectedNode.value = null
   nodes.value = []
@@ -219,7 +227,7 @@ function loadWorkflow(workflow: Workflow) {
   preservedPhaseProps.value = new Map()
   
   // Extract workflow-level custom properties (headers, etc.)
-  const standardWorkflowKeys = ['start_urls', 'max_depth', 'rate_limit_delay', 'storage', 'phases', 'url_discovery', 'data_extraction']
+  const standardWorkflowKeys = ['start_urls', 'max_depth', 'rate_limit_delay', 'storage', 'phases', 'url_discovery', 'data_extraction', 'browser_profile_id']
   Object.keys(workflow.config).forEach(key => {
     if (!standardWorkflowKeys.includes(key)) {
       preservedWorkflowProps.value[key] = (workflow.config as any)[key]
@@ -930,6 +938,7 @@ function handleSave() {
         max_depth: workflowConfig.value.max_depth || props.workflow?.config?.max_depth,
         rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow?.config?.rate_limit_delay,
         storage: workflowConfig.value.storage || props.workflow?.config?.storage,
+        browser_profile_id: workflowConfig.value.browser_profile_id || props.workflow?.browser_profile_id,
       },
       preservedPhaseProps.value,
       preservedWorkflowProps.value
@@ -997,6 +1006,7 @@ async function handleToggleStatus() {
         max_depth: workflowConfig.value.max_depth || props.workflow.config.max_depth,
         rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow.config.rate_limit_delay,
         storage: workflowConfig.value.storage || props.workflow.config.storage,
+        browser_profile_id: workflowConfig.value.browser_profile_id || props.workflow.browser_profile_id,
       },
       preservedPhaseProps.value,
       preservedWorkflowProps.value
@@ -1124,7 +1134,9 @@ defineExpose({
         <!-- Properties Panel -->
         <PropertiesPanel
           :node="selectedNode"
+          :workflow-config="workflowConfig"
           @update="handleNodeUpdate"
+          @update:workflow-config="workflowConfig = { ...workflowConfig, ...$event }"
           @delete="handleNodeDelete"
           @close="selectedNode = null"
           @save="handleSave"

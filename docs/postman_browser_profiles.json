@@ -1,0 +1,371 @@
+{
+	"info": {
+		"name": "Crawlify - Browser Profiles API",
+		"description": "Complete API collection for testing browser profile management endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Browser Profiles",
+			"item": [
+				{
+					"name": "List All Profiles",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles?limit=50&offset=0",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "50",
+									"description": "Number of profiles to return"
+								},
+								{
+									"key": "offset",
+									"value": "0",
+									"description": "Pagination offset"
+								},
+								{
+									"key": "status",
+									"value": "active",
+									"disabled": true,
+									"description": "Filter by status: active, inactive, archived"
+								},
+								{
+									"key": "folder",
+									"value": "Production",
+									"disabled": true,
+									"description": "Filter by folder name"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Profile by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/{{profile_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "{{profile_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Profile - Chromium",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Chrome Production Profile\",\n  \"description\": \"Primary Chrome profile for production scraping\",\n  \"folder\": \"Production\",\n  \"tags\": [\"production\", \"chrome\", \"windows\"],\n  \"browser_type\": \"chromium\",\n  \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\",\n  \"platform\": \"Win32\",\n  \"screen_width\": 1920,\n  \"screen_height\": 1080,\n  \"timezone\": \"America/New_York\",\n  \"locale\": \"en-US\",\n  \"languages\": [\"en-US\", \"en\"],\n  \"webgl_vendor\": \"Google Inc. (NVIDIA)\",\n  \"webgl_renderer\": \"ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Direct3D11 vs_5_0 ps_5_0, D3D11)\",\n  \"canvas_noise\": true,\n  \"hardware_concurrency\": 8,\n  \"device_memory\": 16,\n  \"do_not_track\": false,\n  \"disable_webrtc\": true,\n  \"proxy_enabled\": false,\n  \"clear_on_close\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Profile - Firefox",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Firefox Testing Profile\",\n  \"description\": \"Firefox profile for testing\",\n  \"folder\": \"Testing\",\n  \"tags\": [\"testing\", \"firefox\", \"linux\"],\n  \"browser_type\": \"firefox\",\n  \"user_agent\": \"Mozilla/5.0 (X11; Linux x86_64; rv:118.0) Gecko/20100101 Firefox/118.0\",\n  \"platform\": \"Linux x86_64\",\n  \"screen_width\": 1366,\n  \"screen_height\": 768,\n  \"timezone\": \"Europe/London\",\n  \"locale\": \"en-GB\",\n  \"languages\": [\"en-GB\", \"en\"],\n  \"webgl_vendor\": \"Mesa/X.org\",\n  \"webgl_renderer\": \"Mesa DRI Intel(R) UHD Graphics 620 (Kabylake GT2)\",\n  \"canvas_noise\": false,\n  \"hardware_concurrency\": 4,\n  \"device_memory\": 8,\n  \"do_not_track\": true,\n  \"disable_webrtc\": false,\n  \"proxy_enabled\": false,\n  \"clear_on_close\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Profile - With Proxy",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Proxy Profile - US East\",\n  \"description\": \"Profile with US East Coast proxy\",\n  \"folder\": \"Proxied\",\n  \"tags\": [\"proxy\", \"us-east\", \"residential\"],\n  \"browser_type\": \"chromium\",\n  \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36\",\n  \"platform\": \"Win32\",\n  \"screen_width\": 1920,\n  \"screen_height\": 1080,\n  \"timezone\": \"America/New_York\",\n  \"locale\": \"en-US\",\n  \"languages\": [\"en-US\", \"en\"],\n  \"hardware_concurrency\": 8,\n  \"device_memory\": 16,\n  \"canvas_noise\": true,\n  \"proxy_enabled\": true,\n  \"proxy_type\": \"http\",\n  \"proxy_server\": \"proxy.example.com:8080\",\n  \"proxy_username\": \"user123\",\n  \"proxy_password\": \"pass123\",\n  \"clear_on_close\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Updated Profile Name\",\n  \"description\": \"Updated description\",\n  \"status\": \"active\",\n  \"folder\": \"Production\",\n  \"tags\": [\"updated\", \"production\"],\n  \"canvas_noise\": true,\n  \"disable_webrtc\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/{{profile_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "{{profile_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Profile",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/{{profile_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "{{profile_id}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Duplicate Profile",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/{{profile_id}}/duplicate",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "{{profile_id}}", "duplicate"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Fingerprint & Testing",
+			"item": [
+				{
+					"name": "Generate Random Fingerprint - Chromium",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"browser_type\": \"chromium\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/generate-fingerprint",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "generate-fingerprint"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Random Fingerprint - Firefox",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"browser_type\": \"firefox\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/generate-fingerprint",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "generate-fingerprint"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Random Fingerprint - WebKit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"browser_type\": \"webkit\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/generate-fingerprint",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "generate-fingerprint"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Test Browser Config - Default Chromium",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"browser_type\": \"chromium\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/test-browser-config",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "test-browser-config"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Test Browser Config - Custom Executable",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"browser_type\": \"chromium\",\n  \"executable_path\": \"/usr/bin/google-chrome\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/test-browser-config",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "test-browser-config"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Test Browser Config - CDP Connection",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"browser_type\": \"chromium\",\n  \"cdp_endpoint\": \"ws://localhost:9222/devtools/browser/your-browser-id\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/test-browser-config",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "test-browser-config"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Test Profile",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/{{profile_id}}/test",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "{{profile_id}}", "test"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Metadata",
+			"item": [
+				{
+					"name": "Get Folders",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/folders",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "folders"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Browser Types",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/profiles/browser-types",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "profiles", "browser-types"]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "profile_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

@@ -58,7 +58,12 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await workflowsApi.create(data)
+      // Extract browser_profile_id from config if present
+      const payload = {
+        ...data,
+        browser_profile_id: data.config?.browser_profile_id
+      }
+      const response = await workflowsApi.create(payload)
       workflows.value.unshift(response.data)
       return response.data
     } catch (e: any) {
@@ -73,7 +78,12 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await workflowsApi.update(id, data)
+      // Extract browser_profile_id from config if present
+      const payload = {
+        ...data,
+        browser_profile_id: data.config?.browser_profile_id
+      }
+      const response = await workflowsApi.update(id, payload)
       const index = workflows.value.findIndex(w => w.id === id)
       if (index !== -1) {
         workflows.value[index] = response.data

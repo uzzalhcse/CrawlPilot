@@ -37,7 +37,7 @@ const menuItems = [
 ]
 
 const antiBotItems = [
-  { icon: GlobeIcon, label: 'Browsers', route: '/browsers' },
+  { icon: GlobeIcon, label: 'Browsers', route: '/browser-profiles' },
 ]
 
 const bottomItems = [

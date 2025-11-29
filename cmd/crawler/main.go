@@ -56,10 +56,11 @@ func main() {
 	nodeExecRepo := storage.NewNodeExecutionRepository(db)
 	urlQueue := queue.NewURLQueue(db)
 	monitoringRepo := storage.NewMonitoringRepository(db)
-	pluginRepo := storage.NewPluginRepository(db) // Plugin marketplace
+	pluginRepo := storage.NewPluginRepository(db)                 // Plugin marketplace
+	browserProfileRepo := storage.NewBrowserProfileRepository(db) // Browser profiles
 
 	// Initialize browser pool
-	browserPool, err := browser.NewBrowserPool(&cfg.Browser)
+	browserPool, err := browser.NewBrowserPool(&cfg.Browser, browserProfileRepo)
 	if err != nil {
 		logger.Fatal("Failed to initialize browser pool", zap.Error(err))
 	}
@@ -185,8 +186,11 @@ func main() {
 	// Initialize plugin handler
 	pluginHandler := handlers.NewPluginHandler(pluginRepo, zapLogger)
 
+	// Initialize browser profile handler
+	browserProfileHandler := handlers.NewBrowserProfileHandler(browserProfileRepo, browserPool.GetLauncher())
+
 	// Routes
-	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler)
+	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler, browserProfileHandler)
 
 	// Monitoring
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -236,7 +240,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler, browserProfileHandler *handlers.BrowserProfileHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -335,6 +339,22 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, work
 	plugins.Delete("/:id/uninstall", pluginHandler.UninstallPlugin)
 	plugins.Post("/:id/reviews", pluginHandler.CreateReview)
 	plugins.Get("/:id/reviews", pluginHandler.ListReviews)
+
+	// Browser Profile routes
+	profiles := api.Group("/profiles")
+	profiles.Post("/", browserProfileHandler.CreateProfile)
+	profiles.Get("/", browserProfileHandler.ListProfiles)
+	profiles.Get("/folders", browserProfileHandler.GetFolders)
+	profiles.Post("/generate-fingerprint", browserProfileHandler.GenerateFingerprint)
+	profiles.Post("/test-browser-config", browserProfileHandler.TestBrowserConfig)
+	profiles.Get("/browser-types", browserProfileHandler.GetBrowserTypes)
+	profiles.Get("/:id", browserProfileHandler.GetProfile)
+	profiles.Put("/:id", browserProfileHandler.UpdateProfile)
+	profiles.Delete("/:id", browserProfileHandler.DeleteProfile)
+	profiles.Post("/:id/duplicate", browserProfileHandler.DuplicateProfile)
+	profiles.Post("/:id/test", browserProfileHandler.TestProfile)
+	profiles.Post("/:id/launch", browserProfileHandler.LaunchProfile)
+	profiles.Post("/:id/stop", browserProfileHandler.StopProfile)
 }
 
 func errorHandler(c *fiber.Ctx, err error) error {

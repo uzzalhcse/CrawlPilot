@@ -3,6 +3,7 @@ export interface Workflow {
   name: string
   description: string
   status: 'draft' | 'active' | 'inactive'
+  browser_profile_id?: string
   config: WorkflowConfig
   created_at: string
   updated_at: string
@@ -13,6 +14,7 @@ export interface WorkflowConfig {
   max_depth: number
   rate_limit_delay: number
   headers?: Record<string, string>
+  browser_profile_id?: string
   storage: StorageConfig
   // NEW: Phase-based format
   phases?: WorkflowPhase[]

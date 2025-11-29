@@ -9,6 +9,7 @@ import (
 	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/internal/config"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/storage"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +21,8 @@ type BrowserPool struct {
 	mu          sync.RWMutex
 	closed      bool
 	contextPool sync.Pool
+	launcher    *BrowserLauncher
+	profileRepo *storage.BrowserProfileRepository
 }
 
 type BrowserContext struct {
@@ -30,7 +33,7 @@ type BrowserContext struct {
 	isHeaded      bool
 }
 
-func NewBrowserPool(cfg *config.BrowserConfig) (*BrowserPool, error) {
+func NewBrowserPool(cfg *config.BrowserConfig, profileRepo *storage.BrowserProfileRepository) (*BrowserPool, error) {
 	// Install Playwright browsers if needed
 	err := playwright.Install(&playwright.RunOptions{
 		Verbose: false,
@@ -56,11 +59,13 @@ func NewBrowserPool(cfg *config.BrowserConfig) (*BrowserPool, error) {
 	}
 
 	pool := &BrowserPool{
-		config:     cfg,
-		playwright: pw,
-		browser:    browser,
-		contexts:   make(chan playwright.BrowserContext, cfg.PoolSize),
-		closed:     false,
+		config:      cfg,
+		playwright:  pw,
+		browser:     browser,
+		contexts:    make(chan playwright.BrowserContext, cfg.PoolSize),
+		closed:      false,
+		launcher:    NewBrowserLauncher(pw),
+		profileRepo: profileRepo,
 	}
 
 	// Pre-create browser contexts
@@ -157,6 +162,66 @@ func (p *BrowserPool) Acquire(ctx context.Context, headed ...bool) (*BrowserCont
 			pool:    p,
 		}, nil
 	}
+}
+
+// AcquireWithProfile acquires a browser context using a specific browser profile
+func (p *BrowserPool) AcquireWithProfile(ctx context.Context, profileID string) (*BrowserContext, error) {
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return nil, fmt.Errorf("browser pool is closed")
+	}
+	p.mu.RUnlock()
+
+	// Check if profileRepo is available
+	if p.profileRepo == nil {
+		return nil, fmt.Errorf("profile repository not available")
+	}
+
+	// Get the profile from database
+	profile, err := p.profileRepo.GetByID(ctx, profileID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get browser profile: %w", err)
+	}
+
+	// Launch browser with profile configuration
+	launchOpts := &LaunchOptions{
+		Headless: p.config.Headless, // Use pool's headless setting
+		Timeout:  float64(p.config.Timeout),
+		Profile:  profile,
+	}
+
+	browser, err := p.launcher.LaunchBrowserWithProfile(ctx, launchOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to launch browser with profile: %w", err)
+	}
+
+	// Create context with fingerprinting
+	browserCtx, err := p.launcher.CreateContextWithFingerprint(browser, profile)
+	if err != nil {
+		browser.Close()
+		return nil, fmt.Errorf("failed to create context with fingerprint: %w", err)
+	}
+
+	// Create page
+	page, err := browserCtx.NewPage()
+	if err != nil {
+		browserCtx.Close()
+		browser.Close()
+		return nil, fmt.Errorf("failed to create page: %w", err)
+	}
+
+	logger.Info("Acquired browser context with profile",
+		zap.String("profile_id", profileID),
+		zap.String("browser_type", profile.BrowserType))
+
+	return &BrowserContext{
+		Context:       browserCtx,
+		Page:          page,
+		pool:          p,
+		headedBrowser: browser, // Store browser instance to close later
+		isHeaded:      !p.config.Headless,
+	}, nil
 }
 
 // createHeadedContext creates a new headed browser context (not from pool)
@@ -325,4 +390,9 @@ func (bc *BrowserContext) Content() (string, error) {
 // Screenshot takes a screenshot of the page
 func (bc *BrowserContext) Screenshot(options playwright.PageScreenshotOptions) ([]byte, error) {
 	return bc.Page.Screenshot(options)
+}
+
+// GetLauncher returns the browser launcher instance
+func (p *BrowserPool) GetLauncher() *BrowserLauncher {
+	return p.launcher
 }

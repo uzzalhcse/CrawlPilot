@@ -136,6 +136,7 @@ export function convertNodesToWorkflowConfig(
         max_depth: baseConfig.max_depth || 3,
         rate_limit_delay: baseConfig.rate_limit_delay || 1000,
         storage: baseConfig.storage || { type: 'database' },
+        browser_profile_id: baseConfig.browser_profile_id,
         phases,
         ...preservedWorkflowProps // Merge any preserved workflow-level properties (headers, etc.)
     }

@@ -28,10 +28,11 @@ func NewWorkflowHandler(repo *storage.WorkflowRepository) *WorkflowHandler {
 // CreateWorkflow creates a new workflow
 func (h *WorkflowHandler) CreateWorkflow(c *fiber.Ctx) error {
 	var req struct {
-		Name        string                `json:"name"`
-		Description string                `json:"description"`
-		Config      models.WorkflowConfig `json:"config"`
-		Status      models.WorkflowStatus `json:"status"`
+		Name             string                `json:"name"`
+		Description      string                `json:"description"`
+		BrowserProfileID *string               `json:"browser_profile_id"` // NEW
+		Config           models.WorkflowConfig `json:"config"`
+		Status           models.WorkflowStatus `json:"status"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -53,11 +54,12 @@ func (h *WorkflowHandler) CreateWorkflow(c *fiber.Ctx) error {
 	}
 
 	workflow := &models.Workflow{
-		ID:          uuid.New().String(),
-		Name:        req.Name,
-		Description: req.Description,
-		Config:      req.Config,
-		Status:      status,
+		ID:               uuid.New().String(),
+		Name:             req.Name,
+		Description:      req.Description,
+		BrowserProfileID: req.BrowserProfileID, // NEW
+		Config:           req.Config,
+		Status:           status,
 	}
 
 	if err := h.repo.Create(context.Background(), workflow); err != nil {
@@ -110,10 +112,11 @@ func (h *WorkflowHandler) UpdateWorkflow(c *fiber.Ctx) error {
 	id := c.Params("id")
 
 	var req struct {
-		Name        string                `json:"name"`
-		Description string                `json:"description"`
-		Config      models.WorkflowConfig `json:"config"`
-		Status      models.WorkflowStatus `json:"status"`
+		Name             string                `json:"name"`
+		Description      string                `json:"description"`
+		BrowserProfileID *string               `json:"browser_profile_id"` // NEW
+		Config           models.WorkflowConfig `json:"config"`
+		Status           models.WorkflowStatus `json:"status"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -130,11 +133,12 @@ func (h *WorkflowHandler) UpdateWorkflow(c *fiber.Ctx) error {
 	}
 
 	workflow := &models.Workflow{
-		ID:          id,
-		Name:        req.Name,
-		Description: req.Description,
-		Config:      req.Config,
-		Status:      req.Status,
+		ID:               id,
+		Name:             req.Name,
+		Description:      req.Description,
+		BrowserProfileID: req.BrowserProfileID, // NEW
+		Config:           req.Config,
+		Status:           req.Status,
 	}
 
 	if err := h.repo.Update(context.Background(), workflow); err != nil {

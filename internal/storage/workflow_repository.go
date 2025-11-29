@@ -28,8 +28,8 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Workfl
 	}
 
 	query := `
-		INSERT INTO workflows (id, name, description, config, status, version, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+		INSERT INTO workflows (id, name, description, browser_profile_id, config, status, version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
 		RETURNING created_at, updated_at
 	`
 
@@ -37,6 +37,7 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Workfl
 		workflow.ID,
 		workflow.Name,
 		workflow.Description,
+		workflow.BrowserProfileID, // NEW
 		workflow.Config,
 		workflow.Status,
 		workflow.Version,
@@ -51,7 +52,7 @@ func (r *WorkflowRepository) Create(ctx context.Context, workflow *models.Workfl
 
 func (r *WorkflowRepository) GetByID(ctx context.Context, id string) (*models.Workflow, error) {
 	query := `
-		SELECT id, name, description, config, status, version, created_at, updated_at
+		SELECT id, name, description, browser_profile_id, config, status, version, created_at, updated_at
 		FROM workflows
 		WHERE id = $1
 	`
@@ -61,6 +62,7 @@ func (r *WorkflowRepository) GetByID(ctx context.Context, id string) (*models.Wo
 		&workflow.ID,
 		&workflow.Name,
 		&workflow.Description,
+		&workflow.BrowserProfileID, // NEW
 		&workflow.Config,
 		&workflow.Status,
 		&workflow.Version,
@@ -80,7 +82,7 @@ func (r *WorkflowRepository) GetByID(ctx context.Context, id string) (*models.Wo
 
 func (r *WorkflowRepository) List(ctx context.Context, status models.WorkflowStatus, limit, offset int) ([]*models.Workflow, error) {
 	query := `
-		SELECT id, name, description, config, status, version, created_at, updated_at
+		SELECT id, name, description, browser_profile_id, config, status, version, created_at, updated_at
 		FROM workflows
 	`
 	args := []interface{}{}
@@ -118,6 +120,7 @@ func (r *WorkflowRepository) List(ctx context.Context, status models.WorkflowSta
 			&workflow.ID,
 			&workflow.Name,
 			&workflow.Description,
+			&workflow.BrowserProfileID, // NEW
 			&workflow.Config,
 			&workflow.Status,
 			&workflow.Version,
@@ -140,7 +143,7 @@ func (r *WorkflowRepository) Update(ctx context.Context, workflow *models.Workfl
 
 	query := `
 		UPDATE workflows
-		SET name = $2, description = $3, config = $4, status = $5, version = $6, updated_at = NOW()
+		SET name = $2, description = $3, browser_profile_id = $4, config = $5, status = $6, version = $7, updated_at = NOW()
 		WHERE id = $1
 	`
 
@@ -148,6 +151,7 @@ func (r *WorkflowRepository) Update(ctx context.Context, workflow *models.Workfl
 		workflow.ID,
 		workflow.Name,
 		workflow.Description,
+		workflow.BrowserProfileID, // NEW
 		workflow.Config,
 		workflow.Status,
 		workflow.Version,

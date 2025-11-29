@@ -7,14 +7,15 @@ import (
 
 // Workflow represents a complete crawling workflow configuration
 type Workflow struct {
-	ID          string         `json:"id" db:"id"`
-	Name        string         `json:"name" db:"name"`
-	Description string         `json:"description" db:"description"`
-	Config      WorkflowConfig `json:"config" db:"config"`
-	Status      WorkflowStatus `json:"status" db:"status"`
-	Version     int            `json:"version" db:"version"`
-	CreatedAt   time.Time      `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at" db:"updated_at"`
+	ID               string         `json:"id" db:"id"`
+	Name             string         `json:"name" db:"name"`
+	Description      string         `json:"description" db:"description"`
+	BrowserProfileID *string        `json:"browser_profile_id,omitempty" db:"browser_profile_id"` // NEW
+	Config           WorkflowConfig `json:"config" db:"config"`
+	Status           WorkflowStatus `json:"status" db:"status"`
+	Version          int            `json:"version" db:"version"`
+	CreatedAt        time.Time      `json:"created_at" db:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at" db:"updated_at"`
 }
 
 // WorkflowConfig contains the workflow execution configuration

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
-import type { WorkflowNode } from '@/types'
+import { ref, watch, computed, onMounted } from 'vue'
+import type { WorkflowNode, WorkflowConfig } from '@/types'
 import { getNodeTemplate } from '@/config/nodeTemplates'
+import { useBrowserProfilesStore } from '@/stores/browserProfiles'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area/index'
 // Tabs removed - using button toggle instead
@@ -11,11 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import MonacoEditor from '@/components/ui/MonacoEditor.vue'
-import { Code2, FileText, X, Trash2, Settings2, Save } from 'lucide-vue-next'
+import { Code2, FileText, X, Trash2, Settings2, Save, Globe } from 'lucide-vue-next'
 
 // New imports from the provided snippet
-import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
+// import { Textarea } from '@/components/ui/textarea'
+// import { Switch } from '@/components/ui/switch'
 
 // Import modular components
 import NodeBasicInfo from './config-forms/NodeBasicInfo.vue'
@@ -29,10 +30,12 @@ import { selectorApi } from '@/api/selector'
 
 interface Props {
   node: WorkflowNode | null
+  workflowConfig?: Partial<WorkflowConfig>
 }
 
 interface Emits {
   (e: 'update', node: WorkflowNode): void
+  (e: 'update:workflowConfig', config: Partial<WorkflowConfig>): void
   (e: 'delete'): void
   (e: 'close'): void
   (e: 'save'): void
@@ -40,6 +43,11 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+
+const profilesStore = useBrowserProfilesStore()
+onMounted(() => {
+  profilesStore.fetchProfiles()
+})
 
 const activeTab = ref('settings')
 const jsonValue = ref('')
@@ -202,6 +210,15 @@ const visualSelectorSessionId = ref<string | null>(null)
 const isVisualSelectorOpen = ref(false)
 let stopPolling: (() => void) | null = null
 
+function updateWorkflowConfig(key: keyof WorkflowConfig, value: any) {
+  let finalValue = value
+  if (key === 'browser_profile_id' && value === 'default_profile') {
+    finalValue = null
+  }
+  const newConfig = { ...props.workflowConfig, [key]: finalValue }
+  emit('update:workflowConfig', newConfig)
+}
+
 // Visual Selector for Extract Node
 async function openVisualSelector() {
   let url = prompt('Enter the URL to open for element selection:')
@@ -342,13 +359,91 @@ function closeVisualSelector() {
 
 <template>
   <div class="h-full flex flex-col bg-card border-l border-border w-96 shadow-xl z-20">
-    <!-- Empty State -->
-    <div v-if="!localNode" class="flex-1 flex flex-col items-center justify-center text-muted-foreground p-6 text-center">
-      <div class="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
-        <Settings2 class="w-6 h-6 opacity-50" />
+    <!-- Workflow Settings (When no node selected) -->
+    <div v-if="!localNode" class="flex flex-col h-full">
+      <!-- Header -->
+      <div class="p-4 border-b border-border">
+        <div class="flex items-center gap-2 mb-1">
+          <Settings2 class="w-5 h-5 text-primary" />
+          <h2 class="font-semibold text-lg">Workflow Settings</h2>
+        </div>
+        <p class="text-xs text-muted-foreground">Global configuration for this workflow</p>
       </div>
-      <h3 class="font-medium text-foreground mb-1">No Node Selected</h3>
-      <p class="text-sm">Select a node on the canvas to configure its properties.</p>
+
+      <ScrollArea class="flex-1">
+        <div class="p-4 space-y-6">
+          
+          <!-- Browser Configuration -->
+          <div class="space-y-4">
+            <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Globe class="w-4 h-4" />
+              Browser Configuration
+            </div>
+            
+            <div class="space-y-2">
+              <Label>Browser Profile</Label>
+              <Select 
+                :model-value="workflowConfig?.browser_profile_id || ''" 
+                @update:model-value="(val) => updateWorkflowConfig('browser_profile_id', val)"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a browser profile">
+                    {{ 
+                      workflowConfig?.browser_profile_id 
+                        ? (profilesStore.profiles.find(p => p.id === workflowConfig.browser_profile_id)?.name || 'Unknown Profile')
+                        : 'Default Profile' 
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <!-- We use a special value for clearing/default -->
+                  <SelectItem value="default_profile">Default Profile</SelectItem>
+                  <template v-for="profile in profilesStore.profiles" :key="profile.id">
+                    <SelectItem :value="profile.id">
+                      <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full" :class="profile.status === 'active' ? 'bg-green-500' : 'bg-gray-300'"></span>
+                        {{ profile.name }}
+                      </div>
+                    </SelectItem>
+                  </template>
+                </SelectContent>
+              </Select>
+              <p class="text-[10px] text-muted-foreground">
+                Select which browser profile (fingerprint, cookies, etc.) to use for this workflow.
+              </p>
+            </div>
+          </div>
+
+          <Separator />
+
+          <!-- Crawling Configuration -->
+          <div class="space-y-4">
+             <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Settings2 class="w-4 h-4" />
+              Crawling Limits
+            </div>
+
+            <div class="space-y-2">
+              <Label>Max Depth</Label>
+              <Input 
+                type="number" 
+                :model-value="workflowConfig?.max_depth || 3"
+                @update:model-value="(val) => updateWorkflowConfig('max_depth', Number(val))"
+              />
+            </div>
+
+            <div class="space-y-2">
+              <Label>Rate Limit Delay (ms)</Label>
+              <Input 
+                type="number" 
+                :model-value="workflowConfig?.rate_limit_delay || 1000"
+                @update:model-value="(val) => updateWorkflowConfig('rate_limit_delay', Number(val))"
+              />
+            </div>
+          </div>
+
+        </div>
+      </ScrollArea>
     </div>
 
     <!-- Content -->

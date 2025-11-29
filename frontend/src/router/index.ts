@@ -64,6 +64,26 @@ const router = createRouter({
           component: () => import('@/views/PluginDetailView.vue')
         },
         {
+          path: 'browser-profiles',
+          name: 'browser-profiles',
+          component: () => import('@/views/BrowserProfilesView.vue')
+        },
+        {
+          path: 'browser-profiles/create',
+          name: 'browser-profile-create',
+          component: () => import('@/views/BrowserProfileCreateView.vue')
+        },
+        {
+          path: 'browser-profiles/:id/edit',
+          name: 'browser-profile-edit',
+          component: () => import('@/views/BrowserProfileCreateView.vue')
+        },
+        {
+          path: 'browser-profiles/:id',
+          name: 'browser-profile-detail',
+          component: () => import('@/views/BrowserProfileDetailView.vue')
+        },
+        {
           path: '/:pathMatch(.*)*',
           name: 'not-found',
           component: () => import('@/views/NotFoundView.vue')

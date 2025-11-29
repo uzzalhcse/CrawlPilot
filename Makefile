@@ -93,3 +93,14 @@ help:
 	@echo ""
 	@echo "Plugin directories: $(PLUGIN_SRC_DIR)"
 	@echo "Plugin output: $(PLUGIN_OUT_DIR)"
+
+# Database migrations
+.PHONY: migrate-up
+migrate-up:
+	@echo "Running migrations up..."
+	@migrate -path migrations -database "postgres://postgres:root@localhost:5432/crawlify?sslmode=disable" up
+
+.PHONY: migrate-down
+migrate-down:
+	@echo "Running migrations down..."
+	@migrate -path migrations -database "postgres://postgres:root@localhost:5432/crawlify?sslmode=disable" down

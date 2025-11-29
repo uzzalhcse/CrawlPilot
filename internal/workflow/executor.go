@@ -351,8 +351,19 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		}
 	}
 
-	// Acquire browser context
-	browserCtx, err := e.browserPool.Acquire(ctx)
+	// Acquire browser context - use profile if specified
+	var browserCtx *browser.BrowserContext
+	var err error
+
+	if workflow.BrowserProfileID != nil && *workflow.BrowserProfileID != "" {
+		logger.Info("Acquiring browser with profile",
+			zap.String("profile_id", *workflow.BrowserProfileID),
+			zap.String("workflow_id", workflow.ID))
+		browserCtx, err = e.browserPool.AcquireWithProfile(ctx, *workflow.BrowserProfileID)
+	} else {
+		browserCtx, err = e.browserPool.Acquire(ctx)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to acquire browser context: %w", err)
 	}

@@ -5,6 +5,7 @@ export interface CreateWorkflowRequest {
   name: string
   description: string
   status?: 'draft' | 'active' | 'inactive'
+  browser_profile_id?: string
   config: WorkflowConfig
 }
 
@@ -12,6 +13,7 @@ export interface UpdateWorkflowRequest {
   name?: string
   description?: string
   status?: 'draft' | 'active' | 'inactive'
+  browser_profile_id?: string
   config?: WorkflowConfig
 }
 
