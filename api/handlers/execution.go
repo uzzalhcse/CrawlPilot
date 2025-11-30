@@ -36,6 +36,7 @@ func NewExecutionHandler(
 	browserPool *browser.BrowserPool,
 	urlQueue *queue.URLQueue,
 	errorRecoverySystem interface{},
+	recoveryHistoryRepo *storage.ErrorRecoveryHistoryRepository,
 ) *ExecutionHandler {
 	return &ExecutionHandler{
 		workflowRepo:        workflowRepo,
@@ -44,7 +45,7 @@ func NewExecutionHandler(
 		nodeExecRepo:        nodeExecRepo,
 		browserPool:         browserPool,
 		urlQueue:            urlQueue,
-		executor:            workflow.NewExecutor(browserPool, urlQueue, extractedItemsRepo, nodeExecRepo, executionRepo, errorRecoverySystem),
+		executor:            workflow.NewExecutor(browserPool, urlQueue, extractedItemsRepo, nodeExecRepo, executionRepo, errorRecoverySystem, recoveryHistoryRepo),
 		errorRecoverySystem: errorRecoverySystem,
 	}
 }

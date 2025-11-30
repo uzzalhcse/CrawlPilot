@@ -201,10 +201,16 @@ func main() {
 		rules,
 		aiClient,
 	)
+	logger.Info("Error recovery system initialized", zap.Int("rules", len(rules)))
+
+	// Initialize Error Recovery History Repository and Handler
+	recoveryHistoryRepo := storage.NewErrorRecoveryHistoryRepository(db)
+	recoveryHistoryHandler := handlers.NewErrorRecoveryHistoryHandler(recoveryHistoryRepo)
+
 	errorRecoveryHandler := handlers.NewErrorRecoveryHandler(errorRecoveryRepo)
 
 	// Create ExecutionHandler with errorRecoverySystem
-	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedItemsRepo, nodeExecRepo, browserPool, urlQueue, errorRecoverySystem)
+	executionHandler := handlers.NewExecutionHandler(workflowRepo, executionRepo, extractedItemsRepo, nodeExecRepo, browserPool, urlQueue, errorRecoverySystem, recoveryHistoryRepo)
 
 	autoFixService := ai.NewAutoFixService(aiClient, zapLogger)
 	fixSuggestionRepo := storage.NewFixSuggestionRepository(db)
@@ -230,7 +236,7 @@ func main() {
 	browserProfileHandler := handlers.NewBrowserProfileHandler(browserProfileRepo, browserPool.GetLauncher())
 
 	// Routes
-	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler, browserProfileHandler, errorRecoveryHandler)
+	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler, browserProfileHandler, errorRecoveryHandler, recoveryHistoryHandler)
 
 	// Monitoring
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -280,7 +286,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler, browserProfileHandler *handlers.BrowserProfileHandler, errorRecoveryHandler *handlers.ErrorRecoveryHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler, browserProfileHandler *handlers.BrowserProfileHandler, errorRecoveryHandler *handlers.ErrorRecoveryHandler, recoveryHistoryHandler *handlers.ErrorRecoveryHistoryHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -405,6 +411,16 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, work
 	errorRecovery.Delete("/rules/:id", errorRecoveryHandler.DeleteRule)
 	errorRecovery.Get("/config/:key", errorRecoveryHandler.GetConfig)
 	errorRecovery.Put("/config", errorRecoveryHandler.UpdateConfig)
+
+	// Error Recovery History routes
+	errorRecovery.Get("/history/recent", recoveryHistoryHandler.GetRecentHistory)
+	errorRecovery.Get("/history/stats", recoveryHistoryHandler.GetStats)
+
+	// Execution-specific recovery history
+	api.Get("/executions/:id/recovery-history", recoveryHistoryHandler.GetExecutionHistory)
+
+	// Workflow-specific recovery history
+	api.Get("/workflows/:id/recovery-history", recoveryHistoryHandler.GetWorkflowHistory)
 }
 
 func errorHandler(c *fiber.Ctx, err error) error {

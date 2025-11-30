@@ -4,16 +4,21 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/internal/error_recovery"
 	"github.com/uzzalhcse/crawlify/internal/logger"
+	"github.com/uzzalhcse/crawlify/internal/storage"
 	"github.com/uzzalhcse/crawlify/pkg/models"
 	"go.uber.org/zap"
 )
 
 // tryRecoverFromError attempts to recover from an error using the error recovery system
 func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *models.URLQueueItem, response *ResponseInfo) error {
+	startTime := time.Now()
+
 	logger.Info("🚨 Error Recovery: Attempting to recover from error",
 		zap.String("url", item.URL),
 		zap.String("error", err.Error()))
@@ -33,12 +38,30 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 	// Create execution context for error recovery
 	execCtx := e.createErrorRecoveryContext(item, err, response)
 
+	// Initialize history record
+	historyRecord := e.createHistoryRecord(item, err, response, startTime)
+
 	// Try to get a solution
 	solution, recoveryErr := system.HandleError(ctx, err, execCtx)
+
+	// Simple pattern detection (without accessing analyzer directly)
+	if recoveryErr == nil && solution != nil {
+		historyRecord.PatternDetected = true
+		historyRecord.PatternType = "systematic"
+		historyRecord.ActivationReason = "error recovery triggered"
+	}
+
 	if recoveryErr != nil {
 		logger.Debug("❌ No error recovery solution available",
 			zap.Error(recoveryErr),
 			zap.String("url", item.URL))
+
+		// Log failed recovery attempt
+		historyRecord.SolutionType = "none"
+		historyRecord.RecoveryAttempted = false
+		historyRecord.RecoverySuccessful = false
+		e.saveHistoryRecord(ctx, historyRecord)
+
 		return err
 	}
 
@@ -48,6 +71,12 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 		zap.Float64("confidence", solution.Confidence),
 		zap.Int("actions", len(solution.Actions)))
 
+	// Update history record with solution info
+	historyRecord.RuleName = solution.RuleName
+	historyRecord.SolutionType = solution.Type
+	historyRecord.Confidence = &solution.Confidence
+	historyRecord.ActionsApplied = solution.Actions
+
 	// Apply the solution
 	logger.Debug("🔧 Applying recovery actions...", zap.Int("action_count", len(solution.Actions)))
 	if applyErr := e.applyRecoverySolution(ctx, solution, item); applyErr != nil {
@@ -55,6 +84,15 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 			zap.Error(applyErr),
 			zap.String("rule", solution.RuleName))
 		system.TrackFailure(solution)
+
+		// Log failed application
+		historyRecord.RecoveryAttempted = true
+		historyRecord.RecoverySuccessful = false
+		recoveredAt := time.Now()
+		historyRecord.RecoveredAt = &recoveredAt
+		historyRecord.TimeToRecoveryMs = int(time.Since(startTime).Milliseconds())
+		e.saveHistoryRecord(ctx, historyRecord)
+
 		return err
 	}
 
@@ -63,6 +101,14 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 	logger.Info("✅ Recovery successful - tracking for learning",
 		zap.String("rule", solution.RuleName),
 		zap.String("type", solution.Type))
+
+	// Log successful recovery
+	historyRecord.RecoveryAttempted = true
+	historyRecord.RecoverySuccessful = true
+	recoveredAt := time.Now()
+	historyRecord.RecoveredAt = &recoveredAt
+	historyRecord.TimeToRecoveryMs = int(time.Since(startTime).Milliseconds())
+	e.saveHistoryRecord(ctx, historyRecord)
 
 	// Return nil to indicate recovery was successful (caller should retry)
 	return nil
@@ -153,4 +199,60 @@ func (e *Executor) applyRecoverySolution(ctx context.Context, solution *error_re
 	}
 
 	return nil
+}
+
+// createHistoryRecord initializes a history record for the current recovery attempt
+func (e *Executor) createHistoryRecord(item *models.URLQueueItem, err error, response *ResponseInfo, startTime time.Time) *storage.RecoveryHistoryRecord {
+	// Parse execution ID
+	executionUUID, _ := uuid.Parse(item.ExecutionID)
+	workflowUUID := uuid.UUID{} // Zero value for now
+
+	record := &storage.RecoveryHistoryRecord{
+		ExecutionID:  executionUUID,
+		WorkflowID:   workflowUUID,
+		ErrorType:    fmt.Sprintf("%T", err),
+		ErrorMessage: err.Error(),
+		URL:          item.URL,
+		NodeID:       item.URL, // Use URL as node context for now
+		PhaseID:      item.PhaseID,
+		DetectedAt:   startTime,
+		RetryCount:   1,
+	}
+
+	// Extract domain from URL
+	if parsedURL, parseErr := url.Parse(item.URL); parseErr == nil {
+		record.Domain = parsedURL.Host
+	}
+
+	// Add status code if available
+	if response != nil && response.StatusCode > 0 {
+		record.StatusCode = &response.StatusCode
+	}
+
+	// Add request context
+	record.RequestContext = map[string]interface{}{
+		"depth":    item.Depth,
+		"marker":   item.Marker,
+		"phase_id": item.PhaseID,
+	}
+
+	return record
+}
+
+// saveHistoryRecord saves a history record to the database
+func (e *Executor) saveHistoryRecord(ctx context.Context, record *storage.RecoveryHistoryRecord) {
+	if e.recoveryHistoryRepo == nil {
+		return
+	}
+
+	if err := e.recoveryHistoryRepo.Create(ctx, record); err != nil {
+		logger.Error("Failed to save recovery history record",
+			zap.Error(err),
+			zap.String("url", record.URL))
+	}
+}
+
+// contains checks if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }

@@ -34,7 +34,8 @@ type Executor struct {
 	executionRepo       *storage.ExecutionRepository
 	registry            *NodeRegistry // NEW: Plugin registry for extensible node execution
 	eventBroadcaster    *EventBroadcaster
-	errorRecoverySystem interface{} // NEW: Error recovery system (using interface{} to avoid circular import)
+	errorRecoverySystem interface{}                             // NEW: Error recovery system (using interface{} to avoid circular import)
+	recoveryHistoryRepo *storage.ErrorRecoveryHistoryRepository // NEW: For tracking recovery history
 }
 
 // ExecutionEvent represents a real-time event during workflow execution
@@ -98,11 +99,11 @@ func (eb *EventBroadcaster) Publish(event ExecutionEvent) {
 	eb.broadcast <- event
 }
 
-func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedItemsRepo *storage.ExtractedItemsRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository, errorRecoverySystem interface{}) *Executor {
+func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, extractedItemsRepo *storage.ExtractedItemsRepository, nodeExecRepo *storage.NodeExecutionRepository, executionRepo *storage.ExecutionRepository, errorRecoverySystem interface{}, recoveryHistoryRepo *storage.ErrorRecoveryHistoryRepository) *Executor {
 	// Create registry and register default nodes
 	registry := NewNodeRegistry()
 	if err := registry.RegisterDefaultNodes(); err != nil {
-		logger.Error("Failed to register default nodes", zap.Error(err))
+		logger.Warn("Failed to register default nodes", zap.Error(err))
 	}
 
 	return &Executor{
@@ -115,6 +116,7 @@ func NewExecutor(browserPool *browser.BrowserPool, urlQueue *queue.URLQueue, ext
 		registry:            registry,
 		eventBroadcaster:    NewEventBroadcaster(),
 		errorRecoverySystem: errorRecoverySystem,
+		recoveryHistoryRepo: recoveryHistoryRepo,
 	}
 }
 
