@@ -70,6 +70,7 @@ type Solution struct {
 	Context     map[string]interface{} `json:"context"`
 	Type        string                 `json:"type"` // "rule", "ai"
 	Fingerprint string                 `json:"fingerprint"`
+	RuleID      *uuid.UUID             `json:"rule_id,omitempty"`
 }
 
 // Config represents global configuration

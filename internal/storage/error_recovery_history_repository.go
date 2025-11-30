@@ -146,6 +146,33 @@ func (r *ErrorRecoveryHistoryRepository) Create(ctx context.Context, record *Rec
 	return err
 }
 
+// Update updates an existing recovery history record
+func (r *ErrorRecoveryHistoryRepository) Update(ctx context.Context, record *RecoveryHistoryRecord) error {
+	// Marshal actions and context to JSON
+	actionsJSON, err := json.Marshal(record.ActionsApplied)
+	if err != nil {
+		return err
+	}
+
+	query := `
+		UPDATE error_recovery_history SET
+			pattern_detected = $2, pattern_type = $3, activation_reason = $4, error_rate = $5,
+			rule_id = $6, rule_name = $7, solution_type = $8, confidence = $9,
+			actions_applied = $10, recovery_attempted = $11, recovery_successful = $12,
+			retry_count = $13, time_to_recovery_ms = $14, recovered_at = $15
+		WHERE id = $1`
+
+	_, err = r.db.Pool.Exec(ctx, query,
+		record.ID,
+		record.PatternDetected, record.PatternType, record.ActivationReason, record.ErrorRate,
+		record.RuleID, record.RuleName, record.SolutionType, record.Confidence,
+		actionsJSON, record.RecoveryAttempted, record.RecoverySuccessful,
+		record.RetryCount, record.TimeToRecoveryMs, record.RecoveredAt,
+	)
+
+	return err
+}
+
 // GetByExecutionID retrieves all recovery events for an execution
 func (r *ErrorRecoveryHistoryRepository) GetByExecutionID(ctx context.Context, executionID uuid.UUID) ([]RecoveryHistoryRecord, error) {
 	query := `

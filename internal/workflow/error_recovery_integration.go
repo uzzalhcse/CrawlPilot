@@ -41,14 +41,26 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 	// Initialize history record
 	historyRecord := e.createHistoryRecord(item, err, response, startTime)
 
+	// Save initial record immediately
+	e.saveHistoryRecord(ctx, historyRecord)
+
 	// Try to get a solution
 	solution, recoveryErr := system.HandleError(ctx, err, execCtx)
 
-	// Simple pattern detection (without accessing analyzer directly)
-	if recoveryErr == nil && solution != nil {
-		historyRecord.PatternDetected = true
-		historyRecord.PatternType = "systematic"
-		historyRecord.ActivationReason = "error recovery triggered"
+	// Update history with pattern detection info
+	if analyzer := system.GetAnalyzer(); analyzer != nil {
+		if decision := analyzer.ShouldActivate(err, execCtx); decision.ShouldActivate {
+			historyRecord.PatternDetected = true
+			historyRecord.ActivationReason = decision.Reason
+			// Determine pattern type from reason
+			if contains(decision.Reason, "rate") {
+				historyRecord.PatternType = "rate_spike"
+			} else if contains(decision.Reason, "consecutive") {
+				historyRecord.PatternType = "consecutive"
+			} else {
+				historyRecord.PatternType = "systematic"
+			}
+		}
 	}
 
 	if recoveryErr != nil {
@@ -60,7 +72,7 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 		historyRecord.SolutionType = "none"
 		historyRecord.RecoveryAttempted = false
 		historyRecord.RecoverySuccessful = false
-		e.saveHistoryRecord(ctx, historyRecord)
+		e.updateHistoryRecord(ctx, historyRecord)
 
 		return err
 	}
@@ -76,6 +88,12 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 	historyRecord.SolutionType = solution.Type
 	historyRecord.Confidence = &solution.Confidence
 	historyRecord.ActionsApplied = solution.Actions
+	if solution.RuleID != nil {
+		historyRecord.RuleID = solution.RuleID
+	}
+
+	// Update record with solution details before applying actions
+	e.updateHistoryRecord(ctx, historyRecord)
 
 	// Apply the solution
 	logger.Debug("🔧 Applying recovery actions...", zap.Int("action_count", len(solution.Actions)))
@@ -91,7 +109,7 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 		recoveredAt := time.Now()
 		historyRecord.RecoveredAt = &recoveredAt
 		historyRecord.TimeToRecoveryMs = int(time.Since(startTime).Milliseconds())
-		e.saveHistoryRecord(ctx, historyRecord)
+		e.updateHistoryRecord(ctx, historyRecord)
 
 		return err
 	}
@@ -108,7 +126,7 @@ func (e *Executor) tryRecoverFromError(ctx context.Context, err error, item *mod
 	recoveredAt := time.Now()
 	historyRecord.RecoveredAt = &recoveredAt
 	historyRecord.TimeToRecoveryMs = int(time.Since(startTime).Milliseconds())
-	e.saveHistoryRecord(ctx, historyRecord)
+	e.updateHistoryRecord(ctx, historyRecord)
 
 	// Return nil to indicate recovery was successful (caller should retry)
 	return nil
@@ -247,6 +265,19 @@ func (e *Executor) saveHistoryRecord(ctx context.Context, record *storage.Recove
 
 	if err := e.recoveryHistoryRepo.Create(ctx, record); err != nil {
 		logger.Error("Failed to save recovery history record",
+			zap.Error(err),
+			zap.String("url", record.URL))
+	}
+}
+
+// updateHistoryRecord updates an existing history record in the database
+func (e *Executor) updateHistoryRecord(ctx context.Context, record *storage.RecoveryHistoryRecord) {
+	if e.recoveryHistoryRepo == nil {
+		return
+	}
+
+	if err := e.recoveryHistoryRepo.Update(ctx, record); err != nil {
+		logger.Error("Failed to update recovery history record",
 			zap.Error(err),
 			zap.String("url", record.URL))
 	}

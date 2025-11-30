@@ -272,6 +272,7 @@ const startAutoRefresh = () => {
   refreshInterval.value = window.setInterval(() => {
     if (execution.value && execution.value.status === 'running') {
       loadExecutionData()
+      loadRecoveryHistory()
     }
   }, 5000)
 }

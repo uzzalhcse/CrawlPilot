@@ -39,6 +39,11 @@ func NewErrorRecoverySystem(config SystemConfig, rules []ContextAwareRule, aiCli
 	}
 }
 
+// GetAnalyzer returns the error pattern analyzer
+func (s *ErrorRecoverySystem) GetAnalyzer() *ErrorPatternAnalyzer {
+	return s.analyzer
+}
+
 // HandleError processes an error through the recovery system
 func (s *ErrorRecoverySystem) HandleError(ctx context.Context, err error, execCtx *ExecutionContext) (*Solution, error) {
 	logger.Info("🔍 Error Recovery System: Analyzing error",
