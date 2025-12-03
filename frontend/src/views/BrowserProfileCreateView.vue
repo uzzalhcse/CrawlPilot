@@ -338,12 +338,12 @@ const handleCancel = () => {
           </div>
 
           <div class="flex items-center space-x-2 pt-2">
-            <Switch id="canvas_noise" v-model:checked="formData.canvas_noise" />
+            <Switch id="canvas_noise" v-model="formData.canvas_noise" />
             <Label for="canvas_noise" class="cursor-pointer">Enable Canvas Noise</Label>
           </div>
 
           <div class="flex items-center space-x-2">
-            <Switch id="disable_webrtc" v-model:checked="formData.disable_webrtc" />
+            <Switch id="disable_webrtc" v-model="formData.disable_webrtc" />
             <Label for="disable_webrtc" class="cursor-pointer">Disable WebRTC</Label>
           </div>
         </div>
@@ -353,7 +353,7 @@ const handleCancel = () => {
           <h3 class="text-lg font-semibold mb-4">Proxy Configuration</h3>
 
           <div class="flex items-center space-x-2">
-            <Switch id="proxy_enabled" v-model:checked="formData.proxy_enabled" />
+            <Switch id="proxy_enabled" v-model="formData.proxy_enabled" />
             <Label for="proxy_enabled" class="cursor-pointer">Enable Proxy</Label>
           </div>
 

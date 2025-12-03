@@ -121,7 +121,7 @@ export const browserProfilesApi = {
 
     // Get profile by ID
     getById(id: string) {
-        return apiClient.get<BrowserProfile>(`/ profiles / ${id} `)
+        return apiClient.get<BrowserProfile>(`/profiles/${id}`)
     },
 
     // Create new profile
@@ -131,17 +131,17 @@ export const browserProfilesApi = {
 
     // Update profile
     update(id: string, data: UpdateBrowserProfileRequest) {
-        return apiClient.put<BrowserProfile>(`/ profiles / ${id} `, data)
+        return apiClient.put<BrowserProfile>(`/profiles/${id}`, data)
     },
 
     // Delete profile
     delete(id: string) {
-        return apiClient.delete(`/ profiles / ${id} `)
+        return apiClient.delete(`/profiles/${id}`)
     },
 
     // Duplicate profile
     duplicate(id: string) {
-        return apiClient.post<BrowserProfile>(`/ profiles / ${id}/duplicate`)
+        return apiClient.post<BrowserProfile>(`/profiles/${id}/duplicate`)
     },
 
     // Generate random fingerprint
