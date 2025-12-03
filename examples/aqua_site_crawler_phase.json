@@ -19,7 +19,10 @@
                     {
                         "id": "navigate_to_homepage",
                         "type": "navigate",
-                        "name": "Navigate to Homepage"
+                        "name": "Navigate to Homepage",
+                        "params": {
+                            "url": "{{start_url}}"
+                        }
                     },
                     {
                         "id": "discover_main_categories",
@@ -48,7 +51,10 @@
                     {
                         "id": "navigate_to_category",
                         "type": "navigate",
-                        "name": "Navigate to Category Page"
+                        "name": "Navigate to Category Page",
+                        "params": {
+                            "url": "{{current_url}}"
+                        }
                     },
                     {
                         "id": "discover_product_listings",
@@ -79,7 +85,10 @@
                     {
                         "id": "navigate_to_product",
                         "type": "navigate",
-                        "name": "Navigate to Product Page"
+                        "name": "Navigate to Product Page",
+                        "params": {
+                            "url": "{{current_url}}"
+                        }
                     },
                     {
                         "id": "extract_aqua_product_data",

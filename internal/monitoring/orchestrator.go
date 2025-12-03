@@ -168,7 +168,7 @@ func (o *Orchestrator) validatePhase(ctx context.Context, wf *models.Workflow, p
 	discoveredURLs := []string{}
 
 	for _, node := range phase.Nodes {
-		nodeResult := o.validateNode(ctx, &node, browserCtx, &execCtx)
+		nodeResult := o.validateNode(ctx, wf, &node, browserCtx, &execCtx, testURL)
 		result.NodeResults = append(result.NodeResults, nodeResult)
 
 		// Check for critical issues and capture snapshot if failed or has issues
@@ -245,7 +245,7 @@ func (o *Orchestrator) validatePhase(ctx context.Context, wf *models.Workflow, p
 }
 
 // validateNode validates a single workflow node
-func (o *Orchestrator) validateNode(ctx context.Context, node *models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext) models.NodeValidationResult {
+func (o *Orchestrator) validateNode(ctx context.Context, wf *models.Workflow, node *models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, testURL string) models.NodeValidationResult {
 	startTime := time.Now()
 
 	logger.Debug("Validating node",
@@ -276,11 +276,14 @@ func (o *Orchestrator) validateNode(ctx context.Context, node *models.Node, brow
 		validator = NewGenericValidator(node.Type)
 	}
 
+	// Resolve template variables in params before validation
+	resolvedParams := o.resolveTemplateVariables(node.Params, testURL, wf.Config.StartURLs)
+
 	// Run validation
 	input := &nodes.ValidationInput{
 		BrowserContext:   browserCtx,
 		ExecutionContext: execCtx,
-		Params:           node.Params,
+		Params:           resolvedParams,
 		Config:           o.config,
 	}
 
@@ -349,4 +352,55 @@ func (o *Orchestrator) determineOverallStatus(summary *models.MonitoringSummary)
 		return models.MonitoringStatusDegraded
 	}
 	return models.MonitoringStatusHealthy
+}
+
+// resolveTemplateVariables resolves template placeholders in node params
+// Supports {{start_url}} and {{current_url}} placeholders
+func (o *Orchestrator) resolveTemplateVariables(params map[string]interface{}, testURL string, startURLs []string) map[string]interface{} {
+	if params == nil {
+		return nil
+	}
+
+	// Deep copy params to avoid mutating original configuration
+	resolvedParams := make(map[string]interface{})
+	for key, value := range params {
+		resolvedParams[key] = o.resolveValue(value, testURL, startURLs)
+	}
+
+	return resolvedParams
+}
+
+// resolveValue recursively resolves template variables in any value type
+func (o *Orchestrator) resolveValue(value interface{}, testURL string, startURLs []string) interface{} {
+	switch v := value.(type) {
+	case string:
+		// Replace template variables
+		if v == "{{current_url}}" {
+			return testURL
+		}
+		if v == "{{start_url}}" && len(startURLs) > 0 {
+			return startURLs[0]
+		}
+		return v
+
+	case map[string]interface{}:
+		// Recursively resolve nested maps
+		resolvedMap := make(map[string]interface{})
+		for k, val := range v {
+			resolvedMap[k] = o.resolveValue(val, testURL, startURLs)
+		}
+		return resolvedMap
+
+	case []interface{}:
+		// Recursively resolve arrays
+		resolvedArray := make([]interface{}, len(v))
+		for i, val := range v {
+			resolvedArray[i] = o.resolveValue(val, testURL, startURLs)
+		}
+		return resolvedArray
+
+	default:
+		// Return other types as-is (numbers, bools, etc.)
+		return v
+	}
 }
