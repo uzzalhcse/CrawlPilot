@@ -1,14 +1,14 @@
-module aqua-product-extractor
+module github.com/crawlify/plugins/aa
 
 go 1.24.0
 
 require (
-	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/uzzalhcse/crawlify v0.0.0
 	go.uber.org/zap v1.27.0
 )
 
 require (
+	github.com/PuerkitoBio/goquery v1.11.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect

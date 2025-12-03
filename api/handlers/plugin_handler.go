@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -190,13 +191,35 @@ func (h *PluginHandler) GetVersion(c *fiber.Ctx) error {
 func (h *PluginHandler) InstallPlugin(c *fiber.Ctx) error {
 	pluginID := c.Params("id")
 
-	workspaceID := c.Get("X-Workspace-ID", "default")
-
-	version, err := h.pluginRepo.GetLatestVersion(c.Context(), pluginID)
+	// Verify plugin exists
+	_, err := h.pluginRepo.GetPluginByID(c.Context(), pluginID)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "No stable version available",
+			"error": "Plugin not found",
 		})
+	}
+
+	workspaceID := c.Get("X-Workspace-ID", "default")
+
+	// Get or create a version for this plugin
+	version, err := h.pluginRepo.GetLatestVersion(c.Context(), pluginID)
+	if err != nil {
+		// No version exists, create a default one
+		version = &models.PluginVersion{
+			ID:          uuid.New().String(),
+			PluginID:    pluginID,
+			Version:     "1.0.0",
+			IsStable:    true,
+			PublishedAt: time.Now(),
+		}
+
+		// Use the existing PublishVersion method
+		if err := h.pluginRepo.PublishVersion(c.Context(), version); err != nil {
+			h.logger.Error("Failed to create default version", zap.Error(err))
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "Failed to create plugin version",
+			})
+		}
 	}
 
 	installation := &models.PluginInstallation{
@@ -204,6 +227,7 @@ func (h *PluginHandler) InstallPlugin(c *fiber.Ctx) error {
 		PluginID:        pluginID,
 		PluginVersionID: version.ID,
 		WorkspaceID:     workspaceID,
+		InstalledAt:     time.Now(),
 	}
 
 	if err := h.pluginRepo.InstallPlugin(c.Context(), installation); err != nil {

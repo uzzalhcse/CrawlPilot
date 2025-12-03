@@ -7,7 +7,6 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/lib/pq v1.10.9
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/spf13/viper v1.21.0
 	github.com/valyala/fasthttp v1.51.0

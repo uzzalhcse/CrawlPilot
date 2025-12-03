@@ -83,10 +83,20 @@
                 />
               </div>
             </div>
-            <Button class="gap-2 bg-blue-600 hover:bg-blue-500 text-white border-0 font-medium shadow-lg shadow-blue-900/20">
-              <Plus class="h-4 w-4" />
-              Develop new
-            </Button>
+            <div class="flex items-center gap-3">
+              <Button variant="outline" size="sm" class="border-gray-800 bg-transparent text-gray-400 hover:text-white hover:bg-white/5 hover:border-gray-700">
+                <Filter class="h-4 w-4 mr-2" />
+                Filter
+              </Button>
+              <Button 
+                size="sm" 
+                class="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20" 
+                @click="showCreateDialog = true"
+              >
+                <Plus class="h-4 w-4 mr-2" />
+                Develop new
+              </Button>
+            </div>
           </div>
 
           <!-- Filters Row -->
@@ -186,13 +196,16 @@
         </div>
       </div>
     </ScrollArea>
+
+    <!-- Create Plugin Dialog -->
+    <CreatePluginDialog v-model:open="showCreateDialog" @created="handlePluginCreated" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Plus, ArrowRight, ArrowLeft } from 'lucide-vue-next'
+import { Search, Plus, ArrowRight, ArrowLeft, Filter } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -204,6 +217,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import PluginCard from '@/components/plugins/PluginCard.vue'
+import CreatePluginDialog from '@/components/plugins/CreatePluginDialog.vue'
 import pluginAPI from '@/lib/plugin-api'
 import type { Plugin, PluginCategory, PluginFilters, PhaseType, PluginType } from '@/types'
 
@@ -218,6 +232,7 @@ interface FilterState {
 
 const router = useRouter()
 const viewMode = ref<'landing' | 'search'>('landing')
+const showCreateDialog = ref(false)
 const plugins = ref<Plugin[]>([])
 const categories = ref<PluginCategory[]>([])
 const loading = ref(false)
@@ -333,6 +348,12 @@ const clearFilters = () => {
 // Open plugin detail
 const openPluginDetail = (plugin: Plugin) => {
   router.push({ name: 'plugin-detail', params: { id: plugin.id } })
+}
+
+// Handle plugin created
+const handlePluginCreated = (pluginId: string) => {
+  // Reload plugins to show the newly created one
+  loadPlugins()
 }
 
 onMounted(() => {

@@ -176,11 +176,11 @@ func (r *PluginRepository) ListPlugins(ctx context.Context, filters models.Plugi
 func (r *PluginRepository) UpdatePlugin(ctx context.Context, plugin *models.Plugin) error {
 	query := `
 		UPDATE plugins SET
-			name = $1, description = $2, category = $3, tags = $4
-		WHERE id = $5
+			name = $1, slug = $2, description = $3, category = $4, tags = $5
+		WHERE id = $6
 	`
 	_, err := r.db.Pool.Exec(ctx, query,
-		plugin.Name, plugin.Description, plugin.Category,
+		plugin.Name, plugin.Slug, plugin.Description, plugin.Category,
 		plugin.Tags, plugin.ID,
 	)
 	return err

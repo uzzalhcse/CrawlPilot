@@ -49,16 +49,67 @@
 
             <Separator />
 
-            <!-- Readme / Details -->
-            <div class="prose prose-neutral dark:prose-invert max-w-none">
-              <h3>About this Actor</h3>
-              <p>
-                This is a placeholder for the full description. In a real implementation, this would render the plugin's README.md content.
-              </p>
-              <p>
-                Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-              </p>
+            <!-- Tabs -->
+            <Tabs v-model="activeTab" class="w-full">
+              <TabsList class="w-full justify-start">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="source">Source Code</TabsTrigger>
+                <TabsTrigger value="build">Build</TabsTrigger>
+              </TabsList>
+
+              <!-- Overview Tab -->
+          <TabsContent value="overview" class="mt-6">
+            <div class="prose prose-invert max-w-none">
+              <div v-if="loadingReadme" class="flex items-center justify-center py-12">
+                <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+              <div v-else-if="readmeContent" 
+                   class="readme-content bg-muted/20 rounded-lg p-6 border border-border" 
+                   v-html="renderedReadme">
+              </div>
+              <div v-else class="text-center py-12 text-muted-foreground">
+                <FileText class="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No README available for this plugin</p>
+              </div>
             </div>
+          </TabsContent>
+
+              <!-- Source Code Tab -->
+              <TabsContent value="source" class="min-h-[600px]">
+                <Card>
+                  <CardContent class="p-0">
+                    <CodeEditor
+                      v-if="sourceFiles && Object.keys(sourceFiles).length > 0"
+                      v-model="sourceFiles"
+                      @save="handleSaveSource"
+                      @cancel="loadSourceCode"
+                    />
+                    <div v-else-if="loadingSource" class="flex items-center justify-center h-96">
+                      <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                    <div v-else class="flex flex-col items-center justify-center h-96 text-center p-8">
+                      <FileCode class="h-16 w-16 text-muted-foreground mb-4" />
+                      <p class="text-muted-foreground mb-4">No source code available</p>
+                      <Button @click="loadSourceCode" variant="outline" size="sm">
+                        Load Source Code
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <!-- Build Tab -->
+              <TabsContent value="build" class="min-h-[600px]">
+                <Card>
+                  <CardContent class="p-0">
+                    <BuildConsole
+                      :build-job="buildJob"
+                      @build="handleBuildPlugin"
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
 
           <!-- Sidebar (Right) -->
@@ -155,19 +206,38 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BadgeCheck, Download, Star, Github, BookOpen, Loader2, Check } from 'lucide-vue-next'
+import { ref, onMounted, watch, computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { marked } from 'marked'
+import { 
+  ArrowLeft, 
+  BadgeCheck,
+  Download, 
+  ExternalLink, 
+  Star, 
+  Users, 
+  Calendar,
+  GitBranch,
+  FileText,
+  Loader2,
+  Hammer,
+  Github,
+  BookOpen,
+  Check,
+  FileCode
+} from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import CodeEditor from '@/components/plugins/CodeEditor.vue'
+import BuildConsole from '@/components/plugins/BuildConsole.vue'
 import pluginAPI from '@/lib/plugin-api'
 import type { Plugin, PluginVersion } from '@/types'
 
 const route = useRoute()
-const router = useRouter()
 const plugin = ref<Plugin | null>(null)
 const latestVersion = ref<PluginVersion | null>(null)
 const loading = ref(true)
@@ -175,36 +245,49 @@ const installing = ref(false)
 const uninstalling = ref(false)
 const isInstalled = ref(false)
 
+// New state for code editor and build
+const activeTab = ref('overview')
+const sourceFiles = ref<Record<string, string>>({})
+const loadingSource = ref(false)
+const buildJob = ref<any>(null)
+const building = ref(false)
+
+// README state
+const readmeContent = ref('')
+const loadingReadme = ref(false)
+const renderedReadme = computed(() => {
+  if (!readmeContent.value) return ''
+  return marked(readmeContent.value, { breaks: true, gfm: true })
+})
+
+let buildPollInterval: ReturnType<typeof setInterval> | null = null
+
+async function loadReadme() {
+  if (!plugin.value) return
+  
+  loadingReadme.value = true
+  try {
+    const response = await pluginAPI.getPluginReadme(plugin.value.id)
+    readmeContent.value = response.content
+  } catch (error) {
+    console.error('Failed to load README:', error)
+    readmeContent.value = ''
+  } finally {
+    loadingReadme.value = false
+  }
+}
+
 const loadPlugin = async () => {
   loading.value = true
   try {
-    // In a real app, we might fetch by slug. For now, we might need to fetch by ID or handle slug lookup.
-    // Assuming the route param is 'id' for simplicity based on existing API, 
-    // but if we want slug we'd need an API endpoint for it.
-    // Let's assume the ID is passed for now.
     const pluginId = route.params.id as string
-    
-    // We don't have getPluginById in the snippet, but we have GetPluginBySlug in backend.
-    // Let's try to fetch by slug if the param is a slug, or ID if it looks like a UUID.
-    // For this implementation, let's assume we pass the ID for now to be safe with existing frontend API methods.
-    // Actually, looking at the backend code: GetPlugin takes a slug.
-    // So we should pass the slug.
-    
-    // However, the frontend API library might not have getPlugin(slug).
-    // Let's check if we can list and find, or if we need to add getPlugin.
-    // Since I can't see plugin-api.ts right now, I'll assume I can fetch it.
-    // If not, I'll implement a fallback.
-    
-    // Ideally: plugin.value = await pluginAPI.getPlugin(pluginId)
-    // But let's just list for now if get is missing, or try get.
-    
-    // TEMPORARY: List all and find (inefficient but works without changing API lib blindly)
     const allPlugins = await pluginAPI.listPlugins({})
     plugin.value = allPlugins.find(p => p.id === pluginId || p.slug === pluginId) || null
     
     if (plugin.value) {
       await loadLatestVersion(plugin.value.id)
       await checkInstallStatus(plugin.value.id)
+      await loadReadme()
     }
   } catch (error) {
     console.error('Failed to load plugin:', error)
@@ -260,6 +343,79 @@ const handleUninstall = async () => {
   }
 }
 
+// Source code management
+const loadSourceCode = async () => {
+  if (!plugin.value) return
+  loadingSource.value = true
+  try {
+    const response = await pluginAPI.getPluginSource(plugin.value.id)
+    sourceFiles.value = response.files
+  } catch (error) {
+    console.error('Failed to load source code:', error)
+    sourceFiles.value = {}
+  } finally {
+    loadingSource.value = false
+  }
+}
+
+const handleSaveSource = async (files: Record<string, string>) => {
+  if (!plugin.value) return
+  try {
+    await pluginAPI.updatePluginSource(plugin.value.id, files)
+    alert('Source code saved successfully!')
+  } catch (error) {
+    console.error('Failed to save source:', error)
+    alert('Failed to save source code')
+  }
+}
+
+// Build management
+const handleBuildPlugin = async () => {
+  if (!plugin.value) return
+  try {
+    const response = await pluginAPI.buildPlugin(plugin.value.id)
+    buildJob.value = {
+      id: response.build_id,
+      status: 'queued',
+      log: '',
+      plugin_slug: plugin.value.slug
+    }
+    startBuildPolling(response.build_id)
+  } catch (error) {
+    console.error('Failed to trigger build:', error)
+    alert('Failed to start build')
+  }
+}
+
+const startBuildPolling = (buildId: string) => {
+  if (buildPollInterval) {
+    clearInterval(buildPollInterval)
+  }
+  
+  buildPollInterval = setInterval(async () => {
+    try {
+      const status = await pluginAPI.getBuildStatus(buildId)
+      buildJob.value = status
+      
+      if (status.status === 'success' || status.status === 'failed') {
+        if (buildPollInterval) {
+          clearInterval(buildPollInterval)
+          buildPollInterval = null
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get build status:', error)
+    }
+  }, 2000)
+}
+
+// Watch tab changes to load data
+watch(activeTab, (newTab) => {
+  if (newTab === 'source' && plugin.value && Object.keys(sourceFiles.value).length === 0 && !loadingSource.value) {
+    loadSourceCode()
+  }
+})
+
 const getInstallButtonText = () => {
   if (installing.value) return 'Installing...'
   if (isInstalled.value) return 'Installed'
@@ -291,3 +447,4 @@ onMounted(() => {
   loadPlugin()
 })
 </script>
+

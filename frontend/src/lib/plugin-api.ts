@@ -110,7 +110,7 @@ class PluginAPI {
         }
 
         const response = await fetch(`${API_BASE}/plugins/${pluginId}/uninstall`, {
-            method: 'DELETE',
+            method: 'POST',
             headers
         })
         if (!response.ok) throw new Error('Failed to uninstall plugin')
@@ -175,6 +175,61 @@ class PluginAPI {
         } catch {
             return false
         }
+    }
+
+    // Code Management
+    async getPluginSource(pluginId: string): Promise<{ files: Record<string, string> }> {
+        const response = await fetch(`${API_BASE}/plugins/${pluginId}/code`)
+        if (!response.ok) throw new Error('Failed to fetch plugin source')
+        return response.json()
+    }
+
+    async updatePluginSource(pluginId: string, files: Record<string, string>): Promise<void> {
+        const response = await fetch(`${API_BASE}/plugins/${pluginId}/code`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files })
+        })
+        if (!response.ok) throw new Error('Failed to update plugin source')
+    }
+
+    async buildPlugin(pluginId: string): Promise<{ build_id: string; message: string }> {
+        const response = await fetch(`${API_BASE}/plugins/${pluginId}/build`, {
+            method: 'POST'
+        })
+        if (!response.ok) throw new Error('Failed to trigger build')
+        return response.json()
+    }
+
+    async getBuildStatus(buildId: string): Promise<any> {
+        const response = await fetch(`${API_BASE}/builds/${buildId}/status`)
+        if (!response.ok) throw new Error('Failed to fetch build status')
+        return response.json()
+    }
+
+    async scaffoldPlugin(config: {
+        name: string
+        slug: string
+        description: string
+        phase_type: string
+        author_name: string
+        author_email: string
+        category?: string
+        tags?: string[]
+    }): Promise<Plugin> {
+        const response = await fetch(`${API_BASE}/plugins/scaffold`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        })
+        if (!response.ok) throw new Error('Failed to scaffold plugin')
+        return response.json()
+    }
+
+    async getPluginReadme(pluginId: string): Promise<{ content: string }> {
+        const response = await fetch(`${API_BASE}/plugins/${pluginId}/readme`)
+        if (!response.ok) throw new Error('Failed to fetch plugin readme')
+        return response.json()
     }
 }
 

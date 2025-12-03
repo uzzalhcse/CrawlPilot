@@ -19,6 +19,7 @@ import (
 	"github.com/uzzalhcse/crawlify/internal/error_recovery"
 	"github.com/uzzalhcse/crawlify/internal/logger"
 	"github.com/uzzalhcse/crawlify/internal/monitoring"
+	"github.com/uzzalhcse/crawlify/internal/plugin"
 	"github.com/uzzalhcse/crawlify/internal/queue"
 	"github.com/uzzalhcse/crawlify/internal/storage"
 	"github.com/uzzalhcse/crawlify/internal/workflow"
@@ -232,11 +233,16 @@ func main() {
 	// Initialize plugin handler
 	pluginHandler := handlers.NewPluginHandler(pluginRepo, zapLogger)
 
+	// Initialize plugin code handler (for editing/building plugins)
+	sourceManager := plugin.NewSourceManager("./examples/plugins")
+	builder := plugin.NewBuilder("./examples/plugins", "./plugins")
+	pluginCodeHandler := handlers.NewPluginCodeHandler(sourceManager, builder, pluginRepo)
+
 	// Initialize browser profile handler
 	browserProfileHandler := handlers.NewBrowserProfileHandler(browserProfileRepo, browserPool.GetLauncher())
 
 	// Routes
-	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler, browserProfileHandler, errorRecoveryHandler, recoveryHistoryHandler)
+	setupRoutes(app, workflowHandler, workflowVersionHandler, executionHandler, analyticsHandler, selectorHandler, monitoringHandler, scheduleHandler, snapshotHandler, autoFixHandler, pluginHandler, pluginCodeHandler, browserProfileHandler, errorRecoveryHandler, recoveryHistoryHandler)
 
 	// Monitoring
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -286,7 +292,7 @@ func main() {
 	}
 }
 
-func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler, browserProfileHandler *handlers.BrowserProfileHandler, errorRecoveryHandler *handlers.ErrorRecoveryHandler, recoveryHistoryHandler *handlers.ErrorRecoveryHistoryHandler) {
+func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, workflowVersionHandler *handlers.WorkflowVersionHandler, executionHandler *handlers.ExecutionHandler, analyticsHandler *handlers.AnalyticsHandler, selectorHandler *handlers.SelectorHandler, monitoringHandler *handlers.MonitoringHandler, scheduleHandler *handlers.ScheduleHandler, snapshotHandler *handlers.SnapshotHandler, autoFixHandler *handlers.AutoFixHandler, pluginHandler *handlers.PluginHandler, pluginCodeHandler *handlers.PluginCodeHandler, browserProfileHandler *handlers.BrowserProfileHandler, errorRecoveryHandler *handlers.ErrorRecoveryHandler, recoveryHistoryHandler *handlers.ErrorRecoveryHistoryHandler) {
 	api := app.Group("/api/v1")
 
 	// Workflow routes
@@ -382,9 +388,20 @@ func setupRoutes(app *fiber.App, workflowHandler *handlers.WorkflowHandler, work
 	plugins.Get("/:id/versions", pluginHandler.ListVersions)
 	plugins.Get("/:id/versions/:version", pluginHandler.GetVersion)
 	plugins.Post("/:id/install", pluginHandler.InstallPlugin)
-	plugins.Delete("/:id/uninstall", pluginHandler.UninstallPlugin)
+	plugins.Post("/:id/uninstall", pluginHandler.UninstallPlugin)
 	plugins.Post("/:id/reviews", pluginHandler.CreateReview)
 	plugins.Get("/:id/reviews", pluginHandler.ListReviews)
+
+	// Plugin code management routes
+	plugins.Get("/:id/code", pluginCodeHandler.GetPluginSource)
+	plugins.Put("/:id/code", pluginCodeHandler.UpdatePluginSource)
+	plugins.Post("/:id/build", pluginCodeHandler.BuildPlugin)
+	plugins.Post("/scaffold", pluginCodeHandler.ScaffoldPlugin)
+	plugins.Get("/:id/readme", pluginCodeHandler.GetPluginReadme)
+
+	// Build status routes
+	builds := api.Group("/builds")
+	builds.Get("/:build_id/status", pluginCodeHandler.GetBuildStatus)
 
 	// Browser Profile routes
 	profiles := api.Group("/profiles")
