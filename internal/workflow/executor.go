@@ -480,7 +480,7 @@ func (e *Executor) processURL(ctx context.Context, workflow *models.Workflow, ex
 		"url":        item.URL,
 	})
 
-	if err := e.executeNodeGroup(ctx, phaseToExecute.Nodes, browserCtx, &execCtx, executionID, item); err != nil {
+	if err := e.executeNodeGroup(ctx, workflow, phaseToExecute.Nodes, browserCtx, &execCtx, executionID, item); err != nil {
 		logger.Error("Phase execution failed",
 			zap.String("phase_id", phaseToExecute.ID),
 			zap.Error(err))
@@ -654,7 +654,7 @@ func (e *Executor) updateExecutionStatsForURL(ctx context.Context, executionID s
 }
 
 // executeNodeGroup executes a group of nodes in DAG order
-func (e *Executor) executeNodeGroup(ctx context.Context, nodes []models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
+func (e *Executor) executeNodeGroup(ctx context.Context, workflow *models.Workflow, nodes []models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
 	// Build DAG
 	dag, err := e.parser.BuildDAG(nodes)
 	if err != nil {
@@ -669,7 +669,7 @@ func (e *Executor) executeNodeGroup(ctx context.Context, nodes []models.Node, br
 
 	// Execute nodes in order
 	for _, node := range sortedNodes {
-		if err := e.executeNode(ctx, node, browserCtx, execCtx, executionID, item); err != nil {
+		if err := e.executeNode(ctx, workflow, node, browserCtx, execCtx, executionID, item); err != nil {
 			if !node.Optional {
 				return fmt.Errorf("node '%s' failed: %w", node.ID, err)
 			}
@@ -681,7 +681,7 @@ func (e *Executor) executeNodeGroup(ctx context.Context, nodes []models.Node, br
 }
 
 // executeNode executes a single node
-func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
+func (e *Executor) executeNode(ctx context.Context, workflow *models.Workflow, node *models.Node, browserCtx *browser.BrowserContext, execCtx *models.ExecutionContext, executionID string, item *models.URLQueueItem) error {
 	logger.Debug("Executing node", zap.String("node_id", node.ID), zap.String("type", string(node.Type)))
 
 	// Create node execution record FIRST
@@ -769,11 +769,14 @@ func (e *Executor) executeNode(ctx context.Context, node *models.Node, browserCt
 					zap.String("node_type", string(node.Type)),
 				)
 
+				// Resolve template variables in params before execution
+				resolvedParams := e.resolveTemplateVariables(node.Params, item.URL, workflow.Config.StartURLs)
+
 				// Prepare input for plugin execution
 				input := &nodes.ExecutionInput{
 					BrowserContext:   browserCtx,
 					ExecutionContext: execCtx,
-					Params:           node.Params,
+					Params:           resolvedParams,
 					URLItem:          item,
 					ExecutionID:      executionID,
 				}
@@ -1490,4 +1493,55 @@ func (e *Executor) tryNavigatePaginationLink(browserCtx *browser.BrowserContext,
 
 	time.Sleep(time.Duration(waitAfter) * time.Millisecond)
 	return true, nil
+}
+
+// resolveTemplateVariables resolves template placeholders in node params
+// Supports {{start_url}} and {{current_url}} placeholders
+func (e *Executor) resolveTemplateVariables(params map[string]interface{}, currentURL string, startURLs []string) map[string]interface{} {
+	if params == nil {
+		return nil
+	}
+
+	// Deep copy params to avoid mutating original configuration
+	resolvedParams := make(map[string]interface{})
+	for key, value := range params {
+		resolvedParams[key] = e.resolveValue(value, currentURL, startURLs)
+	}
+
+	return resolvedParams
+}
+
+// resolveValue recursively resolves template variables in any value type
+func (e *Executor) resolveValue(value interface{}, currentURL string, startURLs []string) interface{} {
+	switch v := value.(type) {
+	case string:
+		// Replace template variables
+		if v == "{{current_url}}" {
+			return currentURL
+		}
+		if v == "{{start_url}}" && len(startURLs) > 0 {
+			return startURLs[0]
+		}
+		return v
+
+	case map[string]interface{}:
+		// Recursively resolve nested maps
+		resolvedMap := make(map[string]interface{})
+		for k, val := range v {
+			resolvedMap[k] = e.resolveValue(val, currentURL, startURLs)
+		}
+		return resolvedMap
+
+	case []interface{}:
+		// Recursively resolve arrays
+		resolvedArray := make([]interface{}, len(v))
+		for i, val := range v {
+			resolvedArray[i] = e.resolveValue(val, currentURL, startURLs)
+		}
+		return resolvedArray
+
+	default:
+		// Return other types as-is (numbers, bools, etc.)
+		return v
+	}
 }

@@ -63,7 +63,7 @@
                         "params": {
                             "selector": "div.CategoryTop_Series_Item_Content_List a",
                             "marker": "product",
-                            "limit": 1
+                            "limit": 5
                         }
                     }
                 ],

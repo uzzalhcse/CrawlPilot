@@ -138,6 +138,7 @@ const formatDuration = (ms?: number) => {
 const snapshots = ref<HealthCheckSnapshot[]>([])
 const selectedSnapshotId = ref<string | null>(null)
 const showSnapshotViewer = ref(false)
+const baselineComparisonRef = ref<InstanceType<typeof BaselineComparison> | null>(null)
 
 watch(() => selectedReport.value?.id, async (reportId) => {
   if (!reportId) {
@@ -172,6 +173,22 @@ function openSnapshot(snapshotId: string | null) {
 function closeSnapshotViewer() {
   showSnapshotViewer.value = false
   selectedSnapshotId.value = null
+}
+
+async function setAsBaseline() {
+  if (!selectedReport.value) return
+  
+  try {
+    await workflowsApi.setBaseline(selectedReport.value.id)
+    // Reload the comparison to show the new baseline
+    if (baselineComparisonRef.value) {
+      await baselineComparisonRef.value.loadComparison()
+    }
+  } catch (error: any) {
+    console.error('Failed to set baseline:', error)
+    const errorMessage = error.response?.data?.error || 'Failed to set baseline'
+    alert(errorMessage)
+  }
 }
 
 onMounted(async () => {
@@ -379,8 +396,9 @@ onMounted(async () => {
               <AccordionContent class="px-3 pb-2">
                 <BaselineComparison 
                   v-if="selectedReport"
+                  ref="baselineComparisonRef"
                   :report-id="selectedReport.id"
-                  :workflow-id="workflowId"
+                  @set-baseline="setAsBaseline"
                 />
               </AccordionContent>
             </AccordionItem>
