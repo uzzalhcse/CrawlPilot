@@ -336,8 +336,22 @@ func (h *AutoFixHandler) ApplySuggestion(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create new version
-	newVersionNum := workflow.Version + 1
+	// Get the latest version number from the database to avoid duplicate key constraints
+	latestVersion, err := h.versionRepo.GetLatest(c.Context(), workflow.ID)
+	var newVersionNum int
+	if err != nil {
+		logger.Error("Failed to get latest version", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to get latest version",
+		})
+	}
+
+	if latestVersion != nil {
+		newVersionNum = latestVersion.Version + 1
+	} else {
+		newVersionNum = 1
+	}
+
 	newVersion := &models.WorkflowVersion{
 		WorkflowID:   workflow.ID,
 		Version:      newVersionNum,
