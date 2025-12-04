@@ -66,18 +66,14 @@ func main() {
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
-			"status":    "healthy",
-			"service":   "worker",
-			"worker_id": os.Getenv("K_REVISION"),
+			"status":  "healthy",
+			"service": "worker",
 		})
 	})
 
 	// Start HTTP server in background
 	go func() {
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "8081"
-		}
+		port := fmt.Sprintf("%d", cfg.Server.Port)
 
 		logger.Info("Worker HTTP server starting", zap.String("port", port))
 
@@ -106,9 +102,10 @@ func main() {
 	}()
 
 	// Initialize task executor
-	orchestratorURL := os.Getenv("ORCHESTRATOR_URL")
+	orchestratorURL := cfg.GCP.OrchestratorURL
 	if orchestratorURL == "" {
-		orchestratorURL = "http://localhost:8080" // Default for local development
+		orchestratorURL = "http://localhost:8080" // Fallback for backward compatibility
+		logger.Warn("ORCHESTRATOR_URL not set in config, using default", zap.String("url", orchestratorURL))
 	}
 
 	taskExecutor, err := executor.NewTaskExecutor(&cfg.Browser, &cfg.GCP, pubsubClient, redisCache, orchestratorURL)

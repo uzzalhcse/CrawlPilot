@@ -7,7 +7,7 @@ server:
 
 database:
   host: localhost
-  port: 5432
+  port: 5433  # Docker Compose postgres port
   user: crawlify
   password: dev_password
   database: crawlify
@@ -19,17 +19,19 @@ database:
 redis:
   enabled: true
   host: localhost
-  port: 6379
+  port: 6380  # Docker Compose redis port
   password: ""
   db: 0
 
 gcp:
-  project_id: ""  # Set via environment variable
+  project_id: "crawlify-local"
   location: "us-central1"
   pubsub_enabled: true
   pubsub_topic: "crawlify-tasks"
   pubsub_subscription: "crawlify-tasks-sub"
+  pubsub_emulator_host: "localhost:8095"  # Docker Compose pubsub-emulator port
   storage_bucket: "crawlify-data"
+  orchestrator_url: "http://localhost:8080"  # Orchestrator service URL
 
 browser:
   pool_size: 2

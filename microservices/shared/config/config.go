@@ -67,12 +67,13 @@ type GCPConfig struct {
 	PubSubEnabled      bool   `mapstructure:"pubsub_enabled"`
 	PubSubTopic        string `mapstructure:"pubsub_topic"`
 	PubSubSubscription string `mapstructure:"pubsub_subscription"`
+	PubSubEmulatorHost string `mapstructure:"pubsub_emulator_host"` // For local development
 
 	// Cloud Storage
 	StorageBucket string `mapstructure:"storage_bucket"`
 
-	// Worker URL (for Cloud Tasks if used)
-	WorkerURL string `mapstructure:"worker_url"`
+	// Worker configuration
+	OrchestratorURL string `mapstructure:"orchestrator_url"` // Worker → Orchestrator communication
 }
 
 // BrowserConfig holds browser pool configuration

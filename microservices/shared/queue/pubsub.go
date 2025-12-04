@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
@@ -11,6 +12,14 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"go.uber.org/zap"
 )
+
+// setEnvIfNotSet sets an environment variable only if it's not already set
+func setEnvIfNotSet(key, value string) error {
+	if os.Getenv(key) == "" {
+		return os.Setenv(key, value)
+	}
+	return nil
+}
 
 // PubSubClient wraps Google Cloud Pub/Sub
 type PubSubClient struct {
@@ -23,6 +32,17 @@ type PubSubClient struct {
 func NewPubSubClient(ctx context.Context, cfg *config.GCPConfig) (*PubSubClient, error) {
 	if !cfg.PubSubEnabled {
 		return nil, fmt.Errorf("pub/sub is not enabled")
+	}
+
+	// Set emulator host if configured (for local development)
+	if cfg.PubSubEmulatorHost != "" {
+		// This environment variable is required by the Google Pub/Sub client library
+		// to connect to the local emulator instead of actual GCP
+		if err := setEnvIfNotSet("PUBSUB_EMULATOR_HOST", cfg.PubSubEmulatorHost); err != nil {
+			logger.Warn("Failed to set PUBSUB_EMULATOR_HOST", zap.Error(err))
+		} else {
+			logger.Info("Using Pub/Sub emulator", zap.String("host", cfg.PubSubEmulatorHost))
+		}
 	}
 
 	client, err := pubsub.NewClient(ctx, cfg.ProjectID)
