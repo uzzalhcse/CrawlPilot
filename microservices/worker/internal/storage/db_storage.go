@@ -41,11 +41,13 @@ func (s *DBStorage) SaveExtractedItems(
 	`
 
 	for _, item := range items {
-		dataJSON, err := json.Marshal(item)
+		dataBytes, err := json.Marshal(item)
 		if err != nil {
 			logger.Warn("Failed to marshal item", zap.Error(err))
 			continue
 		}
+		// Convert to string for PgBouncer simple protocol compatibility
+		dataJSON := string(dataBytes)
 
 		_, err = s.db.Pool.Exec(ctx, query, executionID, workflowID, taskID, url, dataJSON)
 		if err != nil {

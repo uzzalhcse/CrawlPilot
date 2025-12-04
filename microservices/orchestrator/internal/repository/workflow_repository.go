@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -30,15 +31,22 @@ func (r *postgresWorkflowRepo) Create(ctx context.Context, workflow *models.Work
 	workflow.CreatedAt = now
 	workflow.UpdatedAt = now
 
+	// Marshal config to JSON string for PgBouncer simple protocol compatibility
+	configBytes, err := json.Marshal(workflow.Config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	configJSON := string(configBytes)
+
 	query := `
 		INSERT INTO workflows (id, name, config, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
-	_, err := r.db.Pool.Exec(ctx, query,
+	_, err = r.db.Pool.Exec(ctx, query,
 		workflow.ID,
 		workflow.Name,
-		workflow.Config,
+		configJSON,
 		workflow.Status,
 		workflow.CreatedAt,
 		workflow.UpdatedAt,
@@ -138,6 +146,13 @@ func (r *postgresWorkflowRepo) List(ctx context.Context, filters ListFilters) ([
 func (r *postgresWorkflowRepo) Update(ctx context.Context, workflow *models.Workflow) error {
 	workflow.UpdatedAt = time.Now()
 
+	// Marshal config to JSON string for PgBouncer simple protocol compatibility
+	configBytes, err := json.Marshal(workflow.Config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	configJSON := string(configBytes)
+
 	query := `
 		UPDATE workflows
 		SET name = $2, config = $3, status = $4, updated_at = $5
@@ -147,7 +162,7 @@ func (r *postgresWorkflowRepo) Update(ctx context.Context, workflow *models.Work
 	result, err := r.db.Pool.Exec(ctx, query,
 		workflow.ID,
 		workflow.Name,
-		workflow.Config,
+		configJSON,
 		workflow.Status,
 		workflow.UpdatedAt,
 	)

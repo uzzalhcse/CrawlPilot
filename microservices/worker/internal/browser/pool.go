@@ -37,9 +37,9 @@ func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
 			"--no-sandbox",
 			"--disable-setuid-sandbox",
 			"--disable-dev-shm-usage",
-			"--disable-gpu",    // Better for headless
-			"--single-process", // Reduce memory in containers
-			"--no-zygote",      // Better for Cloud Run
+			"--disable-gpu",
+			// Note: --single-process removed - it breaks multiple contexts
+			// For Cloud Run with high memory (4GB+), leave default multi-process
 		},
 	})
 	if err != nil {

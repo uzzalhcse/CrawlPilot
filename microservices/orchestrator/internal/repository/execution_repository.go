@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -29,6 +30,19 @@ func (r *postgresExecutionRepo) Create(ctx context.Context, execution *models.Ex
 	execution.StartedAt = time.Now()
 	execution.Status = "running"
 
+	// Marshal metadata to JSON string for PgBouncer simple protocol compatibility
+	// Simple protocol requires string for JSONB columns
+	var metadataJSON string
+	if execution.Metadata != nil {
+		jsonBytes, err := json.Marshal(execution.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = string(jsonBytes)
+	} else {
+		metadataJSON = "{}"
+	}
+
 	query := `
 		INSERT INTO workflow_executions (id, workflow_id, status, started_at, metadata)
 		VALUES ($1, $2, $3, $4, $5)
@@ -39,7 +53,7 @@ func (r *postgresExecutionRepo) Create(ctx context.Context, execution *models.Ex
 		execution.WorkflowID,
 		execution.Status,
 		execution.StartedAt,
-		execution.Metadata,
+		metadataJSON,
 	)
 
 	if err != nil {
