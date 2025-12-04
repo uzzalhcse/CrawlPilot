@@ -1,0 +1,171 @@
+{
+    "name": "Aqua E-commerce Site Crawler - Phase-Based",
+    "description": "Comprehensive crawler for Aqua e-commerce site using phase-based architecture",
+    "config": {
+        "start_urls": [
+            "https://aqua-has.com"
+        ],
+        "max_depth": 3,
+        "rate_limit_delay": 2000,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        },
+        "phases": [
+            {
+                "id": "discover_categories",
+                "type": "discovery",
+                "name": "Discover Main Product Categories",
+                "nodes": [
+                    {
+                        "id": "navigate_to_homepage",
+                        "type": "navigate",
+                        "name": "Navigate to Homepage",
+                        "params": {
+                            "url": "{{start_url}}"
+                        }
+                    },
+                    {
+                        "id": "discover_main_categories",
+                        "type": "extract_links",
+                        "name": "Extract Category Links",
+                        "params": {
+                            "selector": "ul.Header_Navigation_List_Item_Sub_Group_Inner a",
+                            "marker": "category",
+                            "limit": 2
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "discover_products"
+                }
+            },
+            {
+                "id": "discover_products",
+                "type": "discovery",
+                "name": "Discover Product Listing Pages",
+                "nodes": [
+                    {
+                        "id": "navigate_to_category",
+                        "type": "navigate",
+                        "name": "Navigate to Category Page",
+                        "params": {
+                            "url": "{{current_url}}"
+                        }
+                    },
+                    {
+                        "id": "discover_product_listings",
+                        "type": "extract_links",
+                        "name": "Extract Product Links",
+                        "params": {
+                            "selector": "div.CategoryTop_Series_Item_Content_List a",
+                            "marker": "product",
+                            "limit": 5
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "category"
+                    ]
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "extract_product_data"
+                }
+            },
+            {
+                "id": "extract_product_data",
+                "type": "extraction",
+                "name": "Extract Product Details",
+                "nodes": [
+                    {
+                        "id": "navigate_to_product",
+                        "type": "navigate",
+                        "name": "Navigate to Product Page",
+                        "params": {
+                            "url": "{{current_url}}"
+                        }
+                    },
+                    {
+                        "id": "extract_aqua_product_data",
+                        "type": "extract",
+                        "name": "Extract Aqua Product Details",
+                        "params": {
+                            "schema": "aqua_product",
+                            "fields": {
+                                "page_title": {
+                                    "selector": "title",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "product_name": {
+                                    "selector": ".ProductInfo_Head_Main_ProductName",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "images": {
+                                    "selector": ".productImageList img",
+                                    "type": "attr",
+                                    "attribute": "src",
+                                    "multiple": true
+                                },
+                                "maker": {
+                                    "selector": "meta[property='og:site_name']",
+                                    "type": "attr",
+                                    "attribute": "content",
+                                    "transform": "trim",
+                                    "default": "AQUA"
+                                },
+                                "brand": {
+                                    "selector": "meta[property='og:site_name']",
+                                    "type": "attr",
+                                    "attribute": "content",
+                                    "transform": "trim",
+                                    "default": "AQUA"
+                                },
+                                "category": {
+                                    "selector": ".ProductDetail_Section_Headline_Sub",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "description": {
+                                    "selector": "div.ProductDetail_Section_Text_Group",
+                                    "type": "text",
+                                    "transform": "clean_html"
+                                },
+                                "list_price": {
+                                    "selector": ".ProductInfo_PriceArea_OpenPrice",
+                                    "type": "text",
+                                    "transform": "trim",
+                                    "default": "Open Price"
+                                },
+                                "attributes": {
+                                    "extractions": [
+                                        {
+                                            "key_selector": ".ProductDetail_Section_Spec_Item_Head",
+                                            "value_selector": ".ProductDetail_Section_Spec_Item_Body",
+                                            "key_type": "text",
+                                            "value_type": "text",
+                                            "transform": "trim"
+                                        }
+                                    ],
+                                    "output_format": "array"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "product"
+                    ]
+                }
+            }
+        ]
+    },
+    "status": "active"
+}

@@ -1,0 +1,39 @@
+server:
+  port: 8081  # Changed from 8080 to avoid conflict with orchestrator
+  host: 0.0.0.0
+  read_timeout: 900  # 15 minutes for long tasks
+  write_timeout: 900
+  shutdown_timeout: 30
+
+database:
+  host: localhost
+  port: 5432
+  user: crawlify
+  password: dev_password
+  database: crawlify
+  ssl_mode: disable
+  max_connections: 5  # Workers use fewer connections
+  max_idle_conns: 1
+  conn_max_lifetime: 300
+
+redis:
+  enabled: true
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+gcp:
+  project_id: ""  # Set via environment variable
+  location: "us-central1"
+  pubsub_enabled: true
+  pubsub_topic: "crawlify-tasks"
+  pubsub_subscription: "crawlify-tasks-sub"
+  storage_bucket: "crawlify-data"
+
+browser:
+  pool_size: 2
+  headless: false
+  timeout: 60000
+  max_concurrency: 100
+  context_lifetime: 300

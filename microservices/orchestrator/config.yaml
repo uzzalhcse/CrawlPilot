@@ -1,0 +1,40 @@
+server:
+  port: 8080
+  host: 0.0.0.0
+  read_timeout: 30
+  write_timeout: 30
+  shutdown_timeout: 10
+
+database:
+  host: localhost
+  port: 5433
+  user: crawlify
+  password: dev_password
+  database: crawlify
+  ssl_mode: disable
+  max_connections: 10  # Orchestrator uses more connections
+  max_idle_conns: 2
+  conn_max_lifetime: 300
+
+redis:
+  enabled: true
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+gcp:
+  project_id: ""  # Set via environment variable
+  location: "us-central1"
+  pubsub_enabled: true
+  pubsub_topic: "crawlify-tasks"
+  pubsub_subscription: "crawlify-tasks-sub"
+  storage_bucket: "crawlify-data"
+  worker_url: ""  # Set via environment variable
+
+browser:
+  pool_size: 2
+  headless: true
+  timeout: 60000
+  max_concurrency: 100
+  context_lifetime: 300
