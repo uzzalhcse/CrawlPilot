@@ -9,6 +9,7 @@ import (
 	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
+	"github.com/uzzalhcse/crawlify/microservices/shared/database"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/shared/queue"
@@ -26,6 +27,7 @@ type TaskExecutor struct {
 	nodeRegistry  *nodes.Registry
 	pubsubClient  *queue.PubSubClient
 	gcsClient     *storage.GCSClient
+	dbStorage     *storage.DBStorage
 	deduplicator  *dedup.URLDeduplicator
 	statsReporter *reporter.StatsReporter
 }
@@ -37,6 +39,7 @@ func NewTaskExecutor(
 	pubsubClient *queue.PubSubClient,
 	redisCache *cache.Cache,
 	orchestratorURL string,
+	db *database.DB,
 ) (*TaskExecutor, error) {
 	// Initialize browser pool
 	browserPool, err := browser.NewPool(cfg)
@@ -47,16 +50,30 @@ func NewTaskExecutor(
 	// Initialize node registry
 	nodeRegistry := nodes.NewRegistry()
 
-	// Initialize GCS client
-	ctx := context.Background()
-	gcsClient, err := storage.NewGCSClient(ctx, gcpCfg)
-	if err != nil {
-		logger.Warn("Cloud Storage client not available", zap.Error(err))
-		gcsClient = nil // Continue without GCS
+	// Initialize GCS client only if enabled
+	var gcsClient *storage.GCSClient
+	if gcpCfg.StorageEnabled {
+		ctx := context.Background()
+		client, err := storage.NewGCSClient(ctx, gcpCfg)
+		if err != nil {
+			logger.Warn("Cloud Storage client not available", zap.Error(err))
+			gcsClient = nil // Continue without GCS
+		} else {
+			gcsClient = client
+		}
+	} else {
+		logger.Info("Cloud Storage disabled for local development")
+		gcsClient = nil
 	}
 
 	// Initialize deduplicator
 	deduplicator := dedup.NewURLDeduplicator(redisCache)
+
+	// Initialize database storage (fallback for when GCS is disabled)
+	var dbStorage *storage.DBStorage
+	if db != nil {
+		dbStorage = storage.NewDBStorage(db)
+	}
 
 	// Initialize stats reporter
 	statsReporter := reporter.NewStatsReporter(orchestratorURL)
@@ -64,6 +81,7 @@ func NewTaskExecutor(
 	logger.Info("Task executor initialized",
 		zap.Int("registered_nodes", len(nodeRegistry.List())),
 		zap.Bool("gcs_enabled", gcsClient != nil),
+		zap.Bool("db_storage_enabled", dbStorage != nil),
 	)
 
 	return &TaskExecutor{
@@ -71,6 +89,7 @@ func NewTaskExecutor(
 		nodeRegistry:  nodeRegistry,
 		pubsubClient:  pubsubClient,
 		gcsClient:     gcsClient,
+		dbStorage:     dbStorage,
 		deduplicator:  deduplicator,
 		statsReporter: statsReporter,
 	}, nil
@@ -140,18 +159,40 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		return fmt.Errorf("phase execution failed: %w", err)
 	}
 
-	// Upload extracted items to Cloud Storage
-	if len(result.ExtractedItems) > 0 && e.gcsClient != nil {
-		gcsPath, err := e.gcsClient.UploadExtractedItems(ctx, task.ExecutionID, result.ExtractedItems)
-		if err != nil {
-			logger.Error("Failed to upload extracted items",
-				zap.String("task_id", task.TaskID),
-				zap.Error(err),
-			)
+	// Upload extracted items to Cloud Storage or save to database
+	if len(result.ExtractedItems) > 0 {
+		if e.gcsClient != nil {
+			// Use GCS for production
+			gcsPath, err := e.gcsClient.UploadExtractedItems(ctx, task.ExecutionID, result.ExtractedItems)
+			if err != nil {
+				logger.Error("Failed to upload extracted items",
+					zap.String("task_id", task.TaskID),
+					zap.Error(err),
+				)
+			} else {
+				logger.Info("Extracted items uploaded to GCS",
+					zap.String("gcs_path", gcsPath),
+					zap.Int("item_count", len(result.ExtractedItems)),
+				)
+			}
 		} else {
-			logger.Info("Extracted items uploaded",
-				zap.String("gcs_path", gcsPath),
-			)
+			// Fallback to database storage for local development
+			if e.dbStorage != nil {
+				err := e.dbStorage.SaveExtractedItems(
+					ctx,
+					task.ExecutionID,
+					task.WorkflowID,
+					task.TaskID,
+					task.URL,
+					result.ExtractedItems,
+				)
+				if err != nil {
+					logger.Error("Failed to save extracted items to database",
+						zap.String("task_id", task.TaskID),
+						zap.Error(err),
+					)
+				}
+			}
 		}
 	}
 

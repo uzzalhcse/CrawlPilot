@@ -70,7 +70,8 @@ type GCPConfig struct {
 	PubSubEmulatorHost string `mapstructure:"pubsub_emulator_host"` // For local development
 
 	// Cloud Storage
-	StorageBucket string `mapstructure:"storage_bucket"`
+	StorageEnabled bool   `mapstructure:"storage_enabled"` // Enable/disable cloud storage
+	StorageBucket  string `mapstructure:"storage_bucket"`
 
 	// Worker configuration
 	OrchestratorURL string `mapstructure:"orchestrator_url"` // Worker → Orchestrator communication

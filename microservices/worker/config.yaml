@@ -30,6 +30,7 @@ gcp:
   pubsub_topic: "crawlify-tasks"
   pubsub_subscription: "crawlify-tasks-sub"
   pubsub_emulator_host: "localhost:8095"  # Docker Compose pubsub-emulator port
+  storage_enabled: false  # Disable GCS for local development
   storage_bucket: "crawlify-data"
   orchestrator_url: "http://localhost:8080"  # Orchestrator service URL
 

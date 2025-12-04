@@ -133,4 +133,7 @@ Optional overrides for environment-specific adjustments:
 - Redis cache (port 6380)
 - Pub/Sub emulator (port 8095)
 - **Orchestrator URL** (`http://localhost:8080`)
+- **Cloud Storage** (`storage_enabled: false` for local dev)
 - Browser automation settings
+
+> **Note**: Cloud Storage is disabled by default for local development. Set `storage_enabled: true` and configure actual GCS when deploying to production.
