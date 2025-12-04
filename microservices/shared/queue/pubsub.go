@@ -151,9 +151,20 @@ func (c *PubSubClient) Subscribe(ctx context.Context, handler func(context.Conte
 		return fmt.Errorf("subscription %s does not exist", c.cfg.PubSubSubscription)
 	}
 
-	// Configure subscription settings
-	sub.ReceiveSettings.MaxOutstandingMessages = 100
-	sub.ReceiveSettings.NumGoroutines = 10
+	// Configure subscription settings for high throughput
+	// Use config values or defaults optimized for 10k+ URLs/sec
+	maxOutstanding := c.cfg.PubSubMaxOutstanding
+	if maxOutstanding <= 0 {
+		maxOutstanding = 50 // Default: 50 messages per worker
+	}
+
+	numGoroutines := c.cfg.PubSubNumGoroutines
+	if numGoroutines <= 0 {
+		numGoroutines = 10 // Default: 10 parallel handlers
+	}
+
+	sub.ReceiveSettings.MaxOutstandingMessages = maxOutstanding
+	sub.ReceiveSettings.NumGoroutines = numGoroutines
 
 	logger.Info("Starting to receive messages from subscription",
 		zap.String("subscription", c.cfg.PubSubSubscription),

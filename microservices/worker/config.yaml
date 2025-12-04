@@ -1,20 +1,20 @@
 server:
   port: 8081  # Changed from 8080 to avoid conflict with orchestrator
   host: 0.0.0.0
-  read_timeout: 900  # 15 minutes for long tasks
-  write_timeout: 900
-  shutdown_timeout: 30
+  read_timeout: 300   # 5 minutes (reduced for faster failure detection)
+  write_timeout: 300
+  shutdown_timeout: 60  # Increased for graceful drain at scale
 
 database:
   host: localhost
-  port: 5433  # Docker Compose postgres port
+  port: 6432  # Direct PostgreSQL for local dev (use 6432 for PgBouncer in production)
   user: crawlify
   password: dev_password
   database: crawlify
   ssl_mode: disable
-  max_connections: 5  # Workers use fewer connections
-  max_idle_conns: 1
-  conn_max_lifetime: 300
+  max_connections: 20   # Increased for high throughput (PgBouncer handles pooling)
+  max_idle_conns: 5     # Keep more idle connections ready
+  conn_max_lifetime: 60 # Shorter lifetime for better load distribution
 
 redis:
   enabled: true
@@ -22,6 +22,7 @@ redis:
   port: 6380  # Docker Compose redis port
   password: ""
   db: 0
+  # Production: use Redis Cluster via Memorystore
 
 gcp:
   project_id: "crawlify-local"
@@ -33,10 +34,13 @@ gcp:
   storage_enabled: false  # Disable GCS for local development
   storage_bucket: "crawlify-data"
   orchestrator_url: "http://localhost:8080"  # Orchestrator service URL
+  # High-throughput Pub/Sub settings (used in code)
+  pubsub_max_outstanding: 50       # Messages per worker instance
+  pubsub_num_goroutines: 10        # Parallel message handlers
 
 browser:
-  pool_size: 2
-  headless: false
-  timeout: 60000
-  max_concurrency: 100
-  context_lifetime: 300
+  pool_size: 20         # Increased from 2 for parallel scraping
+  headless: true        # Always headless in production
+  timeout: 30000        # 30s (reduced from 60s for faster failures)
+  max_concurrency: 50   # Realistic limit per worker instance
+  context_lifetime: 120 # Recycle contexts every 2 min to prevent memory leaks

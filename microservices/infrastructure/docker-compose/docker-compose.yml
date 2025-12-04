@@ -15,25 +15,46 @@ services:
       timeout: 5s
       retries: 5
 
-  # PgBouncer - Connection pooler (50:1 multiplexing)
+  # PgBouncer - Connection pooler for high-throughput
+  # Multiplexes 10,000 app connections → 100 PostgreSQL connections
   pgbouncer:
-    image: pgbouncer/pgbouncer:latest
+    image: edoburu/pgbouncer:latest
     environment:
-      DATABASES_HOST: postgres
-      DATABASES_PORT: 5432
-      DATABASES_USER: crawlify
-      DATABASES_PASSWORD: dev_password
-      DATABASES_DBNAME: crawlify
-      PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_MAX_CLIENT_CONN: 10000
-      PGBOUNCER_DEFAULT_POOL_SIZE: 100
-      PGBOUNCER_MIN_POOL_SIZE: 10
-      PGBOUNCER_RESERVE_POOL_SIZE: 10
+      # Database connection (uses container hostname)
+      DATABASE_URL: postgres://crawlify:dev_password@postgres:5432/crawlify
+      # Pool settings
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 10000
+      DEFAULT_POOL_SIZE: 100
+      MIN_POOL_SIZE: 20
+      RESERVE_POOL_SIZE: 20
+      RESERVE_POOL_TIMEOUT: 3
+      # Timeouts
+      SERVER_IDLE_TIMEOUT: 60
+      CLIENT_IDLE_TIMEOUT: 300
+      QUERY_TIMEOUT: 60
+      QUERY_WAIT_TIMEOUT: 30
+      # Logging
+      LOG_CONNECTIONS: 0
+      LOG_DISCONNECTIONS: 0
+      STATS_PERIOD: 60
+      # Admin
+      ADMIN_USERS: crawlify
+      AUTH_TYPE: plain
     ports:
-      - "6432:6432"
+      - "6432:5432"
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+
 
   redis:
     image: redis:7-alpine

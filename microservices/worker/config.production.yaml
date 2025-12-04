@@ -1,0 +1,71 @@
+# Production Worker Configuration for Cloud Run
+# Target: 10,000+ URLs/sec with horizontal scaling
+#
+# Deploy with:
+#   gcloud run deploy crawlify-worker \
+#     --image gcr.io/PROJECT/crawlify-worker \
+#     --min-instances 50 \
+#     --max-instances 500 \
+#     --memory 4Gi \
+#     --cpu 2 \
+#     --timeout 300
+
+server:
+  port: 8080  # Cloud Run uses PORT env var
+  host: 0.0.0.0
+  read_timeout: 300   # 5 minutes max per request
+  write_timeout: 300
+  shutdown_timeout: 60
+
+database:
+  host: /cloudsql/PROJECT:REGION:INSTANCE  # Cloud SQL via Unix socket
+  port: 5432
+  user: crawlify
+  password: ${DATABASE_PASSWORD}  # From Secret Manager
+  database: crawlify
+  ssl_mode: disable  # Unix socket doesn't need SSL
+  max_connections: 20
+  max_idle_conns: 5
+  conn_max_lifetime: 60
+
+redis:
+  enabled: true
+  host: MEMORYSTORE_IP  # Memorystore Redis IP
+  port: 6379
+  password: ""
+  db: 0
+
+gcp:
+  project_id: "your-project-id"
+  location: "us-central1"
+  
+  # Pub/Sub Production Settings
+  pubsub_enabled: true
+  pubsub_topic: "crawlify-tasks"
+  pubsub_subscription: "crawlify-tasks-sub"
+  pubsub_emulator_host: ""  # Empty = use real Pub/Sub
+  
+  # High-Throughput Settings
+  # With 500 workers × 50 outstanding = 25,000 concurrent capacity
+  pubsub_max_outstanding: 50
+  pubsub_num_goroutines: 10
+  
+  # Storage
+  storage_enabled: true
+  storage_bucket: "crawlify-extractions"
+  
+  # Orchestrator
+  orchestrator_url: "https://crawlify-orchestrator-xxxxx.run.app"
+
+browser:
+  pool_size: 20          # 20 browser contexts per instance
+  headless: true         # Required for Cloud Run
+  timeout: 30000         # 30 seconds per page
+  max_concurrency: 50    # Match outstanding messages
+  context_lifetime: 120  # Recycle every 2 minutes
+
+# Cloud Run autoscaling notes:
+# - min-instances=50: Always 50 warm instances (2,500 concurrent capacity)
+# - max-instances=500: Scale to 500 (25,000 concurrent capacity)
+# - Each instance: 2 vCPU, 4GB RAM, 20 browser contexts
+# - Estimated cost: ~$8,000-12,000/month at full scale

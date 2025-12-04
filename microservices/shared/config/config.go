@@ -69,6 +69,14 @@ type GCPConfig struct {
 	PubSubSubscription string `mapstructure:"pubsub_subscription"`
 	PubSubEmulatorHost string `mapstructure:"pubsub_emulator_host"` // For local development
 
+	// Pub/Sub High-Throughput Settings (for workers)
+	PubSubMaxOutstanding int `mapstructure:"pubsub_max_outstanding"` // Max messages per worker (default: 50)
+	PubSubNumGoroutines  int `mapstructure:"pubsub_num_goroutines"`  // Parallel handlers (default: 10)
+
+	// Pub/Sub Publishing Settings (for orchestrator)
+	PubSubPublishBatchSize int `mapstructure:"pubsub_publish_batch_size"` // Messages per batch (default: 100)
+	PubSubPublishTimeout   int `mapstructure:"pubsub_publish_timeout"`    // Batch timeout in seconds
+
 	// Cloud Storage
 	StorageEnabled bool   `mapstructure:"storage_enabled"` // Enable/disable cloud storage
 	StorageBucket  string `mapstructure:"storage_bucket"`

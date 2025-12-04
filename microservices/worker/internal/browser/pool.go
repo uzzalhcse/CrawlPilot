@@ -32,11 +32,14 @@ func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
 
 	// Launch browser
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(false),
+		Headless: playwright.Bool(cfg.Headless), // Use config setting
 		Args: []string{
 			"--no-sandbox",
 			"--disable-setuid-sandbox",
 			"--disable-dev-shm-usage",
+			"--disable-gpu",    // Better for headless
+			"--single-process", // Reduce memory in containers
+			"--no-zygote",      // Better for Cloud Run
 		},
 	})
 	if err != nil {
