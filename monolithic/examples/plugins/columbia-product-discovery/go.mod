@@ -1,9 +1,9 @@
-module ecommerce-discovery
+module github.com/uzzalhcse/crawlify-plugin-columbia-discovery
 
-go 1.24.0
+go 1.25.1
 
 require (
-	github.com/uzzalhcse/crawlify v0.1.0
+	github.com/uzzalhcse/crawlify v0.0.0
 	go.uber.org/zap v1.27.0
 )
 
@@ -38,5 +38,4 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 )
 
-// For local development, uncomment and adjust path:
-replace github.com/uzzalhcse/crawlify => ../../../
+replace github.com/uzzalhcse/crawlify => ../../..

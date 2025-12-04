@@ -1,14 +1,14 @@
-module aqua-product-extractor
+module ecommerce-discovery
 
-go 1.24.0
+go 1.25.1
 
 require (
-	github.com/PuerkitoBio/goquery v1.11.0
-	github.com/uzzalhcse/crawlify v0.0.0
+	github.com/uzzalhcse/crawlify v0.1.0
 	go.uber.org/zap v1.27.0
 )
 
 require (
+	github.com/PuerkitoBio/goquery v1.11.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
@@ -38,4 +38,5 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 )
 
-replace github.com/uzzalhcse/crawlify => ../../..
+// For local development, uncomment and adjust path:
+replace github.com/uzzalhcse/crawlify => ../../../

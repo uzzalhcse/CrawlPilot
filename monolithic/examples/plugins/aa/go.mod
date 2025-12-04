@@ -1,6 +1,6 @@
-module github.com/uzzalhcse/crawlify-plugin-columbia-discovery
+module github.com/crawlify/plugins/aa
 
-go 1.24.0
+go 1.25.1
 
 require (
 	github.com/uzzalhcse/crawlify v0.0.0

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS url_queue (
     priority INTEGER NOT NULL DEFAULT 0,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     parent_url_id UUID REFERENCES url_queue(id) ON DELETE SET NULL,
+    parent_node_execution_id UUID REFERENCES node_executions(id) ON DELETE SET NULL,
     discovered_by_node VARCHAR(255),
     url_type VARCHAR(50) DEFAULT 'page',
     marker VARCHAR(100) DEFAULT '',
@@ -92,6 +93,7 @@ CREATE INDEX idx_url_queue_discovered_by ON url_queue(discovered_by_node) WHERE 
 CREATE INDEX idx_url_queue_url_hash ON url_queue(url_hash);
 CREATE INDEX idx_url_queue_marker ON url_queue(marker);
 CREATE INDEX idx_url_queue_phase_id ON url_queue(phase_id);
+CREATE INDEX idx_url_queue_parent_node_exec ON url_queue(parent_node_execution_id) WHERE parent_node_execution_id IS NOT NULL;
 
 -- Node executions table
 CREATE TABLE IF NOT EXISTS node_executions (

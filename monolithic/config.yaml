@@ -1,0 +1,51 @@
+server:
+  port: 8080
+  host: 0.0.0.0
+  read_timeout: 30
+  write_timeout: 30
+  shutdown_timeout: 10
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: root
+  database: crawlify
+  ssl_mode: disable
+  max_connections: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 300
+
+redis:
+  enabled: false
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+browser:
+  pool_size: 5
+  headless: false
+  timeout: 60000
+  max_concurrency: 10
+  context_lifetime: 300
+  proxy:
+    enabled: false
+    server: "82.22.73.66:7272"
+    username: "lnvmpyru"
+    password: "5un1tb1azapa"
+
+crawler:
+  max_depth: 3
+  user_agent: "Crawlify/1.0"
+  respect_robots_txt: true
+  max_retries: 3
+  retry_delay: 1000
+  concurrent_workers: 5
+  queue_check_interval: 1000
+
+ai:
+  gemini_model: "gemini-2.5-flash"
+  openrouter_model: "google/gemini-2.0-flash-exp:free"
+  provider: "gemini"  # Can be "gemini" or "openrouter"
+  enabled: true
