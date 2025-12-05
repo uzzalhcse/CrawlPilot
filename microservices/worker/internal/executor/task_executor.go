@@ -160,6 +160,18 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		)
 		taskStats.Record(0, 0, 1)
 		e.reportStats(ctx, task.ExecutionID, taskStats)
+
+		// Send to Dead Letter Queue if max retries exceeded
+		// This captures permanently failed tasks for analysis/debugging
+		if task.RetryCount >= e.retryConfig.MaxRetries && e.pubsubClient != nil {
+			if dlqErr := e.pubsubClient.PublishToDLQ(ctx, task, err.Error()); dlqErr != nil {
+				logger.Error("Failed to publish to DLQ",
+					zap.String("task_id", task.TaskID),
+					zap.Error(dlqErr),
+				)
+			}
+		}
+
 		return fmt.Errorf("phase execution failed: %w", err)
 	}
 

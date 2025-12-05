@@ -22,10 +22,17 @@ func setEnvIfNotSet(key, value string) error {
 }
 
 // PubSubClient wraps Google Cloud Pub/Sub
+// TODO: Add OpenTelemetry metrics for message processing
+// - pubsub_messages_published_total (counter)
+// - pubsub_messages_processed_total (counter)
+// - pubsub_messages_failed_total (counter)
+// - pubsub_message_processing_duration_seconds (histogram)
+// - pubsub_dlq_messages_total (counter)
 type PubSubClient struct {
-	client *pubsub.Client
-	topic  *pubsub.Topic
-	cfg    *config.GCPConfig
+	client   *pubsub.Client
+	topic    *pubsub.Topic
+	dlqTopic *pubsub.Topic // Dead Letter Queue topic for failed messages
+	cfg      *config.GCPConfig
 }
 
 // NewPubSubClient creates a new Pub/Sub client
@@ -60,22 +67,102 @@ func NewPubSubClient(ctx context.Context, cfg *config.GCPConfig) (*PubSubClient,
 		return nil, fmt.Errorf("topic %s does not exist", cfg.PubSubTopic)
 	}
 
+	// Initialize Dead Letter Queue topic if configured
+	var dlqTopic *pubsub.Topic
+	dlqTopicName := cfg.PubSubDLQTopic
+	if dlqTopicName == "" {
+		dlqTopicName = cfg.PubSubTopic + "-dlq" // Default: {topic}-dlq
+	}
+
+	dlqTopic = client.Topic(dlqTopicName)
+	dlqExists, err := dlqTopic.Exists(ctx)
+	if err != nil {
+		logger.Warn("Failed to check DLQ topic existence",
+			zap.String("dlq_topic", dlqTopicName),
+			zap.Error(err),
+		)
+	} else if !dlqExists {
+		logger.Warn("DLQ topic does not exist - failed messages won't be captured",
+			zap.String("dlq_topic", dlqTopicName),
+		)
+		dlqTopic = nil
+	} else {
+		logger.Info("Dead Letter Queue topic initialized",
+			zap.String("dlq_topic", dlqTopicName),
+		)
+	}
+
 	logger.Info("Pub/Sub client initialized",
 		zap.String("project", cfg.ProjectID),
 		zap.String("topic", cfg.PubSubTopic),
+		zap.String("dlq_topic", dlqTopicName),
+		zap.Int("max_delivery_attempts", cfg.PubSubMaxDeliveryAttempts),
 	)
 
 	return &PubSubClient{
-		client: client,
-		topic:  topic,
-		cfg:    cfg,
+		client:   client,
+		topic:    topic,
+		dlqTopic: dlqTopic,
+		cfg:      cfg,
 	}, nil
 }
 
 // Close closes the Pub/Sub client
 func (c *PubSubClient) Close() error {
 	c.topic.Stop()
+	if c.dlqTopic != nil {
+		c.dlqTopic.Stop()
+	}
 	return c.client.Close()
+}
+
+// PublishToDLQ sends a failed task to the Dead Letter Queue for later analysis
+// This is called when a task has exceeded retry attempts or has a permanent failure
+func (c *PubSubClient) PublishToDLQ(ctx context.Context, task *models.Task, failureReason string) error {
+	if c.dlqTopic == nil {
+		logger.Warn("DLQ not configured, failed task not captured",
+			zap.String("task_id", task.TaskID),
+			zap.String("reason", failureReason),
+		)
+		return nil
+	}
+
+	data, err := json.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("failed to marshal task for DLQ: %w", err)
+	}
+
+	// TODO: Add OpenTelemetry metric increment here
+	// dlqMessagesTotal.Add(ctx, 1, attribute.String("workflow_id", task.WorkflowID))
+
+	result := c.dlqTopic.Publish(ctx, &pubsub.Message{
+		Data: data,
+		Attributes: map[string]string{
+			"execution_id":   task.ExecutionID,
+			"workflow_id":    task.WorkflowID,
+			"task_id":        task.TaskID,
+			"failure_reason": failureReason,
+			"source":         "worker",
+		},
+	})
+
+	_, err = result.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to publish to DLQ: %w", err)
+	}
+
+	logger.Warn("Task sent to Dead Letter Queue",
+		zap.String("task_id", task.TaskID),
+		zap.String("url", task.URL),
+		zap.String("reason", failureReason),
+	)
+
+	return nil
+}
+
+// HasDLQ returns true if Dead Letter Queue is configured
+func (c *PubSubClient) HasDLQ() bool {
+	return c.dlqTopic != nil
 }
 
 // PublishTask publishes a single task to the queue

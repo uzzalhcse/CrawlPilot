@@ -78,6 +78,12 @@ type GCPConfig struct {
 	PubSubPublishBatchSize int `mapstructure:"pubsub_publish_batch_size"` // Messages per batch (default: 100)
 	PubSubPublishTimeout   int `mapstructure:"pubsub_publish_timeout"`    // Batch timeout in seconds
 
+	// Dead Letter Queue (DLQ) Settings
+	// Messages that fail after max delivery attempts are moved to DLQ for analysis
+	PubSubDLQTopic            string `mapstructure:"pubsub_dlq_topic"`             // DLQ topic name (default: {topic}-dlq)
+	PubSubDLQSubscription     string `mapstructure:"pubsub_dlq_subscription"`      // DLQ subscription for monitoring
+	PubSubMaxDeliveryAttempts int    `mapstructure:"pubsub_max_delivery_attempts"` // Attempts before DLQ (default: 5)
+
 	// Cloud Storage
 	StorageEnabled bool   `mapstructure:"storage_enabled"` // Enable/disable cloud storage
 	StorageBucket  string `mapstructure:"storage_bucket"`

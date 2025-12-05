@@ -50,6 +50,12 @@ gcp:
   pubsub_max_outstanding: 50
   pubsub_num_goroutines: 10
   
+  # Dead Letter Queue Settings
+  # Failed messages are moved here after max delivery attempts
+  pubsub_dlq_topic: "crawlify-tasks-dlq"
+  pubsub_dlq_subscription: "crawlify-tasks-dlq-sub"
+  pubsub_max_delivery_attempts: 5
+  
   # Storage
   storage_enabled: true
   storage_bucket: "crawlify-extractions"

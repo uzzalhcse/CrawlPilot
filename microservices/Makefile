@@ -150,13 +150,25 @@ migrate-down-standalone: ## Rollback database migrations (standalone PostgreSQL)
 	@echo "✅ All migrations rolled back!"
 
 # Setup
-setup-pubsub-local: ## Setup Pub/Sub emulator topics
+setup-pubsub-local: ## Setup Pub/Sub emulator topics (including DLQ)
 	@echo "Setting up Pub/Sub emulator..."
+	@echo "Creating main topic..."
 	@curl -X PUT http://localhost:8095/v1/projects/crawlify-local/topics/crawlify-tasks
+	@echo ""
+	@echo "Creating main subscription..."
 	@curl -X PUT http://localhost:8095/v1/projects/crawlify-local/subscriptions/crawlify-tasks-sub \
 		-H "Content-Type: application/json" \
 		-d '{"topic":"projects/crawlify-local/topics/crawlify-tasks"}'
-	@echo "Pub/Sub setup complete!"
+	@echo ""
+	@echo "Creating Dead Letter Queue topic..."
+	@curl -X PUT http://localhost:8095/v1/projects/crawlify-local/topics/crawlify-tasks-dlq
+	@echo ""
+	@echo "Creating DLQ subscription..."
+	@curl -X PUT http://localhost:8095/v1/projects/crawlify-local/subscriptions/crawlify-tasks-dlq-sub \
+		-H "Content-Type: application/json" \
+		-d '{"topic":"projects/crawlify-local/topics/crawlify-tasks-dlq"}'
+	@echo ""
+	@echo "✅ Pub/Sub setup complete (with DLQ)!"
 
 # Development workflow
 dev: docker-up migrate-up setup-pubsub-local ## Start full development environment
