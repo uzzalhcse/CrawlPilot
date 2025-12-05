@@ -62,7 +62,7 @@ func (n *ConditionalNode) Execute(ctx context.Context, execCtx *ExecutionContext
 				continue
 			}
 
-			childNode := n.parseNode(nodeMap)
+			childNode := parseNodeFromMap(nodeMap)
 			if childNode.Type == "" {
 				continue
 			}
@@ -157,21 +157,4 @@ func (n *ConditionalNode) elementCount(page playwright.Page, selector string) (i
 func (n *ConditionalNode) getElementText(page playwright.Page, selector string) (string, error) {
 	locator := page.Locator(selector).First()
 	return locator.TextContent()
-}
-
-// parseNode converts a map to a Node struct
-func (n *ConditionalNode) parseNode(nodeMap map[string]interface{}) models.Node {
-	node := models.Node{}
-
-	if id, ok := nodeMap["id"].(string); ok {
-		node.ID = id
-	}
-	if nodeType, ok := nodeMap["type"].(string); ok {
-		node.Type = nodeType
-	}
-	if params, ok := nodeMap["params"].(map[string]interface{}); ok {
-		node.Params = params
-	}
-
-	return node
 }

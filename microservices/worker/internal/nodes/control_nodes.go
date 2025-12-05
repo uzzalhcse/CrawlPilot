@@ -235,23 +235,6 @@ func (n *LoopNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 	return nil
 }
 
-// Helper to parse node from map
-func parseNodeFromMap(nodeMap map[string]interface{}) models.Node {
-	node := models.Node{}
-
-	if id, ok := nodeMap["id"].(string); ok {
-		node.ID = id
-	}
-	if nodeType, ok := nodeMap["type"].(string); ok {
-		node.Type = nodeType
-	}
-	if params, ok := nodeMap["params"].(map[string]interface{}); ok {
-		node.Params = params
-	}
-
-	return node
-}
-
 // InfiniteScrollNode scrolls to load all content (lazy loading)
 type InfiniteScrollNode struct{}
 

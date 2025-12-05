@@ -191,21 +191,3 @@ func (n *ScreenshotNode) Execute(ctx context.Context, execCtx *ExecutionContext,
 
 	return nil
 }
-
-// Helper functions
-func getIntParam(params map[string]interface{}, key string, defaultVal int) int {
-	if val, ok := params[key].(float64); ok {
-		return int(val)
-	}
-	if val, ok := params[key].(int); ok {
-		return val
-	}
-	return defaultVal
-}
-
-func getBoolParam(params map[string]interface{}, key string, defaultVal bool) bool {
-	if val, ok := params[key].(bool); ok {
-		return val
-	}
-	return defaultVal
-}

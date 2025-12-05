@@ -47,24 +47,23 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 	pagesProcessed := 0
 	baseURL := execCtx.Task.URL
 
-	for pagesProcessed < maxPages {
-		// Extract links from current page if link_selector is provided
-		if linkSelector != "" {
-			links, err := n.extractLinks(execCtx.Page, linkSelector, baseURL)
-			if err != nil {
-				logger.Warn("Failed to extract links from page",
-					zap.Int("page", pagesProcessed+1),
-					zap.Error(err),
-				)
-			} else {
-				allLinks = append(allLinks, links...)
-				logger.Info("Extracted links from page",
-					zap.Int("page", pagesProcessed+1),
-					zap.Int("links", len(links)),
-				)
-			}
+	// Extract links from the FIRST page before pagination loop
+	if linkSelector != "" {
+		links, err := n.extractLinks(execCtx.Page, linkSelector, baseURL)
+		if err != nil {
+			logger.Warn("Failed to extract links from first page",
+				zap.Error(err),
+			)
+		} else {
+			allLinks = append(allLinks, links...)
+			logger.Info("Extracted links from first page",
+				zap.Int("links", len(links)),
+			)
 		}
+		pagesProcessed = 1 // First page counts as processed
+	}
 
+	for pagesProcessed < maxPages {
 		// Check if next button exists
 		locator := execCtx.Page.Locator(nextSelector)
 		count, err := locator.Count()
@@ -109,6 +108,23 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 		// Wait between pages
 		if waitBetweenPages > 0 {
 			time.Sleep(time.Duration(waitBetweenPages) * time.Millisecond)
+		}
+
+		// Extract links from current page AFTER navigation
+		if linkSelector != "" {
+			links, err := n.extractLinks(execCtx.Page, linkSelector, baseURL)
+			if err != nil {
+				logger.Warn("Failed to extract links from page",
+					zap.Int("page", pagesProcessed+1),
+					zap.Error(err),
+				)
+			} else {
+				allLinks = append(allLinks, links...)
+				logger.Info("Extracted links from page",
+					zap.Int("page", pagesProcessed+1),
+					zap.Int("links", len(links)),
+				)
+			}
 		}
 
 		pagesProcessed++
@@ -201,12 +217,4 @@ func (n *PaginateNode) extractLinks(page playwright.Page, selector, baseURL stri
 	}
 
 	return links, nil
-}
-
-// Helper function
-func getStringParam(params map[string]interface{}, key, defaultVal string) string {
-	if val, ok := params[key].(string); ok {
-		return val
-	}
-	return defaultVal
 }
