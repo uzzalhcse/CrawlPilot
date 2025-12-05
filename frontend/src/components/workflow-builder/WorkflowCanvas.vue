@@ -8,8 +8,9 @@ import type { WorkflowNode, WorkflowEdge } from '@/types'
 import CustomNode from './CustomNode.vue'
 import PhaseLabelNode from './PhaseLabelNode.vue'
 import ExtractionFieldNode from './ExtractionFieldNode.vue'
-import { Sparkles } from 'lucide-vue-next'
+import { Sparkles, Scissors, Plus, Trash2, X } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import { Button } from '@/components/ui/button'
 
 // Import Vue Flow styles
 import '@vue-flow/core/dist/style.css'
@@ -41,7 +42,12 @@ const nodeTypes = {
   extractField: markRaw(ExtractionFieldNode)
 }
 
-const { onConnect, addEdges, onPaneClick, onNodeClick, project, findNode } = useVueFlow()
+const { onConnect, onPaneClick, onNodeClick, onEdgeClick, project } = useVueFlow()
+
+// Edge context menu state
+const showEdgeMenu = ref(false)
+const edgeMenuPosition = ref({ x: 0, y: 0 })
+const selectedEdge = ref<WorkflowEdge | null>(null)
 
 // Handle interactions
 onConnect((params) => {
@@ -50,11 +56,95 @@ onConnect((params) => {
 
 onPaneClick(() => {
   emit('pane-click')
+  closeEdgeMenu()
 })
 
 onNodeClick(({ node }) => {
   emit('node-click', node as WorkflowNode)
+  closeEdgeMenu()
 })
+
+// Handle edge click - show context menu
+onEdgeClick(({ edge, event }) => {
+  event.stopPropagation()
+  selectedEdge.value = edge as WorkflowEdge
+  edgeMenuPosition.value = {
+    x: event.clientX,
+    y: event.clientY
+  }
+  showEdgeMenu.value = true
+})
+
+function closeEdgeMenu() {
+  showEdgeMenu.value = false
+  selectedEdge.value = null
+}
+
+// Disconnect (remove) the selected edge
+function disconnectEdge() {
+  if (!selectedEdge.value) return
+  
+  const newEdges = props.edges.filter(e => e.id !== selectedEdge.value!.id)
+  emit('update:edges', newEdges)
+  toast.success('Connection removed')
+  closeEdgeMenu()
+}
+
+// Insert a node in the middle of the edge
+function insertNodeOnEdge() {
+  if (!selectedEdge.value) return
+  
+  const edge = selectedEdge.value
+  const sourceNode = props.nodes.find(n => n.id === edge.source)
+  const targetNode = props.nodes.find(n => n.id === edge.target)
+  
+  if (!sourceNode || !targetNode) return
+  
+  // Calculate midpoint position
+  const midX = (sourceNode.position.x + targetNode.position.x) / 2
+  const midY = (sourceNode.position.y + targetNode.position.y) / 2
+  
+  // Create a new "wait" node as a placeholder (user can change type later)
+  const newNodeId = `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  const newNode: WorkflowNode = {
+    id: newNodeId,
+    type: 'custom',
+    position: { x: midX, y: midY },
+    data: {
+      label: 'Wait',
+      nodeType: 'wait',
+      params: { duration: 1000 }
+    }
+  }
+  
+  // Remove old edge, add two new edges
+  const newEdges = props.edges.filter(e => e.id !== edge.id)
+  
+  // Edge from source to new node
+  newEdges.push({
+    id: `${edge.source}-${newNodeId}`,
+    source: edge.source,
+    target: newNodeId,
+    animated: edge.animated,
+    style: edge.style
+  })
+  
+  // Edge from new node to target
+  newEdges.push({
+    id: `${newNodeId}-${edge.target}`,
+    source: newNodeId,
+    target: edge.target,
+    animated: edge.animated,
+    style: edge.style
+  })
+  
+  // Update nodes and edges
+  emit('update:nodes', [...props.nodes, newNode])
+  emit('update:edges', newEdges)
+  
+  toast.success('Node inserted', { description: 'Click the new node to configure it' })
+  closeEdgeMenu()
+}
 
 function onDragOver(event: DragEvent) {
   event.preventDefault()
@@ -96,6 +186,7 @@ defineExpose({ fitView })
       :default-viewport="{ zoom: 1 }"
       :min-zoom="0.2"
       :max-zoom="4"
+      :edges-updatable="true"
       fit-view-on-init
       @update:nodes="emit('update:nodes', $event as WorkflowNode[])"
       @update:edges="emit('update:edges', $event as WorkflowEdge[])"
@@ -135,8 +226,51 @@ defineExpose({ fitView })
             </div>
           </div>
         </div>
+        
+        <!-- Edge Help Tip -->
+        <div class="bg-card/90 backdrop-blur-sm border border-border/50 rounded-lg px-3 py-2 shadow-lg text-xs text-muted-foreground">
+          💡 Click on a connection line to disconnect or insert a node
+        </div>
       </Panel>
     </VueFlow>
+
+    <!-- Edge Context Menu -->
+    <Teleport to="body">
+      <div 
+        v-if="showEdgeMenu"
+        class="fixed z-[9999] bg-popover border border-border rounded-lg shadow-2xl overflow-hidden min-w-[180px]"
+        :style="{ left: `${edgeMenuPosition.x}px`, top: `${edgeMenuPosition.y}px` }"
+      >
+        <div class="p-2 border-b bg-muted/30">
+          <div class="text-xs font-medium text-muted-foreground">Connection Options</div>
+        </div>
+        <div class="p-1">
+          <button
+            class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors text-left"
+            @click="insertNodeOnEdge"
+          >
+            <Plus class="w-4 h-4 text-green-500" />
+            Insert Node Here
+          </button>
+          <button
+            class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-destructive/10 hover:text-destructive transition-colors text-left"
+            @click="disconnectEdge"
+          >
+            <Scissors class="w-4 h-4" />
+            Disconnect
+          </button>
+        </div>
+        <div class="p-1 border-t">
+          <button
+            class="w-full flex items-center gap-2 px-3 py-2 text-xs rounded-md hover:bg-muted transition-colors text-muted-foreground"
+            @click="closeEdgeMenu"
+          >
+            <X class="w-3 h-3" />
+            Cancel
+          </button>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Empty State -->
     <div
