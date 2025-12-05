@@ -42,7 +42,7 @@ const emit = defineEmits<{
 
 // Parse incoming value (could be JSON string or array)
 const actions = ref<ActionNode[]>([])
-const showAddSelect = ref(false)
+const isDragOver = ref(false)
 
 watch(() => props.modelValue, (newVal) => {
   if (!newVal) {
@@ -68,6 +68,7 @@ const actionTypes = [
     label: 'Wait For Condition', 
     icon: Eye,
     color: 'text-blue-500',
+    bgColor: 'bg-blue-500/20',
     defaultParams: { condition: 'selector', selector: '', state: 'visible', timeout: 10000 }
   },
   { 
@@ -75,6 +76,7 @@ const actionTypes = [
     label: 'Wait (Duration)', 
     icon: Clock,
     color: 'text-purple-500',
+    bgColor: 'bg-purple-500/20',
     defaultParams: { duration: 1000 }
   },
   { 
@@ -82,6 +84,7 @@ const actionTypes = [
     label: 'Click Element', 
     icon: MousePointer,
     color: 'text-green-500',
+    bgColor: 'bg-green-500/20',
     defaultParams: { selector: '' }
   },
   { 
@@ -89,6 +92,7 @@ const actionTypes = [
     label: 'Scroll', 
     icon: ArrowDown,
     color: 'text-orange-500',
+    bgColor: 'bg-orange-500/20',
     defaultParams: { selector: '', to_bottom: false }
   },
   { 
@@ -96,6 +100,7 @@ const actionTypes = [
     label: 'Hover', 
     icon: MousePointer,
     color: 'text-pink-500',
+    bgColor: 'bg-pink-500/20',
     defaultParams: { selector: '' }
   }
 ]
@@ -106,7 +111,10 @@ function generateId() {
 
 function handleAddAction(typeValue: any) {
   if (typeof typeValue !== 'string' || !typeValue) return
-  
+  addActionByType(typeValue)
+}
+
+function addActionByType(typeValue: string) {
   const actionType = actionTypes.find(a => a.type === typeValue)
   if (!actionType) return
   
@@ -118,8 +126,27 @@ function handleAddAction(typeValue: any) {
   }
   actions.value = [...actions.value, newAction]
   expandedActions.value.add(newAction.id)
-  showAddSelect.value = false
   emitUpdate()
+}
+
+// Drag and Drop handlers
+function handleDragOver(event: DragEvent) {
+  event.preventDefault()
+  isDragOver.value = true
+}
+
+function handleDragLeave() {
+  isDragOver.value = false
+}
+
+function handleDrop(event: DragEvent) {
+  event.preventDefault()
+  isDragOver.value = false
+  
+  const data = event.dataTransfer?.getData('application/action-type')
+  if (data) {
+    addActionByType(data)
+  }
 }
 
 function removeAction(id: string) {
@@ -246,21 +273,47 @@ const paramSchemas: Record<string, Array<{ key: string; label: string; type: str
       </Select>
     </div>
     
-    <!-- Empty State -->
+    <!-- Draggable Action Chips -->
+    <div class="flex flex-wrap gap-1.5 p-2 bg-muted/30 rounded-lg border border-dashed">
+      <div class="text-[10px] text-muted-foreground w-full mb-1">Drag actions below or click to add:</div>
+      <div 
+        v-for="actionType in actionTypes" 
+        :key="actionType.type"
+        draggable="true"
+        @dragstart="(e) => { e.dataTransfer?.setData('application/action-type', actionType.type) }"
+        class="flex items-center gap-1 px-2 py-1 rounded-md cursor-grab active:cursor-grabbing transition-all hover:scale-105"
+        :class="actionType.bgColor"
+        @click="addActionByType(actionType.type)"
+      >
+        <component :is="actionType.icon" :class="['w-3 h-3', actionType.color]" />
+        <span class="text-[10px] font-medium">{{ actionType.label }}</span>
+      </div>
+    </div>
+    
+    <!-- Drop Zone / Empty State -->
     <div 
       v-if="actions.length === 0" 
-      class="border-2 border-dashed border-border rounded-lg p-4 text-center"
+      class="border-2 border-dashed rounded-lg p-4 text-center transition-colors"
+      :class="isDragOver ? 'border-amber-500 bg-amber-500/5' : 'border-border'"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
     >
+      <Zap v-if="isDragOver" class="w-6 h-6 mx-auto mb-2 text-amber-500 animate-bounce" />
       <p class="text-sm text-muted-foreground">
-        No actions yet. Add actions to run before extracting this field.
-      </p>
-      <p class="text-xs text-muted-foreground mt-1">
-        Useful for waiting, scrolling, or clicking to reveal content.
+        {{ isDragOver ? 'Drop to add action!' : 'Drag actions here or click chips above' }}
       </p>
     </div>
     
-    <!-- Action Cards -->
-    <div v-else class="space-y-2">
+    <!-- Action Cards with Drop Zone -->
+    <div 
+      v-else 
+      class="space-y-2 p-2 rounded-lg transition-colors"
+      :class="isDragOver ? 'bg-amber-500/5 border-2 border-dashed border-amber-500' : ''"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
+    >
       <!-- Connection Line Start -->
       <div class="flex items-center gap-2 text-xs text-muted-foreground px-2">
         <div class="w-2 h-2 rounded-full bg-amber-500"></div>

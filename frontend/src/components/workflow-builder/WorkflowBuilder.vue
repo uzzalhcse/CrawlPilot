@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useWorkflowsStore } from '@/stores/workflows'
 import type { WorkflowNode, WorkflowEdge, NodeTemplate, Workflow, WorkflowConfig } from '@/types'
 import NodePalette from './NodePalette.vue'
@@ -1032,6 +1032,84 @@ async function handleToggleStatus() {
 function dismissSavingToast() {
   toast.dismiss('save-workflow')
 }
+
+// ===== KEYBOARD SHORTCUTS =====
+function handleKeyDown(event: KeyboardEvent) {
+  // Don't handle shortcuts when typing in inputs
+  const target = event.target as HTMLElement
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    return
+  }
+  
+  // Only handle shortcuts in builder mode
+  if (mode.value !== 'builder') return
+  
+  // Delete - Remove selected node
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (selectedNode.value) {
+      handleNodeDelete()
+      toast.success('Node deleted', { description: 'Press Ctrl+Z to undo (coming soon)' })
+    }
+    return
+  }
+  
+  // Ctrl+D - Duplicate selected node
+  if ((event.ctrlKey || event.metaKey) && event.key === 'd') {
+    event.preventDefault()
+    if (selectedNode.value) {
+      duplicateSelectedNode()
+    }
+    return
+  }
+  
+  // Ctrl+S - Save workflow
+  if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+    event.preventDefault()
+    handleSave()
+    return
+  }
+  
+  // Escape - Deselect node / close panel
+  if (event.key === 'Escape') {
+    selectedNode.value = null
+    return
+  }
+}
+
+// Duplicate selected node
+function duplicateSelectedNode() {
+  if (!selectedNode.value) return
+  
+  const original = selectedNode.value
+  const newId = generateNodeId()
+  
+  const newNode: WorkflowNode = {
+    id: newId,
+    type: original.type,
+    position: {
+      x: original.position.x + 50,
+      y: original.position.y + 50
+    },
+    data: JSON.parse(JSON.stringify(original.data))
+  }
+  
+  // Update label for duplicate
+  newNode.data.label = `${original.data.label} (copy)`
+  
+  nodes.value.push(newNode)
+  selectedNode.value = newNode
+  
+  toast.success('Node duplicated', { description: `Created "${newNode.data.label}"` })
+}
+
+// Setup keyboard listeners
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 defineExpose({
   dismissSavingToast
