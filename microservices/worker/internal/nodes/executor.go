@@ -9,9 +9,12 @@ import (
 
 // ExecutionContext holds the current execution state
 type ExecutionContext struct {
-	Page      playwright.Page
-	Task      *models.Task
-	Variables map[string]interface{}
+	Page           playwright.Page
+	Task           *models.Task
+	Variables      map[string]interface{}
+	ExtractedItems []map[string]interface{} // Items extracted during execution
+	DiscoveredURLs []string                 // URLs discovered during execution
+	BranchNodes    []models.Node            // Nodes to execute from conditional branches
 }
 
 // NodeExecutor defines the interface for node execution

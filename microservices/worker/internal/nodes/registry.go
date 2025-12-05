@@ -24,8 +24,23 @@ func NewRegistry() *Registry {
 	registry.Register(NewWaitNode())
 	registry.Register(NewExtractNode())
 	registry.Register(NewDiscoverLinksNode())
-	registry.Register(NewExtractLinksNode()) // Add extract_links support
+	registry.Register(NewExtractLinksNode())
 	registry.Register(NewScriptNode())
+
+	// Interaction nodes
+	registry.Register(NewScrollNode())
+	registry.Register(NewHoverNode())
+	registry.Register(NewScreenshotNode())
+
+	// Discovery nodes
+	registry.Register(NewPaginateNode())
+
+	// Control flow nodes
+	registry.Register(NewConditionalNode())
+	registry.Register(NewWaitForNode())
+	registry.Register(NewInputNode())
+	registry.Register(NewLoopNode())
+	registry.Register(NewInfiniteScrollNode())
 
 	return registry
 }

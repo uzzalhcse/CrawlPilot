@@ -30,6 +30,7 @@ type TaskExecutor struct {
 	batchWriter   *storage.BatchWriter // Primary storage: async batch writes to DB
 	deduplicator  *dedup.URLDeduplicator
 	statsReporter *reporter.StatsReporter
+	retryConfig   RetryConfig // Retry configuration for transient failures
 }
 
 // NewTaskExecutor creates a new task executor
@@ -94,6 +95,7 @@ func NewTaskExecutor(
 		batchWriter:   batchWriter,
 		deduplicator:  deduplicator,
 		statsReporter: statsReporter,
+		retryConfig:   DefaultRetryConfig(),
 	}, nil
 }
 
@@ -294,9 +296,13 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 			continue
 		}
 
-		// Execute node
-		if err := executor.Execute(ctx, execCtx, node); err != nil {
-			logger.Error("Node execution failed",
+		// Execute node with retry for transient failures
+		err = WithRetry(func() error {
+			return executor.Execute(ctx, execCtx, node)
+		}, e.retryConfig)
+
+		if err != nil {
+			logger.Error("Node execution failed after retries",
 				zap.String("node_id", node.ID),
 				zap.String("node_type", node.Type),
 				zap.Error(err),
@@ -306,16 +312,38 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 			// Continue with other nodes (non-fatal)
 			continue
 		}
+
+		// Execute any branch nodes from conditional execution
+		for _, branchNode := range execCtx.BranchNodes {
+			branchExecutor, err := e.nodeRegistry.Get(branchNode.Type)
+			if err != nil {
+				logger.Warn("No executor for branch node", zap.String("type", branchNode.Type))
+				continue
+			}
+			if err := branchExecutor.Execute(ctx, execCtx, branchNode); err != nil {
+				logger.Warn("Branch node execution failed", zap.Error(err))
+			}
+		}
+		execCtx.BranchNodes = nil // Clear after execution
 	}
 
 	// Extract results from execution context
+	// From Variables (extract nodes)
 	if items, ok := execCtx.Variables["extracted_items"].([]map[string]interface{}); ok {
 		result.ExtractedItems = items
 	}
+	// From ExecutionContext fields (screenshot, paginate nodes)
+	if len(execCtx.ExtractedItems) > 0 {
+		result.ExtractedItems = append(result.ExtractedItems, execCtx.ExtractedItems...)
+	}
 
 	// Handle discovered_urls (can be []string or []map[string]interface{})
+	// Prefer Variables["discovered_urls"] which may contain markers
 	if discoveredURLs, ok := execCtx.Variables["discovered_urls"]; ok {
 		result.DiscoveredURLs = discoveredURLs
+	} else if len(execCtx.DiscoveredURLs) > 0 {
+		// Fallback to ExecutionContext.DiscoveredURLs (plain []string) only if Variables not set
+		result.DiscoveredURLs = execCtx.DiscoveredURLs
 	}
 
 	return result, nil

@@ -1,0 +1,167 @@
+{
+  "name": "Oxylabs Sandbox Product Crawler",
+  "description": "Comprehensive crawler for sandbox.oxylabs.io using phase-based architecture",
+  "config": {
+    "start_urls": [
+      "https://sandbox.oxylabs.io/products"
+    ],
+    "max_depth": 2,
+    "rate_limit_delay": 1000,
+    "headers": {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    },
+    "phases": [
+      {
+        "id": "discover_products",
+        "type": "discovery",
+        "name": "Discover Product Links",
+        "nodes": [
+          {
+            "id": "navigate_to_products",
+            "type": "navigate",
+            "name": "Navigate to Products Page",
+            "params": {
+              "url": "{{start_url}}",
+              "timeout": 60000
+            }
+          },
+          {
+            "id": "wait_for_products",
+            "type": "wait_for",
+            "name": "Wait for Products to Load",
+            "params": {
+              "condition": "selector",
+              "selector": "a.card-header",
+              "state": "visible",
+              "timeout": 10000
+            }
+          },
+          {
+            "id": "paginate_and_collect",
+            "type": "paginate",
+            "name": "Paginate Through Product Pages",
+            "params": {
+              "selector": "a[aria-label='Next page']",
+              "link_selector": "a.card-header",
+              "marker": "product",
+              "max_pages": 5,
+              "wait_between_pages": 1500,
+              "timeout": 10000
+            }
+          },
+          {
+            "id": "discover_product_links",
+            "type": "extract_links",
+            "name": "Extract Product Links from Current Page",
+            "params": {
+              "selector": "a.card-header",
+              "marker": "product",
+              "limit": 50
+            }
+          }
+        ],
+        "url_filter": {
+          "depth": 0
+        },
+        "transition": {
+          "condition": "all_nodes_complete",
+          "next_phase": "extract_product_data"
+        }
+      },
+      {
+        "id": "extract_product_data",
+        "type": "extraction",
+        "name": "Extract Product Details",
+        "nodes": [
+          {
+            "id": "navigate_to_product",
+            "type": "navigate",
+            "name": "Navigate to Product Page",
+            "params": {
+              "url": "{{current_url}}",
+              "timeout": 60000
+            }
+          },
+          {
+            "id": "wait_for_content",
+            "type": "wait_for",
+            "name": "Wait for Product Content",
+            "params": {
+              "condition": "selector",
+              "selector": "p.description",
+              "state": "visible",
+              "timeout": 15000
+            }
+          },
+          {
+            "id": "wait_extra",
+            "type": "wait",
+            "name": "Wait for Dynamic Content",
+            "params": {
+              "duration": 2000
+            }
+          },
+          {
+            "id": "extract_oxylabs_product",
+            "type": "extract",
+            "name": "Extract Oxylabs Product Details",
+            "params": {
+              "schema": "oxylabs_product",
+              "fields": {
+                "page_title": {
+                  "selector": "title",
+                  "type": "text",
+                  "transform": "trim"
+                },
+                "product_name": {
+                  "selector": "h4",
+                  "type": "text",
+                  "transform": "trim"
+                },
+                "price": {
+                  "selector": ".price-wrapper",
+                  "type": "text",
+                  "transform": "trim",
+                  "default": "N/A"
+                },
+                "description": {
+                  "selector": "p.description",
+                  "type": "text",
+                  "transform": "trim"
+                },
+                "image": {
+                  "selector": "img[alt]",
+                  "type": "attr",
+                  "attribute": "src",
+                  "default": ""
+                },
+                "categories": {
+                  "selector": ".category",
+                  "type": "text",
+                  "transform": "trim",
+                  "multiple": true
+                }
+              }
+            }
+          },
+          {
+            "id": "screenshot_product",
+            "type": "screenshot",
+            "name": "Capture Product Screenshot",
+            "params": {
+              "full_page": false,
+              "save_as_item": true,
+              "save_to_disk": "./screenshots"
+            }
+          }
+        ],
+        "url_filter": {
+          "markers": [
+            "product"
+          ]
+        }
+      }
+    ]
+  },
+  "status": "active"
+}

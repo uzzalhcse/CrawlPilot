@@ -3,6 +3,8 @@ package nodes
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
@@ -44,6 +46,14 @@ func (n *ExtractLinksNode) Execute(ctx context.Context, execCtx *ExecutionContex
 		zap.Int("limit", limit),
 	)
 
+	// Get current page URL for resolving relative URLs
+	currentURL := execCtx.Page.URL()
+	baseURL, err := url.Parse(currentURL)
+	if err != nil {
+		logger.Warn("Failed to parse current URL", zap.String("url", currentURL), zap.Error(err))
+		baseURL = nil
+	}
+
 	// Find all links
 	links := execCtx.Page.Locator(selector)
 	count, err := links.Count()
@@ -65,15 +75,34 @@ func (n *ExtractLinksNode) Execute(ctx context.Context, execCtx *ExecutionContex
 			continue
 		}
 
-		if href != "" {
-			urlData := map[string]interface{}{
-				"url": href,
-			}
-			if marker != "" {
-				urlData["marker"] = marker
-			}
-			discoveredURLs = append(discoveredURLs, urlData)
+		if href == "" {
+			continue
 		}
+
+		// Skip javascript:, mailto:, tel:, # anchors
+		if strings.HasPrefix(href, "javascript:") ||
+			strings.HasPrefix(href, "mailto:") ||
+			strings.HasPrefix(href, "tel:") ||
+			href == "#" {
+			continue
+		}
+
+		// Resolve relative URLs to absolute
+		absoluteURL := href
+		if baseURL != nil && !strings.HasPrefix(href, "http://") && !strings.HasPrefix(href, "https://") {
+			parsedHref, err := url.Parse(href)
+			if err == nil {
+				absoluteURL = baseURL.ResolveReference(parsedHref).String()
+			}
+		}
+
+		urlData := map[string]interface{}{
+			"url": absoluteURL,
+		}
+		if marker != "" {
+			urlData["marker"] = marker
+		}
+		discoveredURLs = append(discoveredURLs, urlData)
 	}
 
 	// Store discovered URLs in execution context
