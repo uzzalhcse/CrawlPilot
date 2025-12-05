@@ -13,7 +13,7 @@ require (
 
 require (
 	cloud.google.com/go/storage v1.43.0
-	github.com/alicebob/miniredis/v2 v2.35.0
+	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/stretchr/testify v1.11.1
 	github.com/uzzalhcse/crawlify/microservices/shared v0.0.0
@@ -27,6 +27,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/iam v1.2.2 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
@@ -62,7 +63,6 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect

@@ -24,15 +24,16 @@ import (
 
 // TaskExecutor handles execution of individual tasks
 type TaskExecutor struct {
-	browserPool     *browser.Pool
-	nodeRegistry    *nodes.Registry
-	pubsubClient    *queue.PubSubClient
-	gcsClient       *storage.GCSClient
-	batchWriter     *storage.BatchWriter // Primary storage: async batch writes to DB
-	deduplicator    *dedup.URLDeduplicator
-	statsReporter   *reporter.StatsReporter
-	retryConfig     RetryConfig               // Retry configuration for transient failures
-	recoveryManager *recovery.RecoveryManager // AI-powered error recovery
+	browserPool          *browser.Pool
+	nodeRegistry         *nodes.Registry
+	pubsubClient         *queue.PubSubClient
+	gcsClient            *storage.GCSClient
+	itemWriter           storage.Writer                 // Primary storage: COPY protocol for max throughput
+	deduplicator         dedup.Deduplicator             // URL deduplication (interface)
+	bloomDedup           *dedup.BloomDeduplicator       // Bloom filter dedup (for cleanup)
+	batchedStatsReporter *reporter.BatchedStatsReporter // High-throughput batched stats
+	retryConfig          RetryConfig                    // Retry configuration for transient failures
+	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
 }
 
 // NewTaskExecutor creates a new task executor
@@ -69,19 +70,21 @@ func NewTaskExecutor(
 		gcsClient = nil
 	}
 
-	// Initialize deduplicator
-	deduplicator := dedup.NewURLDeduplicator(redisCache)
+	// Initialize deduplicator (Bloom filter for 99% memory reduction)
+	// At 10M URLs: Redis ~1GB vs Bloom ~12MB
+	bloomDedup := dedup.NewBloomDeduplicator(redisCache)
+	var deduplicator dedup.Deduplicator = bloomDedup
 
-	// Initialize batch writer for DB (primary storage)
-	// Uses async buffered writes for high throughput
-	var batchWriter *storage.BatchWriter
+	// Initialize COPY writer for DB (primary storage)
+	// Uses PostgreSQL COPY protocol for 10x faster inserts than batch INSERT
+	var itemWriter storage.Writer
 	if db != nil {
-		batchConfig := storage.DefaultBatchWriterConfig()
-		batchWriter = storage.NewBatchWriter(db, batchConfig)
+		copyConfig := storage.DefaultCopyWriterConfig()
+		itemWriter = storage.NewCopyWriter(db, copyConfig)
 	}
 
-	// Initialize stats reporter
-	statsReporter := reporter.NewStatsReporter(orchestratorURL)
+	// Initialize batched stats reporter (high-throughput: aggregates locally, flushes periodically)
+	batchedStatsReporter := reporter.NewBatchedStatsReporter(orchestratorURL, redisCache)
 
 	// Initialize recovery manager for smart error recovery
 	var recoveryManager *recovery.RecoveryManager
@@ -98,20 +101,23 @@ func NewTaskExecutor(
 	logger.Info("Task executor initialized",
 		zap.Int("registered_nodes", len(nodeRegistry.List())),
 		zap.Bool("gcs_archive_enabled", gcsClient != nil),
-		zap.Bool("batch_writer_enabled", batchWriter != nil),
+		zap.Bool("item_writer_enabled", itemWriter != nil),
 		zap.Bool("recovery_enabled", recoveryManager != nil),
+		zap.String("dedup_type", "bloom_filter"),
+		zap.String("writer_type", "copy_protocol"),
 	)
 
 	return &TaskExecutor{
-		browserPool:     browserPool,
-		nodeRegistry:    nodeRegistry,
-		pubsubClient:    pubsubClient,
-		gcsClient:       gcsClient,
-		batchWriter:     batchWriter,
-		deduplicator:    deduplicator,
-		statsReporter:   statsReporter,
-		retryConfig:     DefaultRetryConfig(),
-		recoveryManager: recoveryManager,
+		browserPool:          browserPool,
+		nodeRegistry:         nodeRegistry,
+		pubsubClient:         pubsubClient,
+		gcsClient:            gcsClient,
+		itemWriter:           itemWriter,
+		deduplicator:         deduplicator,
+		bloomDedup:           bloomDedup,
+		batchedStatsReporter: batchedStatsReporter,
+		retryConfig:          DefaultRetryConfig(),
+		recoveryManager:      recoveryManager,
 	}, nil
 }
 
@@ -329,8 +335,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 
 	// Save extracted items: DB (primary) + optional GCS (archive)
 	if len(result.ExtractedItems) > 0 {
-		// Primary: Batch write to database (high throughput)
-		if e.batchWriter != nil {
+		// Primary: Write to database using COPY protocol (high throughput)
+		if e.itemWriter != nil {
 			items := make([]storage.ExtractedItem, 0, len(result.ExtractedItems))
 			for _, data := range result.ExtractedItems {
 				items = append(items, storage.ExtractedItem{
@@ -341,8 +347,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 					Data:        data,
 				})
 			}
-			if err := e.batchWriter.AddBatch(ctx, items); err != nil {
-				logger.Error("Failed to add items to batch writer",
+			if err := e.itemWriter.AddBatch(ctx, items); err != nil {
+				logger.Error("Failed to add items to writer",
 					zap.String("task_id", task.TaskID),
 					zap.Error(err),
 				)
@@ -621,27 +627,38 @@ func (e *TaskExecutor) getNextPhase(task *models.Task) models.WorkflowPhase {
 	return task.PhaseConfig
 }
 
-// reportStats reports task statistics to orchestrator
+// reportStats reports task statistics to orchestrator using batched reporter
+// Stats are aggregated locally and flushed periodically (no HTTP call per task)
 func (e *TaskExecutor) reportStats(ctx context.Context, executionID string, taskStats *reporter.TaskStats) {
-	if e.statsReporter == nil {
+	if e.batchedStatsReporter == nil {
 		return
 	}
 
-	stats := taskStats.ToExecutionStats(executionID)
-	if err := e.statsReporter.ReportStats(ctx, stats); err != nil {
-		logger.Warn("Failed to report stats",
-			zap.String("execution_id", executionID),
-			zap.Error(err),
-		)
-	}
+	// Record stats locally (atomic, no network call)
+	// Batched reporter will flush to orchestrator every 5 seconds
+	e.batchedStatsReporter.Record(executionID, *taskStats)
 }
 
 // Close cleans up resources
 func (e *TaskExecutor) Close() error {
-	// Flush batch writer first (ensures all data is written)
-	if e.batchWriter != nil {
-		if err := e.batchWriter.Close(); err != nil {
-			logger.Error("Failed to close batch writer", zap.Error(err))
+	// Flush batched stats reporter first (ensures all stats are sent)
+	if e.batchedStatsReporter != nil {
+		if err := e.batchedStatsReporter.Close(); err != nil {
+			logger.Error("Failed to close batched stats reporter", zap.Error(err))
+		}
+	}
+
+	// Flush item writer (ensures all data is written)
+	if e.itemWriter != nil {
+		if err := e.itemWriter.Close(); err != nil {
+			logger.Error("Failed to close item writer", zap.Error(err))
+		}
+	}
+
+	// Close bloom deduplicator
+	if e.bloomDedup != nil {
+		if err := e.bloomDedup.Close(); err != nil {
+			logger.Error("Failed to close bloom deduplicator", zap.Error(err))
 		}
 	}
 

@@ -192,6 +192,50 @@ func (r *postgresExecutionRepo) UpdateStats(ctx context.Context, id string, stat
 	return nil
 }
 
+// BatchUpdateStats updates multiple execution statistics in a single batch operation
+// Critical for high-throughput scenarios - reduces 10k DB operations to 1
+func (r *postgresExecutionRepo) BatchUpdateStats(ctx context.Context, updates []BatchExecutionStats) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	// Use pgx.Batch for efficient batch operations
+	batch := &pgx.Batch{}
+
+	query := `
+		UPDATE workflow_executions
+		SET 
+			urls_processed = COALESCE(urls_processed, 0) + $2,
+			urls_discovered = COALESCE(urls_discovered, 0) + $3,
+			items_extracted = COALESCE(items_extracted, 0) + $4,
+			errors = COALESCE(errors, 0) + $5
+		WHERE id = $1
+	`
+
+	for _, update := range updates {
+		batch.Queue(query,
+			update.ExecutionID,
+			update.URLsProcessed,
+			update.URLsDiscovered,
+			update.ItemsExtracted,
+			update.Errors,
+		)
+	}
+
+	// Execute batch
+	results := r.db.Pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	// Check for errors in batch results
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := results.Exec(); err != nil {
+			return fmt.Errorf("batch update failed at index %d: %w", i, err)
+		}
+	}
+
+	return nil
+}
+
 func (r *postgresExecutionRepo) Complete(ctx context.Context, id string, status string) error {
 	now := time.Now()
 

@@ -27,8 +27,10 @@ type RecoveryManager struct {
 	errorTracker     *ErrorTracker            // Smart triggering with sliding window
 	configManager    *ConfigManager           // Dynamic config from database (frontend-manageable)
 	incidentReporter *IncidentReporter        // Creates reports for human investigation
+	coordinator      *RecoveryCoordinator     // Distributed coordination to prevent redundant work
 	pubsubClient     *queue.PubSubClient
 	cache            *cache.Cache // Redis cache for distributed state
+	workerID         string       // Unique ID for this worker instance
 
 	config *ManagerConfig
 }
@@ -128,6 +130,12 @@ func NewRecoveryManager(
 	// Initialize distributed proxy manager for Redis-based coordination
 	distributedProxy := NewDistributedProxyManager(cache, DefaultProxyRotationConfig())
 
+	// Generate unique worker ID for coordination
+	workerID := fmt.Sprintf("worker-%d-%d", time.Now().UnixNano()%1000000, time.Now().Unix()%10000)
+
+	// Initialize recovery coordinator to prevent redundant work across workers
+	coordinator := NewRecoveryCoordinator(cache, workerID, DefaultCoordinatorConfig())
+
 	// Sync proxies from database to Redis for distributed coordination
 	if distributedProxy != nil && pool != nil {
 		go func() {
@@ -191,6 +199,8 @@ func NewRecoveryManager(
 		zap.Bool("proxy_manager", proxyManager != nil),
 		zap.Bool("distributed_proxy", distributedProxy != nil),
 		zap.Bool("incident_reporter", incidentReporter != nil),
+		zap.Bool("coordinator", coordinator != nil),
+		zap.String("worker_id", workerID),
 		zap.String("llm_provider", config.LLMConfig.Provider),
 		zap.Int("window_size", config.WindowSize),
 		zap.Float64("error_rate_threshold", config.ErrorRateThreshold),
@@ -208,14 +218,17 @@ func NewRecoveryManager(
 		errorTracker:     errorTracker,
 		configManager:    configManager,
 		incidentReporter: incidentReporter,
+		coordinator:      coordinator,
 		pubsubClient:     pubsubClient,
 		cache:            cache,
+		workerID:         workerID,
 		config:           config,
 	}, nil
 }
 
 // TryRecover attempts to recover from an error
 // Uses smart triggering: only activates when error rate exceeds threshold OR consecutive errors occur
+// Uses distributed coordination to prevent multiple workers from doing redundant recovery
 func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, url string, err error, pageContent string) (*RecoveryPlan, error) {
 	if !m.config.Enabled {
 		return nil, nil
@@ -275,11 +288,74 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, u
 		}, nil
 	}
 
+	// =====================================================
+	// DISTRIBUTED COORDINATION (NON-BLOCKING)
+	// Prevent multiple workers from doing redundant recovery
+	// Uses cached results instantly - no waiting to avoid idle Cloud Run cost
+	// =====================================================
+	if m.coordinator != nil {
+		role, cachedResult, err := m.coordinator.TryAcquireCoordination(ctx, detected.Domain, detected.Pattern)
+		if err != nil {
+			logger.Warn("Coordination error, proceeding without coordination", zap.Error(err))
+			// Fall through to normal recovery
+		} else {
+			switch role {
+			case RoleFollower:
+				// Another worker is handling (or has handled) this recovery
+				if cachedResult != nil && cachedResult.Plan != nil {
+					// Use cached result from coordinator - INSTANT, no waiting
+					logger.Info("Using cached recovery plan from coordinator",
+						zap.String("domain", detected.Domain),
+						zap.String("pattern", string(detected.Pattern)),
+						zap.String("coordinator", cachedResult.CoordinatorID),
+						zap.String("action", string(cachedResult.Plan.Action)),
+					)
+					m.recordAttempt(taskID, executionID, detected, cachedResult.Plan)
+					return cachedResult.Plan, nil
+				}
+				// No cached result yet - proceed independently (non-blocking)
+				// This avoids idle Cloud Run instances waiting
+				logger.Debug("No cached result, proceeding with own recovery",
+					zap.String("domain", detected.Domain),
+					zap.String("pattern", string(detected.Pattern)),
+				)
+				// Fall through to execute our own recovery
+
+			case RoleCoordinator:
+				// We are the coordinator - execute recovery and publish result
+				plan, err := m.executeRecoveryPlan(ctx, taskID, executionID, detected, history)
+				if err != nil {
+					m.coordinator.ReleaseLock(ctx, detected.Domain, detected.Pattern)
+					return nil, err
+				}
+				// Publish result for other workers (async to not block)
+				go func() {
+					pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if pubErr := m.coordinator.PublishResult(pubCtx, detected.Domain, detected.Pattern, plan); pubErr != nil {
+						logger.Warn("Failed to publish recovery result", zap.Error(pubErr))
+					}
+				}()
+				m.recordAttempt(taskID, executionID, detected, plan)
+				return plan, nil
+			}
+		}
+	}
+
+	// No coordinator or coordination failed - execute recovery directly
+	plan, err := m.executeRecoveryPlan(ctx, taskID, executionID, detected, history)
+	if err != nil {
+		return nil, err
+	}
+	m.recordAttempt(taskID, executionID, detected, plan)
+	return plan, nil
+}
+
+// executeRecoveryPlan executes the actual recovery logic (rule -> AI -> default)
+func (m *RecoveryManager) executeRecoveryPlan(ctx context.Context, taskID, executionID string, detected *DetectedError, history []*RecoveryAttempt) (*RecoveryPlan, error) {
 	// Step 1: Try rule-based recovery
 	if rule := m.ruleEngine.Match(ctx, detected); rule != nil {
-		plan := m.ruleEngine.ToRecoveryPlan(rule)
-		m.recordAttempt(taskID, executionID, detected, plan)
-		return plan, nil
+		return m.ruleEngine.ToRecoveryPlan(rule), nil
 	}
 
 	// Step 2: Try AI fallback if enabled
@@ -304,23 +380,18 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, u
 				logger.Warn("Failed to record AI action for learning", zap.Error(err))
 			}
 			plan.Params["learning_id"] = learnedAction.ID
-
-			m.recordAttempt(taskID, executionID, detected, plan)
 			return plan, nil
 		}
 	}
 
 	// Step 3: Use default action based on pattern
-	defaultPlan := &RecoveryPlan{
+	return &RecoveryPlan{
 		Action:      GetRecommendedAction(detected.Pattern),
 		Reason:      "Default action for " + string(detected.Pattern),
 		ShouldRetry: detected.Pattern != PatternCaptcha && detected.Pattern != PatternAuthRequired,
 		RetryDelay:  5 * time.Second,
 		Source:      "default",
-	}
-
-	m.recordAttempt(taskID, executionID, detected, defaultPlan)
-	return defaultPlan, nil
+	}, nil
 }
 
 // RecordOutcome records whether a recovery attempt succeeded
@@ -482,6 +553,24 @@ func (m *RecoveryManager) GetDistributedProxyStats(ctx context.Context) (map[str
 		return nil, nil
 	}
 	return m.distributedProxy.GetStats(ctx)
+}
+
+// GetCoordinatorStats returns stats from the recovery coordinator
+func (m *RecoveryManager) GetCoordinatorStats(ctx context.Context) map[string]interface{} {
+	if m.coordinator == nil {
+		return nil
+	}
+	return m.coordinator.GetStats(ctx)
+}
+
+// GetCoordinator returns the recovery coordinator for direct access
+func (m *RecoveryManager) GetCoordinator() *RecoveryCoordinator {
+	return m.coordinator
+}
+
+// GetWorkerID returns this worker's unique ID
+func (m *RecoveryManager) GetWorkerID() string {
+	return m.workerID
 }
 
 // Close cleans up resources

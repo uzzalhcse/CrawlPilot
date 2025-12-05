@@ -196,6 +196,8 @@ func main() {
 	// Internal API (for worker → orchestrator communication)
 	internal := api.Group("/internal")
 	internal.Post("/executions/:id/stats", statsHandler.UpdateExecutionStats)
+	// Batch stats endpoint for high-throughput scenarios (10k+ URLs/sec)
+	internal.Post("/stats/batch", statsHandler.BatchUpdateStats)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

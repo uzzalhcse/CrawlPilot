@@ -42,8 +42,12 @@ type ExecutionRepository interface {
 	// UpdateStatus updates execution status
 	UpdateStatus(ctx context.Context, id string, status string) error
 
-	// UpdateStats updates execution statistics
+	// UpdateStats updates execution statistics (single execution)
 	UpdateStats(ctx context.Context, id string, stats ExecutionStats) error
+
+	// BatchUpdateStats updates multiple execution statistics in a single operation
+	// Critical for high-throughput scenarios (10k+ URLs/sec)
+	BatchUpdateStats(ctx context.Context, updates []BatchExecutionStats) error
 
 	// Complete marks an execution as completed
 	Complete(ctx context.Context, id string, status string) error
@@ -63,4 +67,13 @@ type ExecutionStats struct {
 	ItemsExtracted int
 	Errors         int
 	UpdatedAt      time.Time
+}
+
+// BatchExecutionStats holds stats for a single execution in a batch update
+type BatchExecutionStats struct {
+	ExecutionID    string
+	URLsProcessed  int
+	URLsDiscovered int
+	ItemsExtracted int
+	Errors         int
 }

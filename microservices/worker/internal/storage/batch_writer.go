@@ -28,11 +28,13 @@ type BatchWriterConfig struct {
 	FlushTimeout time.Duration // Max time before auto-flush (default: 5s)
 }
 
-// DefaultBatchWriterConfig returns sensible defaults
+// DefaultBatchWriterConfig returns optimized defaults for high throughput
+// At 10k URLs/sec with 1 item/URL = 10k items/sec
+// Buffer of 500 fills in ~50ms, giving ~20 flushes/sec (well within DB capacity)
 func DefaultBatchWriterConfig() BatchWriterConfig {
 	return BatchWriterConfig{
-		BufferSize:   100,
-		FlushTimeout: 5 * time.Second,
+		BufferSize:   500,             // 5x larger for fewer flushes
+		FlushTimeout: 2 * time.Second, // Faster periodic flush
 	}
 }
 
