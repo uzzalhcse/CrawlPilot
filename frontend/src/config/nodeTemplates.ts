@@ -3,9 +3,49 @@ import type { NodeTemplate, NodeCategory } from '@/types'
 export const nodeTemplates: NodeTemplate[] = [
   // URL Discovery Nodes
   {
+    type: 'navigate',
+    label: 'Navigate',
+    description: 'Navigate to a URL',
+    category: 'URL Discovery',
+    defaultParams: {
+      url: '',
+      timeout: 60000,
+      wait_until: 'load'
+    },
+    paramSchema: [
+      {
+        key: 'url',
+        label: 'URL',
+        type: 'text',
+        required: true,
+        placeholder: 'https://example.com or {{current_url}}'
+      },
+      {
+        key: 'timeout',
+        label: 'Timeout (ms)',
+        type: 'number',
+        defaultValue: 60000,
+        description: 'Maximum time to wait for navigation'
+      },
+      {
+        key: 'wait_until',
+        label: 'Wait Until',
+        type: 'select',
+        defaultValue: 'load',
+        options: [
+          { label: 'Load', value: 'load' },
+          { label: 'DOM Content Loaded', value: 'domcontentloaded' },
+          { label: 'Network Idle', value: 'networkidle' }
+        ],
+        description: 'When to consider navigation succeeded'
+      }
+    ]
+  },
+
+  {
     type: 'extract_links',
     label: 'Extract Links',
-    description: 'Extract all links from the page',
+    description: 'Extract all links from the page with marker support',
     category: 'URL Discovery',
     defaultParams: {
       selector: 'a',
@@ -19,14 +59,14 @@ export const nodeTemplates: NodeTemplate[] = [
         type: 'text',
         required: true,
         defaultValue: 'a',
-        placeholder: 'a, .link-class'
+        placeholder: 'a, .link-class, a.product-link'
       },
       {
         key: 'marker',
         label: 'URL Marker/Tag',
         type: 'text',
-        placeholder: 'category',
-        description: 'Tag/marker to assign to discovered URLs (e.g., "product", "category")'
+        placeholder: 'product, category',
+        description: 'Tag/marker to assign to discovered URLs for phase filtering'
       },
       {
         key: 'limit',
@@ -41,16 +81,15 @@ export const nodeTemplates: NodeTemplate[] = [
   {
     type: 'paginate',
     label: 'Paginate',
-    description: 'Navigate through paginated content',
+    description: 'Navigate through paginated content and collect links',
     category: 'URL Discovery',
     defaultParams: {
       selector: '',
-      max_pages: 10,
-      type: 'auto',
-      wait_after: 0,
       link_selector: '',
       marker: '',
-      limit: 0
+      max_pages: 10,
+      wait_between_pages: 1500,
+      timeout: 30000
     },
     paramSchema: [
       {
@@ -58,14 +97,15 @@ export const nodeTemplates: NodeTemplate[] = [
         label: 'Next Button Selector',
         type: 'text',
         required: true,
-        placeholder: '.next-page, a[rel="next"]',
+        placeholder: 'a[aria-label="Next page"], .pagination .next',
         description: 'Selector for the "Next" button to click for pagination'
       },
       {
         key: 'link_selector',
-        label: 'Link Selector',
+        label: 'Item Link Selector',
         type: 'text',
-        placeholder: 'ul.product-list a',
+        required: true,
+        placeholder: 'a.card-header, .product-list a',
         description: 'Selector for product/item links to extract from each page'
       },
       {
@@ -73,37 +113,28 @@ export const nodeTemplates: NodeTemplate[] = [
         label: 'URL Marker/Tag',
         type: 'text',
         placeholder: 'product',
-        description: 'Tag/marker to assign to discovered URLs (e.g., "product", "category")'
-      },
-      {
-        key: 'limit',
-        label: 'Links Limit Per Page',
-        type: 'number',
-        defaultValue: 0,
-        description: 'Max links to extract per page (0 = unlimited)'
-      },
-      {
-        key: 'type',
-        label: 'Pagination Type',
-        type: 'select',
-        defaultValue: 'auto',
-        options: [
-          { label: 'Auto (Next Button)', value: 'auto' },
-          { label: 'Manual (URL Pattern)', value: 'manual' }
-        ]
+        description: 'Tag/marker to assign to discovered URLs for phase filtering'
       },
       {
         key: 'max_pages',
         label: 'Max Pages',
         type: 'number',
-        defaultValue: 10
+        defaultValue: 10,
+        description: 'Maximum number of pages to paginate through'
       },
       {
-        key: 'wait_after',
-        label: 'Wait After Navigation (ms)',
+        key: 'wait_between_pages',
+        label: 'Wait Between Pages (ms)',
         type: 'number',
-        defaultValue: 0,
-        description: 'Time to wait after navigating to next page'
+        defaultValue: 1500,
+        description: 'Time to wait after clicking next before extracting links'
+      },
+      {
+        key: 'timeout',
+        label: 'Timeout (ms)',
+        type: 'number',
+        defaultValue: 30000,
+        description: 'Maximum time to wait for page load'
       }
     ]
   },
@@ -112,13 +143,12 @@ export const nodeTemplates: NodeTemplate[] = [
   {
     type: 'extract',
     label: 'Extract Data',
-    description: 'Extract structured data from the page',
+    description: 'Extract structured data with field-level actions support',
     category: 'Extraction',
     defaultParams: {
       schema: '',
       fields: {},
-      timeout: 10000,
-      limit: 0
+      timeout: 10000
     },
     paramSchema: [
       {
@@ -134,7 +164,7 @@ export const nodeTemplates: NodeTemplate[] = [
         label: 'Field Definitions',
         type: 'field_array',
         required: true,
-        description: 'Define fields to extract from the page. Supports single values, simple arrays, and nested object arrays.',
+        description: 'Define fields to extract. Each field can have pre-extraction actions.',
         arrayItemSchema: [
           {
             key: 'name',
@@ -148,7 +178,7 @@ export const nodeTemplates: NodeTemplate[] = [
             label: 'CSS Selector',
             type: 'text',
             required: true,
-            placeholder: '.product-title, .gallery img, table.specs tr'
+            placeholder: '.product-title, .gallery img'
           },
           {
             key: 'type',
@@ -158,9 +188,7 @@ export const nodeTemplates: NodeTemplate[] = [
             options: [
               { label: 'Text', value: 'text' },
               { label: 'Attribute', value: 'attr' },
-              { label: 'HTML', value: 'html' },
-              { label: 'Href', value: 'href' },
-              { label: 'Src', value: 'src' }
+              { label: 'HTML', value: 'html' }
             ]
           },
           {
@@ -168,7 +196,7 @@ export const nodeTemplates: NodeTemplate[] = [
             label: 'Attribute Name',
             type: 'text',
             placeholder: 'src, href, data-id, alt',
-            description: 'Required for "attr" type - specify which HTML attribute to extract'
+            description: 'Required for "attr" type'
           },
           {
             key: 'multiple',
@@ -176,20 +204,6 @@ export const nodeTemplates: NodeTemplate[] = [
             type: 'boolean',
             defaultValue: false,
             description: 'Extract array of values instead of single value'
-          },
-          {
-            key: 'required',
-            label: 'Required Field',
-            type: 'boolean',
-            defaultValue: true,
-            description: 'Mark this field as required. Missing required fields will cause health check failure, while missing optional fields only trigger warnings.'
-          },
-          {
-            key: 'limit',
-            label: 'Array Limit',
-            type: 'number',
-            defaultValue: 0,
-            description: 'Max items in array (0 = unlimited). Only applies when "multiple" is enabled'
           },
           {
             key: 'transform',
@@ -201,30 +215,22 @@ export const nodeTemplates: NodeTemplate[] = [
               { label: 'Trim', value: 'trim' },
               { label: 'Clean HTML', value: 'clean_html' },
               { label: 'Lowercase', value: 'lowercase' },
-              { label: 'Uppercase', value: 'uppercase' },
-              { label: 'Extract Price', value: 'extract_price' }
+              { label: 'Uppercase', value: 'uppercase' }
             ]
           },
           {
-            key: 'default_value',
+            key: 'default',
             label: 'Default Value',
             type: 'text',
             placeholder: 'N/A, 0, []',
             description: 'Value to use if extraction fails'
           },
           {
-            key: 'fields',
-            label: 'Nested Fields (for object arrays)',
+            key: 'actions',
+            label: 'Pre-Extraction Actions',
             type: 'textarea',
-            placeholder: '{\n  "key": {"selector": "th", "type": "text"},\n  "value": {"selector": "td", "type": "text"}\n}',
-            description: 'JSON object defining nested fields. Only used when "multiple" is true for extracting array of objects'
-          },
-          {
-            key: 'extractions',
-            label: 'Independent Array Extractions',
-            type: 'textarea',
-            placeholder: '[\n  {\n    "key_selector": ".spec-label",\n    "value_selector": ".spec-value",\n    "key_type": "text",\n    "value_type": "text",\n    "transform": "trim"\n  }\n]',
-            description: 'JSON array for extracting key-value pairs from independent selectors (not nested). Use this when keys and values are in separate lists that need to be paired by index.'
+            placeholder: '[\n  {\n    "id": "wait_for_price",\n    "type": "wait_for",\n    "name": "Wait for Price",\n    "params": {\n      "condition": "selector",\n      "selector": ".price",\n      "timeout": 5000\n    }\n  }\n]',
+            description: 'JSON array of action nodes to execute before extracting this field'
           }
         ]
       },
@@ -234,13 +240,6 @@ export const nodeTemplates: NodeTemplate[] = [
         type: 'number',
         defaultValue: 10000,
         description: 'Maximum time to wait for extraction'
-      },
-      {
-        key: 'limit',
-        label: 'Item Limit',
-        type: 'number',
-        defaultValue: 0,
-        description: 'Maximum number of items to extract (0 = unlimited)'
       }
     ]
   },
@@ -272,6 +271,7 @@ export const nodeTemplates: NodeTemplate[] = [
       }
     ]
   },
+
   {
     type: 'extractField',
     label: 'Extraction Field',
@@ -285,48 +285,18 @@ export const nodeTemplates: NodeTemplate[] = [
       limit: 0,
       default_value: ''
     },
-    paramSchema: [] // Schema handled by custom form in PropertiesPanel
+    paramSchema: []
   },
 
   // Interaction Nodes
-  {
-    type: 'navigate',
-    label: 'Navigate',
-    description: 'Navigate to a URL',
-    category: 'URL Discovery',
-    defaultParams: {
-      url: '',
-      wait_until: 'load'
-    },
-    paramSchema: [
-      {
-        key: 'url',
-        label: 'URL',
-        type: 'text',
-        required: true,
-        placeholder: 'https://example.com'
-      },
-      {
-        key: 'wait_until',
-        label: 'Wait Until',
-        type: 'select',
-        defaultValue: 'load',
-        options: [
-          { label: 'Load', value: 'load' },
-          { label: 'DOM Content Loaded', value: 'domcontentloaded' },
-          { label: 'Network Idle', value: 'networkidle' }
-        ],
-        description: 'When to consider navigation succeeded'
-      }
-    ]
-  },
   {
     type: 'click',
     label: 'Click Element',
     description: 'Click on an element',
     category: 'Interaction',
     defaultParams: {
-      selector: ''
+      selector: '',
+      wait_after: 0
     },
     paramSchema: [
       {
@@ -334,45 +304,78 @@ export const nodeTemplates: NodeTemplate[] = [
         label: 'CSS Selector',
         type: 'text',
         required: true,
-        placeholder: 'button.load-more'
+        placeholder: 'button.load-more, .show-details'
+      },
+      {
+        key: 'wait_after',
+        label: 'Wait After Click (ms)',
+        type: 'number',
+        defaultValue: 0,
+        description: 'Time to wait after clicking'
       }
     ]
   },
+
   {
     type: 'scroll',
     label: 'Scroll',
-    description: 'Scroll the page by coordinates',
+    description: 'Scroll the page or to a specific element',
     category: 'Interaction',
     defaultParams: {
+      selector: '',
       x: 0,
-      y: 1000
+      y: 0,
+      to_bottom: false,
+      wait_after: 500
     },
     paramSchema: [
+      {
+        key: 'selector',
+        label: 'Scroll to Element (Optional)',
+        type: 'text',
+        placeholder: '.specs-section, #footer',
+        description: 'Scroll to a specific element (overrides x/y)'
+      },
+      {
+        key: 'to_bottom',
+        label: 'Scroll to Bottom',
+        type: 'boolean',
+        defaultValue: false,
+        description: 'Scroll to the bottom of the page'
+      },
       {
         key: 'x',
         label: 'Horizontal Scroll (px)',
         type: 'number',
         defaultValue: 0,
-        description: 'Pixels to scroll horizontally (positive = right, negative = left)'
+        description: 'Pixels to scroll horizontally'
       },
       {
         key: 'y',
         label: 'Vertical Scroll (px)',
         type: 'number',
-        defaultValue: 1000,
-        description: 'Pixels to scroll vertically (positive = down, negative = up)'
+        defaultValue: 0,
+        description: 'Pixels to scroll vertically'
+      },
+      {
+        key: 'wait_after',
+        label: 'Wait After Scroll (ms)',
+        type: 'number',
+        defaultValue: 500,
+        description: 'Time to wait after scrolling'
       }
     ]
   },
+
   {
     type: 'type',
     label: 'Type Text',
-    description: 'Type text into an input field',
+    description: 'Type text into an input field (simulates keystrokes)',
     category: 'Interaction',
     defaultParams: {
       selector: '',
       text: '',
-      delay: 0
+      clear: false
     },
     paramSchema: [
       {
@@ -390,21 +393,23 @@ export const nodeTemplates: NodeTemplate[] = [
         placeholder: 'Search query'
       },
       {
-        key: 'delay',
-        label: 'Delay Between Keys (ms)',
-        type: 'number',
-        defaultValue: 0,
-        description: 'Delay between keystrokes to simulate human typing'
+        key: 'clear',
+        label: 'Clear Existing Text',
+        type: 'boolean',
+        defaultValue: false,
+        description: 'Clear field before typing'
       }
     ]
   },
+
   {
-    type: 'hover',
-    label: 'Hover Element',
-    description: 'Hover over an element',
+    type: 'input',
+    label: 'Fill Input',
+    description: 'Fill input directly (faster than type)',
     category: 'Interaction',
     defaultParams: {
-      selector: ''
+      selector: '',
+      value: ''
     },
     paramSchema: [
       {
@@ -412,35 +417,98 @@ export const nodeTemplates: NodeTemplate[] = [
         label: 'CSS Selector',
         type: 'text',
         required: true,
-        placeholder: '.menu-item'
+        placeholder: 'input[name="email"]'
+      },
+      {
+        key: 'value',
+        label: 'Value',
+        type: 'text',
+        required: true,
+        placeholder: 'user@email.com'
       }
     ]
   },
+
   {
-    type: 'wait',
-    label: 'Wait',
-    description: 'Wait for specified duration or element',
+    type: 'hover',
+    label: 'Hover Element',
+    description: 'Hover over an element (for tooltips, dropdowns)',
     category: 'Interaction',
     defaultParams: {
-      duration: 1000,
       selector: '',
-      state: 'visible',
-      timeout: 5000
+      wait_after: 300
+    },
+    paramSchema: [
+      {
+        key: 'selector',
+        label: 'CSS Selector',
+        type: 'text',
+        required: true,
+        placeholder: '.menu-item, .info-icon'
+      },
+      {
+        key: 'wait_after',
+        label: 'Wait After Hover (ms)',
+        type: 'number',
+        defaultValue: 300,
+        description: 'Time to wait after hovering'
+      }
+    ]
+  },
+
+  {
+    type: 'wait',
+    label: 'Wait (Duration)',
+    description: 'Wait for a specified duration',
+    category: 'Interaction',
+    defaultParams: {
+      duration: 1000
     },
     paramSchema: [
       {
         key: 'duration',
         label: 'Duration (ms)',
         type: 'number',
+        required: true,
         defaultValue: 1000,
-        description: 'Time to wait (leave empty if waiting for selector)'
+        description: 'Time to wait in milliseconds'
+      }
+    ]
+  },
+
+  {
+    type: 'wait_for',
+    label: 'Wait For Condition',
+    description: 'Wait for selector, text, or network idle',
+    category: 'Interaction',
+    defaultParams: {
+      condition: 'selector',
+      selector: '',
+      state: 'visible',
+      timeout: 30000
+    },
+    paramSchema: [
+      {
+        key: 'condition',
+        label: 'Condition Type',
+        type: 'select',
+        required: true,
+        defaultValue: 'selector',
+        options: [
+          { label: 'Selector', value: 'selector' },
+          { label: 'Text on Page', value: 'text' },
+          { label: 'Network Idle', value: 'network_idle' },
+          { label: 'Page Load', value: 'load' },
+          { label: 'DOM Content Loaded', value: 'domcontentloaded' },
+          { label: 'URL Pattern', value: 'url' }
+        ]
       },
       {
         key: 'selector',
-        label: 'CSS Selector (Optional)',
+        label: 'CSS Selector',
         type: 'text',
-        placeholder: '.dynamic-content',
-        description: 'Wait for this element to appear (overrides duration)'
+        placeholder: '.product-price, #content',
+        description: 'Required for "selector" condition'
       },
       {
         key: 'state',
@@ -450,16 +518,31 @@ export const nodeTemplates: NodeTemplate[] = [
         options: [
           { label: 'Visible', value: 'visible' },
           { label: 'Hidden', value: 'hidden' },
-          { label: 'Attached', value: 'attached' }
+          { label: 'Attached (in DOM)', value: 'attached' },
+          { label: 'Detached', value: 'detached' }
         ],
-        description: 'Only applies when waiting for selector'
+        description: 'Only applies to "selector" condition'
+      },
+      {
+        key: 'text',
+        label: 'Text to Find',
+        type: 'text',
+        placeholder: 'Loading complete',
+        description: 'Required for "text" condition'
+      },
+      {
+        key: 'url',
+        label: 'URL Pattern',
+        type: 'text',
+        placeholder: '**/success**',
+        description: 'Required for "url" condition'
       },
       {
         key: 'timeout',
         label: 'Timeout (ms)',
         type: 'number',
-        defaultValue: 5000,
-        description: 'Max time to wait for selector (only applies when selector is set)'
+        defaultValue: 30000,
+        description: 'Maximum time to wait'
       }
     ]
   },
@@ -471,112 +554,199 @@ export const nodeTemplates: NodeTemplate[] = [
     category: 'Interaction',
     defaultParams: {
       selector: '',
-      filename: '',
-      path: 'screenshots',
-      full_page: true
+      full_page: false,
+      save_as_item: true,
+      save_to_disk: ''
     },
     paramSchema: [
       {
         key: 'selector',
-        label: 'CSS Selector (Optional)',
+        label: 'Element Selector (Optional)',
         type: 'text',
         placeholder: '.product-image, #main-content',
-        description: 'Capture specific element (leave empty for full page)'
-      },
-      {
-        key: 'filename',
-        label: 'Filename',
-        type: 'text',
-        placeholder: 'product_screenshot.png',
-        description: 'Screenshot filename (auto-generated if empty)'
-      },
-      {
-        key: 'path',
-        label: 'Directory Path',
-        type: 'text',
-        defaultValue: 'screenshots',
-        placeholder: 'screenshots, evidence/errors',
-        description: 'Directory to save screenshot'
+        description: 'Capture specific element (leave empty for page)'
       },
       {
         key: 'full_page',
         label: 'Full Page Screenshot',
         type: 'boolean',
+        defaultValue: false,
+        description: 'Capture entire scrollable page'
+      },
+      {
+        key: 'save_as_item',
+        label: 'Save as Extracted Item',
+        type: 'boolean',
         defaultValue: true,
-        description: 'Capture entire scrollable page (only for full page, not element)'
+        description: 'Store screenshot data in extracted items (base64)'
+      },
+      {
+        key: 'save_to_disk',
+        label: 'Save to Disk Path',
+        type: 'text',
+        placeholder: './screenshots',
+        description: 'Directory to save screenshot as PNG file'
       }
     ]
   },
 
   {
-    type: 'sequence',
-    label: 'Sequence',
-    description: 'Execute multiple nodes in order (for complex interactions)',
-    category: 'Control Flow',
+    type: 'infinite_scroll',
+    label: 'Infinite Scroll',
+    description: 'Scroll to load all lazy-loaded content',
+    category: 'Interaction',
     defaultParams: {
-      steps: []
+      max_scrolls: 10,
+      wait_between: 1000,
+      end_selector: ''
     },
     paramSchema: [
       {
-        key: 'steps',
-        label: 'Execution Steps',
-        type: 'sequence_steps',
-        required: true,
-        description: 'Define a sequence of actions to execute in order',
-        arrayItemSchema: [
-          {
-            key: 'type',
-            label: 'Node Type',
-            type: 'select',
-            required: true,
-            options: [
-              { label: 'Click', value: 'click' },
-              { label: 'Hover', value: 'hover' },
-              { label: 'Scroll', value: 'scroll' },
-              { label: 'Type', value: 'type' },
-              { label: 'Wait', value: 'wait' },
-              { label: 'Extract', value: 'extract' },
-              { label: 'Navigate', value: 'navigate' }
-            ]
-          },
-          {
-            key: 'params',
-            label: 'Parameters (JSON)',
-            type: 'textarea',
-            required: true,
-            placeholder: '{\n  "selector": ".button",\n  "timeout": 5000\n}',
-            description: 'JSON object with parameters for this step'
-          },
-          {
-            key: 'optional',
-            label: 'Optional Step',
-            type: 'boolean',
-            defaultValue: false,
-            description: 'Continue execution even if this step fails'
-          }
-        ]
+        key: 'max_scrolls',
+        label: 'Max Scrolls',
+        type: 'number',
+        defaultValue: 10,
+        description: 'Maximum number of scroll iterations'
+      },
+      {
+        key: 'wait_between',
+        label: 'Wait Between Scrolls (ms)',
+        type: 'number',
+        defaultValue: 1000,
+        description: 'Time to wait between scrolls for content to load'
+      },
+      {
+        key: 'end_selector',
+        label: 'End Marker Selector',
+        type: 'text',
+        placeholder: '.no-more-items, #end-of-list',
+        description: 'Stop scrolling when this element appears'
       }
     ]
   },
+
+  // Control Flow Nodes
   {
     type: 'conditional',
     label: 'Conditional',
-    description: 'Execute based on condition',
+    description: 'Execute different nodes based on condition',
     category: 'Control Flow',
     defaultParams: {
-      condition: ''
+      condition: 'exists',
+      selector: '',
+      value: ''
     },
     paramSchema: [
       {
         key: 'condition',
-        label: 'Condition',
+        label: 'Condition Type',
+        type: 'select',
+        required: true,
+        defaultValue: 'exists',
+        options: [
+          { label: 'Element Exists', value: 'exists' },
+          { label: 'Element Not Exists', value: 'not_exists' },
+          { label: 'Element Visible', value: 'visible' },
+          { label: 'Text Contains', value: 'contains' },
+          { label: 'Text Equals', value: 'equals' },
+          { label: 'Text Matches (Regex)', value: 'matches' },
+          { label: 'Count Greater Than', value: 'count_gt' },
+          { label: 'Count Less Than', value: 'count_lt' }
+        ]
+      },
+      {
+        key: 'selector',
+        label: 'CSS Selector',
         type: 'text',
         required: true,
-        placeholder: 'data.price > 100'
+        placeholder: '.out-of-stock, .error-message'
+      },
+      {
+        key: 'value',
+        label: 'Value (for text/count conditions)',
+        type: 'text',
+        placeholder: 'Out of Stock, 5',
+        description: 'Text to compare or count threshold'
+      },
+      {
+        key: 'then',
+        label: 'Then (if true)',
+        type: 'textarea',
+        placeholder: '[\n  {"type": "click", "params": {"selector": ".retry"}}\n]',
+        description: 'JSON array of nodes to execute if condition is true'
+      },
+      {
+        key: 'else',
+        label: 'Else (if false)',
+        type: 'textarea',
+        placeholder: '[\n  {"type": "wait", "params": {"duration": 1000}}\n]',
+        description: 'JSON array of nodes to execute if condition is false'
       }
     ]
   },
 
+  {
+    type: 'loop',
+    label: 'Loop',
+    description: 'Iterate over elements and execute child nodes',
+    category: 'Control Flow',
+    defaultParams: {
+      selector: '',
+      max_iterations: 100
+    },
+    paramSchema: [
+      {
+        key: 'selector',
+        label: 'Element Selector',
+        type: 'text',
+        required: true,
+        placeholder: '.product-card, tr.item',
+        description: 'Selector for elements to iterate over'
+      },
+      {
+        key: 'max_iterations',
+        label: 'Max Iterations',
+        type: 'number',
+        defaultValue: 100,
+        description: 'Maximum number of iterations'
+      },
+      {
+        key: 'nodes',
+        label: 'Child Nodes',
+        type: 'textarea',
+        placeholder: '[\n  {"type": "click", "params": {"selector": ".expand"}}\n]',
+        description: 'JSON array of nodes to execute for each element'
+      }
+    ]
+  },
+
+  {
+    type: 'script',
+    label: 'Custom Script',
+    description: 'Execute custom JavaScript on the page',
+    category: 'Control Flow',
+    defaultParams: {
+      code: '',
+      store_as: ''
+    },
+    paramSchema: [
+      {
+        key: 'code',
+        label: 'JavaScript Code',
+        type: 'textarea',
+        required: true,
+        placeholder: 'return document.title;',
+        description: 'JavaScript code to execute in the browser context'
+      },
+      {
+        key: 'store_as',
+        label: 'Store Result As',
+        type: 'text',
+        placeholder: 'page_title',
+        description: 'Variable name to store the result'
+      }
+    ]
+  }
 ]
 
 export const nodeCategories: NodeCategory[] = [
@@ -595,7 +765,6 @@ export const nodeCategories: NodeCategory[] = [
     icon: 'MousePointer',
     nodes: nodeTemplates.filter(n => n.category === 'Interaction')
   },
-
   {
     name: 'Control Flow',
     icon: 'GitBranch',

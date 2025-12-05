@@ -7,6 +7,7 @@ import { Copy, Trash2, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import FieldInput from './FieldInput.vue'
 import SelectInput from './SelectInput.vue'
 import IndependentArrayManager from './IndependentArrayManager.vue'
+import FieldActionsManager from './FieldActionsManager.vue'
 
 interface ParamField {
   key: string
@@ -112,6 +113,20 @@ const badges = computed(() => {
     result.push({ label: `🔗 K-V Pairs (${count})`, color: 'green' })
   }
   
+  // Show actions badge if field has pre-extraction actions
+  if (props.fieldData.actions) {
+    let count = 0
+    try {
+      const actions = typeof props.fieldData.actions === 'string' 
+        ? JSON.parse(props.fieldData.actions) 
+        : props.fieldData.actions
+      count = Array.isArray(actions) ? actions.length : 0
+    } catch { count = 0 }
+    if (count > 0) {
+      result.push({ label: `⚡ ${count} Actions`, color: 'amber' })
+    }
+  }
+  
   return result
 })
 </script>
@@ -146,7 +161,8 @@ const badges = computed(() => {
           :class="{
             'bg-purple-100 text-purple-700 border-purple-300': badge.color === 'purple',
             'bg-blue-100 text-blue-700 border-blue-300': badge.color === 'blue',
-            'bg-green-100 text-green-700 border-green-300': badge.color === 'green'
+            'bg-green-100 text-green-700 border-green-300': badge.color === 'green',
+            'bg-amber-100 text-amber-700 border-amber-300': badge.color === 'amber'
           }"
         >
           {{ badge.label }}
@@ -407,6 +423,14 @@ const badges = computed(() => {
         <IndependentArrayManager
           :model-value="fieldData[field.key] || []"
           @update:model-value="updateField(field.key, $event)"
+        />
+      </div>
+
+      <!-- Pre-Extraction Actions (Visual Editor) -->
+      <div class="pt-3 border-t border-border">
+        <FieldActionsManager
+          :model-value="fieldData['actions']"
+          @update:model-value="updateField('actions', $event)"
         />
       </div>
     </div>

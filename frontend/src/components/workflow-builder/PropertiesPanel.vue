@@ -23,6 +23,7 @@ import NodeBasicInfo from './config-forms/NodeBasicInfo.vue'
 import SimpleParamForm from './config-forms/SimpleParamForm.vue'
 import FieldArrayManager from './config-forms/FieldArrayManager.vue'
 import IndependentArrayManager from './config-forms/IndependentArrayManager.vue'
+import FieldActionsManager from './config-forms/FieldActionsManager.vue'
 // ExtractionBuilder removed - fields are now managed as canvas nodes
 
 // Visual Selector API
@@ -616,6 +617,14 @@ function closeVisualSelector() {
                      @update:model-value="localNode.data.params.extractions = $event"
                    />
                  </div>
+
+                 <Separator class="my-4" />
+
+                 <!-- Pre-Extraction Actions -->
+                 <FieldActionsManager
+                   :model-value="localNode.data.params.actions || []"
+                   @update:model-value="localNode.data.params.actions = $event"
+                 />
               </div>
 
               <!-- Extract Node - Visual Selector Only (TOP) -->
