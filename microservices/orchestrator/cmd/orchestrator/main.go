@@ -39,12 +39,17 @@ func main() {
 		logger.Fatal("Failed to load config", zap.Error(err))
 	}
 
+	ctx := context.Background()
+
 	// Initialize database
 	db, err := database.NewDB(&cfg.Database)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer db.Close()
+
+	// Ensure extracted_items partitions exist for current date range
+	ensurePartitions(ctx, db)
 
 	// Initialize Redis cache
 	redisCache, err := cache.NewCache(&cfg.Redis)
@@ -55,7 +60,6 @@ func main() {
 	}
 
 	// Initialize Pub/Sub client
-	ctx := context.Background()
 	pubsubClient, err := queue.NewPubSubClient(ctx, &cfg.GCP)
 	if err != nil {
 		logger.Fatal("Failed to initialize Pub/Sub client", zap.Error(err))
@@ -127,6 +131,10 @@ func main() {
 	executionHandler := handlers.NewExecutionHandler(executionSvc)
 	statsHandler := handlers.NewStatsHandler(executionRepo)
 
+	// Initialize recovery config repository and handler
+	configRepo := repository.NewSystemConfigRepository(db)
+	recoveryHandler := handlers.NewRecoveryHandler(configRepo)
+
 	// API routes
 	api := app.Group("/api/v1")
 
@@ -145,6 +153,45 @@ func main() {
 	executions := api.Group("/executions")
 	executions.Get("/:id", executionHandler.GetExecution)
 	executions.Delete("/:id", executionHandler.StopExecution)
+
+	// Recovery system routes (frontend-manageable)
+	recovery := api.Group("/recovery")
+
+	// System configuration (sliding window, AI settings, etc.)
+	recovery.Get("/config", recoveryHandler.GetAllConfigs)
+	recovery.Put("/config", recoveryHandler.UpdateMultipleConfigs)
+	recovery.Get("/config/:category", recoveryHandler.GetConfigsByCategory)
+	recovery.Put("/config/item/:key", recoveryHandler.UpdateConfig)
+
+	// Recovery rules (CRUD)
+	recovery.Get("/rules", recoveryHandler.GetAllRules)
+	recovery.Post("/rules", recoveryHandler.CreateRule)
+	recovery.Get("/rules/:id", recoveryHandler.GetRule)
+	recovery.Put("/rules/:id", recoveryHandler.UpdateRule)
+	recovery.Delete("/rules/:id", recoveryHandler.DeleteRule)
+	recovery.Patch("/rules/:id/toggle", recoveryHandler.ToggleRule)
+
+	// Proxies (CRUD)
+	recovery.Get("/proxies", recoveryHandler.GetAllProxies)
+	recovery.Post("/proxies", recoveryHandler.CreateProxy)
+	recovery.Get("/proxies/stats", recoveryHandler.GetProxyStats)
+	recovery.Put("/proxies/:id", recoveryHandler.UpdateProxy)
+	recovery.Delete("/proxies/:id", recoveryHandler.DeleteProxy)
+	recovery.Patch("/proxies/:id/toggle", recoveryHandler.ToggleProxy)
+
+	// Initialize incident repository and handler
+	incidentRepo := repository.NewIncidentRepository(db)
+	incidentHandler := handlers.NewIncidentHandler(incidentRepo)
+
+	// Incident routes (human investigation dashboard)
+	incidents := api.Group("/incidents")
+	incidents.Get("/", incidentHandler.GetAllIncidents)       // List with filters
+	incidents.Get("/stats", incidentHandler.GetIncidentStats) // Dashboard stats
+	incidents.Get("/domains", incidentHandler.GetDomainStats) // Domain breakdown
+	incidents.Get("/:id", incidentHandler.GetIncident)        // Full details
+	incidents.Patch("/:id/status", incidentHandler.UpdateIncidentStatus)
+	incidents.Patch("/:id/assign", incidentHandler.AssignIncident)
+	incidents.Post("/:id/resolve", incidentHandler.ResolveIncident)
 
 	// Internal API (for worker → orchestrator communication)
 	internal := api.Group("/internal")
@@ -172,4 +219,19 @@ func main() {
 	if err := app.Listen(addr); err != nil {
 		logger.Fatal("Failed to start server", zap.Error(err))
 	}
+}
+
+// ensurePartitions creates partitions for extracted_items table
+// This runs on startup to ensure partitions exist for current + next 7 days
+func ensurePartitions(ctx context.Context, db *database.DB) {
+	query := `SELECT create_extracted_items_partition()`
+
+	_, err := db.Pool.Exec(ctx, query)
+	if err != nil {
+		// Log warning but don't fail startup - function might not exist
+		logger.Warn("Failed to create partitions (function may not exist)", zap.Error(err))
+		return
+	}
+
+	logger.Info("Ensured extracted_items partitions exist for next 7 days")
 }

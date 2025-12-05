@@ -75,6 +75,10 @@ type Task struct {
 	PhaseConfig WorkflowPhase          `json:"phase_config"` // Full phase config with nodes
 	Metadata    map[string]interface{} `json:"metadata"`
 	RetryCount  int                    `json:"retry_count"`
+
+	// Proxy settings (populated by recovery system)
+	ProxyURL string `json:"proxy_url,omitempty"` // Full proxy URL with auth
+	ProxyID  string `json:"proxy_id,omitempty"`  // Proxy ID for tracking
 }
 
 // ExtractedItem represents extracted data

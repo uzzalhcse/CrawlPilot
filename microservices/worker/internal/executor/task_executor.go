@@ -16,6 +16,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/dedup"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/nodes"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/recovery"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/reporter"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/storage"
 	"go.uber.org/zap"
@@ -23,14 +24,15 @@ import (
 
 // TaskExecutor handles execution of individual tasks
 type TaskExecutor struct {
-	browserPool   *browser.Pool
-	nodeRegistry  *nodes.Registry
-	pubsubClient  *queue.PubSubClient
-	gcsClient     *storage.GCSClient
-	batchWriter   *storage.BatchWriter // Primary storage: async batch writes to DB
-	deduplicator  *dedup.URLDeduplicator
-	statsReporter *reporter.StatsReporter
-	retryConfig   RetryConfig // Retry configuration for transient failures
+	browserPool     *browser.Pool
+	nodeRegistry    *nodes.Registry
+	pubsubClient    *queue.PubSubClient
+	gcsClient       *storage.GCSClient
+	batchWriter     *storage.BatchWriter // Primary storage: async batch writes to DB
+	deduplicator    *dedup.URLDeduplicator
+	statsReporter   *reporter.StatsReporter
+	retryConfig     RetryConfig               // Retry configuration for transient failures
+	recoveryManager *recovery.RecoveryManager // AI-powered error recovery
 }
 
 // NewTaskExecutor creates a new task executor
@@ -81,21 +83,35 @@ func NewTaskExecutor(
 	// Initialize stats reporter
 	statsReporter := reporter.NewStatsReporter(orchestratorURL)
 
+	// Initialize recovery manager for smart error recovery
+	var recoveryManager *recovery.RecoveryManager
+	if db != nil && redisCache != nil {
+		recoveryConfig := recovery.DefaultManagerConfig()
+		rm, err := recovery.NewRecoveryManager(db.Pool, redisCache, pubsubClient, recoveryConfig)
+		if err != nil {
+			logger.Warn("Failed to initialize recovery manager", zap.Error(err))
+		} else {
+			recoveryManager = rm
+		}
+	}
+
 	logger.Info("Task executor initialized",
 		zap.Int("registered_nodes", len(nodeRegistry.List())),
 		zap.Bool("gcs_archive_enabled", gcsClient != nil),
 		zap.Bool("batch_writer_enabled", batchWriter != nil),
+		zap.Bool("recovery_enabled", recoveryManager != nil),
 	)
 
 	return &TaskExecutor{
-		browserPool:   browserPool,
-		nodeRegistry:  nodeRegistry,
-		pubsubClient:  pubsubClient,
-		gcsClient:     gcsClient,
-		batchWriter:   batchWriter,
-		deduplicator:  deduplicator,
-		statsReporter: statsReporter,
-		retryConfig:   DefaultRetryConfig(),
+		browserPool:     browserPool,
+		nodeRegistry:    nodeRegistry,
+		pubsubClient:    pubsubClient,
+		gcsClient:       gcsClient,
+		batchWriter:     batchWriter,
+		deduplicator:    deduplicator,
+		statsReporter:   statsReporter,
+		retryConfig:     DefaultRetryConfig(),
+		recoveryManager: recoveryManager,
 	}, nil
 }
 
@@ -133,14 +149,38 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		return nil
 	}
 
-	// Acquire browser context
-	browserCtx, err := e.browserPool.Acquire(ctx)
+	// Acquire browser context (with proxy if specified from recovery)
+	var browserCtx playwright.BrowserContext
+	var proxyContext bool
+
+	if task.ProxyURL != "" {
+		// Create a new context with proxy (for recovery retries)
+		proxyConfig := &browser.ProxyConfig{
+			Server: task.ProxyURL,
+		}
+		browserCtx, err = e.browserPool.CreateContextWithProxy(proxyConfig)
+		proxyContext = true
+		logger.Info("Using proxy for retry",
+			zap.String("task_id", task.TaskID),
+			zap.String("proxy_id", task.ProxyID),
+		)
+	} else {
+		// Use pooled context (normal case)
+		browserCtx, err = e.browserPool.Acquire(ctx)
+	}
+
 	if err != nil {
 		taskStats.Record(0, 0, 1)
 		e.reportStats(ctx, task.ExecutionID, taskStats)
 		return fmt.Errorf("failed to acquire browser context: %w", err)
 	}
-	defer e.browserPool.Release(browserCtx)
+
+	if proxyContext {
+		// Proxy contexts need to be closed, not returned to pool
+		defer browserCtx.Close()
+	} else {
+		defer e.browserPool.Release(browserCtx)
+	}
 
 	// Create new page
 	page, err := browserCtx.NewPage()
@@ -161,9 +201,107 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		taskStats.Record(0, 0, 1)
 		e.reportStats(ctx, task.ExecutionID, taskStats)
 
-		// Send to Dead Letter Queue if max retries exceeded
+		// Try smart recovery (if enabled and thresholds met)
+		if e.recoveryManager != nil {
+			plan, recoverErr := e.recoveryManager.TryRecover(ctx, task.TaskID, task.ExecutionID, task.URL, err, "")
+			if recoverErr != nil {
+				logger.Warn("Recovery attempt failed", zap.Error(recoverErr))
+			} else if plan != nil {
+				logger.Info("Recovery plan generated",
+					zap.String("action", string(plan.Action)),
+					zap.String("source", plan.Source),
+					zap.String("reason", plan.Reason),
+				)
+
+				// Execute the recovery plan
+				if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
+					logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
+				}
+
+				// Handle based on recovery action
+				if plan.Action == recovery.ActionSendToDLQ {
+					// Recovery determined this is a permanent failure
+					if e.pubsubClient != nil {
+						if dlqErr := e.pubsubClient.PublishToDLQ(ctx, task, plan.Reason); dlqErr != nil {
+							logger.Error("Failed to publish to DLQ",
+								zap.String("task_id", task.TaskID),
+								zap.Error(dlqErr),
+							)
+						}
+					}
+					e.recoveryManager.ClearHistory(task.TaskID)
+					return fmt.Errorf("recovery sent to DLQ: %s", plan.Reason)
+				}
+
+				if plan.ShouldRetry {
+					// Apply retry delay if specified
+					if plan.RetryDelay > 0 {
+						time.Sleep(plan.RetryDelay)
+					}
+
+					// If proxy was switched, update task with new proxy info
+					if plan.Action == recovery.ActionSwitchProxy {
+						if proxyURL, ok := plan.Params["proxy_url"].(string); ok {
+							task.ProxyURL = proxyURL
+						}
+						if proxyID, ok := plan.Params["proxy_id"].(string); ok {
+							task.ProxyID = proxyID
+						}
+						logger.Info("Retrying with new proxy",
+							zap.String("task_id", task.TaskID),
+							zap.String("proxy_id", task.ProxyID),
+						)
+					}
+
+					// Republish task with updated info (proxy, retry count)
+					task.RetryCount++
+					if e.pubsubClient != nil {
+						if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
+							logger.Error("Failed to republish task for retry", zap.Error(pubErr))
+							return fmt.Errorf("recovery action %s: %s", plan.Action, plan.Reason)
+						}
+						// Successfully republished - return nil to ack original message
+						return nil
+					}
+
+					// No pubsub client - return error for manual retry
+					return fmt.Errorf("recovery action %s: %s", plan.Action, plan.Reason)
+				}
+			}
+		}
+
+		// Record proxy failure if proxy was used
+		if task.ProxyID != "" && e.recoveryManager != nil {
+			domain := extractDomain(task.URL)
+			if err := e.recoveryManager.RecordProxyFailure(ctx, task.ProxyID, domain, recovery.PatternUnknown); err != nil {
+				logger.Warn("Failed to record proxy failure", zap.Error(err))
+			}
+		}
+
+		// Fallback: Send to Dead Letter Queue if max retries exceeded
 		// This captures permanently failed tasks for analysis/debugging
 		if task.RetryCount >= e.retryConfig.MaxRetries && e.pubsubClient != nil {
+			// Create incident report for human investigation
+			if e.recoveryManager != nil {
+				incident, incErr := e.recoveryManager.CreateIncident(
+					ctx,
+					task.TaskID, task.ExecutionID, task.WorkflowID, task.URL,
+					nil, // detected error (not available here)
+					"",  // AI reasoning
+					"All automated recovery attempts exhausted", // AI failure reason
+					nil, // page snapshot (not captured here)
+				)
+				if incErr != nil {
+					logger.Warn("Failed to create incident", zap.Error(incErr))
+				} else if incident != nil {
+					logger.Info("Incident created for human investigation",
+						zap.String("incident_id", incident.ID),
+						zap.String("task_id", task.TaskID),
+						zap.String("priority", string(incident.Priority)),
+					)
+				}
+			}
+
 			if dlqErr := e.pubsubClient.PublishToDLQ(ctx, task, err.Error()); dlqErr != nil {
 				logger.Error("Failed to publish to DLQ",
 					zap.String("task_id", task.TaskID),
@@ -173,6 +311,20 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		}
 
 		return fmt.Errorf("phase execution failed: %w", err)
+	}
+
+	// Record success for error rate tracking
+	if e.recoveryManager != nil {
+		e.recoveryManager.RecordSuccess(ctx, task.URL)
+		e.recoveryManager.ClearHistory(task.TaskID)
+
+		// Record proxy success if proxy was used
+		if task.ProxyID != "" {
+			domain := extractDomain(task.URL)
+			if err := e.recoveryManager.RecordProxySuccess(ctx, task.ProxyID, domain); err != nil {
+				logger.Warn("Failed to record proxy success", zap.Error(err))
+			}
+		}
 	}
 
 	// Save extracted items: DB (primary) + optional GCS (archive)
@@ -497,8 +649,36 @@ func (e *TaskExecutor) Close() error {
 		e.gcsClient.Close()
 	}
 
+	if e.recoveryManager != nil {
+		e.recoveryManager.Close()
+	}
+
 	if e.browserPool != nil {
 		return e.browserPool.Close()
 	}
 	return nil
+}
+
+// extractDomain extracts the domain from a URL
+func extractDomain(url string) string {
+	// Simple extraction - could use net/url for more robust parsing
+	if len(url) > 8 {
+		start := 0
+		if url[:8] == "https://" {
+			start = 8
+		} else if url[:7] == "http://" {
+			start = 7
+		}
+
+		url = url[start:]
+		end := len(url)
+		for i, c := range url {
+			if c == '/' || c == '?' || c == ':' {
+				end = i
+				break
+			}
+		}
+		return url[:end]
+	}
+	return url
 }

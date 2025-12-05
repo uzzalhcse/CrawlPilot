@@ -5,8 +5,8 @@ go 1.24.0
 require (
 	cloud.google.com/go/pubsub v1.45.3 // indirect
 	github.com/gofiber/fiber/v2 v2.52.9
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/jackc/pgx/v5 v5.7.6 // indirect
+	github.com/google/uuid v1.6.0
+	github.com/jackc/pgx/v5 v5.7.6
 	github.com/redis/go-redis/v9 v9.7.0 // indirect
 	go.uber.org/zap v1.27.0
 )

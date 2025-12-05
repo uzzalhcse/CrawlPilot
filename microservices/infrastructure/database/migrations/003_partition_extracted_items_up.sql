@@ -24,28 +24,36 @@ CREATE TABLE extracted_items (
 -- Step 3: Create default partition for any data that doesn't match specific ranges
 CREATE TABLE extracted_items_default PARTITION OF extracted_items DEFAULT;
 
--- Step 4: Create initial partitions (30 days ahead + 7 days back)
--- You should run the auto-partition function regularly (cron or pg_cron)
-
--- Today's partition
-CREATE TABLE extracted_items_y2024m12d05 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-05') TO ('2024-12-06');
-
--- Next 7 days
-CREATE TABLE extracted_items_y2024m12d06 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-06') TO ('2024-12-07');
-CREATE TABLE extracted_items_y2024m12d07 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-07') TO ('2024-12-08');
-CREATE TABLE extracted_items_y2024m12d08 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-08') TO ('2024-12-09');
-CREATE TABLE extracted_items_y2024m12d09 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-09') TO ('2024-12-10');
-CREATE TABLE extracted_items_y2024m12d10 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-10') TO ('2024-12-11');
-CREATE TABLE extracted_items_y2024m12d11 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-11') TO ('2024-12-12');
-CREATE TABLE extracted_items_y2024m12d12 PARTITION OF extracted_items
-    FOR VALUES FROM ('2024-12-12') TO ('2024-12-13');
+-- Step 4: Create initial partitions dynamically (7 days ahead from current date)
+-- This uses DO block to create partitions based on CURRENT_DATE
+DO $$
+DECLARE
+    partition_date DATE;
+    partition_name TEXT;
+    start_date DATE;
+    end_date DATE;
+BEGIN
+    -- Create partitions for today + next 7 days
+    FOR i IN 0..7 LOOP
+        partition_date := CURRENT_DATE + i;
+        partition_name := 'extracted_items_y' || TO_CHAR(partition_date, 'YYYY') ||
+                          'm' || TO_CHAR(partition_date, 'MM') ||
+                          'd' || TO_CHAR(partition_date, 'DD');
+        start_date := partition_date;
+        end_date := partition_date + 1;
+        
+        -- Check if partition exists before creating
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_class WHERE relname = partition_name
+        ) THEN
+            EXECUTE format(
+                'CREATE TABLE %I PARTITION OF extracted_items FOR VALUES FROM (%L) TO (%L)',
+                partition_name, start_date, end_date
+            );
+            RAISE NOTICE 'Created partition: %', partition_name;
+        END IF;
+    END LOOP;
+END $$;
 
 -- Step 5: Create indexes (automatically created on each partition)
 CREATE INDEX idx_extracted_items_execution ON extracted_items (execution_id);

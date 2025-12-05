@@ -22,6 +22,13 @@ type Pool struct {
 	pw          *playwright.Playwright
 }
 
+// ProxyConfig holds proxy settings for a browser context
+type ProxyConfig struct {
+	Server   string // proxy server URL (e.g., http://host:port)
+	Username string
+	Password string
+}
+
 // NewPool creates a new browser pool
 func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
 	// Initialize Playwright
@@ -54,9 +61,9 @@ func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
 		pw:       pw,
 	}
 
-	// Pre-create contexts
+	// Pre-create contexts (without proxy - proxy applied per-request)
 	for i := 0; i < cfg.PoolSize; i++ {
-		ctx, err := pool.createContext()
+		ctx, err := pool.createContext(nil)
 		if err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("failed to create initial context: %w", err)
@@ -72,17 +79,55 @@ func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
 	return pool, nil
 }
 
-// createContext creates a new browser context
-func (p *Pool) createContext() (playwright.BrowserContext, error) {
-	ctx, err := p.browser.NewContext(playwright.BrowserNewContextOptions{
+// createContext creates a new browser context with optional proxy
+func (p *Pool) createContext(proxy *ProxyConfig) (playwright.BrowserContext, error) {
+	opts := playwright.BrowserNewContextOptions{
 		UserAgent: playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
 		// ViewportSize removed - not needed, use default
 		IgnoreHttpsErrors: playwright.Bool(true),
 		JavaScriptEnabled: playwright.Bool(true),
-	})
+	}
+
+	// Add proxy if provided
+	if proxy != nil && proxy.Server != "" {
+		opts.Proxy = &playwright.Proxy{
+			Server: proxy.Server,
+		}
+		if proxy.Username != "" {
+			opts.Proxy.Username = playwright.String(proxy.Username)
+			opts.Proxy.Password = playwright.String(proxy.Password)
+		}
+		logger.Debug("Creating context with proxy",
+			zap.String("server", proxy.Server),
+		)
+	}
+
+	ctx, err := p.browser.NewContext(opts)
 	if err != nil {
 		return nil, err
 	}
+
+	return ctx, nil
+}
+
+// CreateContextWithProxy is a public method to create a context with proxy
+// Use this when recovery needs a fresh context with a different proxy
+func (p *Pool) CreateContextWithProxy(proxy *ProxyConfig) (playwright.BrowserContext, error) {
+	p.mu.Lock()
+	p.activeCount++
+	p.mu.Unlock()
+
+	ctx, err := p.createContext(proxy)
+	if err != nil {
+		p.mu.Lock()
+		p.activeCount--
+		p.mu.Unlock()
+		return nil, err
+	}
+
+	logger.Debug("Created proxy context",
+		zap.Int("active_contexts", p.activeCount),
+	)
 
 	return ctx, nil
 }
@@ -131,7 +176,7 @@ func (p *Pool) Release(browserCtx playwright.BrowserContext) {
 	default:
 		// Pool is full, close this context and create a new one
 		browserCtx.Close()
-		newCtx, err := p.createContext()
+		newCtx, err := p.createContext(nil)
 		if err != nil {
 			logger.Error("Failed to recreate context", zap.Error(err))
 			return

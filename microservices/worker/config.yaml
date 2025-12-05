@@ -50,3 +50,25 @@ browser:
   timeout: 30000        # 30s (reduced from 60s for faster failures)
   max_concurrency: 50   # Realistic limit per worker instance
   context_lifetime: 120 # Recycle contexts every 2 min to prevent memory leaks
+
+# AI-Powered Error Recovery System
+recovery:
+  enabled: true
+  
+  # Smart triggering (prevent recovery from being too aggressive)
+  window_size: 100              # Track last N results per domain
+  error_rate_threshold: 0.10    # Trigger if error rate > 10%
+  consecutive_threshold: 3       # Trigger after N consecutive errors
+  max_recovery_attempts: 3       # Max recovery attempts per task
+  
+  # AI Agent Fallback (when rules don't match)
+  ai_fallback_enabled: true
+  llm_provider: "ollama"         # ollama, openai
+  llm_model: "qwen2.5"           # qwen2.5, gpt-4o-mini
+  llm_endpoint: "http://localhost:11434"
+  llm_timeout: 30                # seconds
+  
+  # Proxy settings (used when switching proxies)
+  proxy_source: "database"       # database (seeded from JSON)
+  proxy_rotation: "round_robin"  # round_robin, random, least_failed
+
