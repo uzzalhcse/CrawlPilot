@@ -11,6 +11,20 @@ type Registry struct {
 	mu        sync.RWMutex
 }
 
+// Global registry singleton
+var (
+	globalRegistry *Registry
+	registryOnce   sync.Once
+)
+
+// GetRegistry returns the global node registry (singleton)
+func GetRegistry() *Registry {
+	registryOnce.Do(func() {
+		globalRegistry = NewRegistry()
+	})
+	return globalRegistry
+}
+
 // NewRegistry creates a new node registry
 func NewRegistry() *Registry {
 	registry := &Registry{

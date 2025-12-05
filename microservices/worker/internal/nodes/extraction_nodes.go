@@ -101,6 +101,15 @@ func (n *ExtractNode) extractField(ctx context.Context, execCtx *ExecutionContex
 		return n.extractNested(ctx, execCtx, configMap, extractions)
 	}
 
+	// Execute field actions before extraction (reuses existing node types)
+	if err := n.executeFieldActions(execCtx, configMap, fieldName); err != nil {
+		logger.Warn("Field actions failed",
+			zap.String("field", fieldName),
+			zap.Error(err),
+		)
+		// Continue with extraction even if actions fail
+	}
+
 	// Standard single field extraction
 	selector, ok := configMap["selector"].(string)
 	if !ok || selector == "" {
@@ -461,6 +470,64 @@ func (n *ScriptNode) Execute(ctx context.Context, execCtx *ExecutionContext, nod
 
 		execCtx.Variables[storeAs] = resultData
 		logger.Debug("Script result stored", zap.String("variable", storeAs))
+	}
+
+	return nil
+}
+
+// executeFieldActions runs nested action nodes before extraction for a field
+func (n *ExtractNode) executeFieldActions(execCtx *ExecutionContext, config map[string]interface{}, fieldName string) error {
+	// Get actions array from field config
+	actions, ok := config["actions"].([]interface{})
+	if !ok || len(actions) == 0 {
+		return nil // No actions to execute
+	}
+
+	logger.Debug("Executing field actions",
+		zap.String("field", fieldName),
+		zap.Int("action_count", len(actions)),
+	)
+
+	// Get the node registry to execute action nodes
+	registry := GetRegistry()
+
+	for i, action := range actions {
+		actionMap, ok := action.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Parse the action as a node
+		actionNode := parseNodeFromMap(actionMap)
+		if actionNode.Type == "" {
+			continue
+		}
+
+		// Get the executor for this node type
+		executor, err := registry.Get(actionNode.Type)
+		if err != nil || executor == nil {
+			logger.Warn("Unknown action type in field",
+				zap.String("field", fieldName),
+				zap.String("type", actionNode.Type),
+			)
+			continue
+		}
+
+		// Execute the action node
+		logger.Debug("Executing field action",
+			zap.String("field", fieldName),
+			zap.Int("action_index", i),
+			zap.String("action_type", actionNode.Type),
+		)
+
+		if err := executor.Execute(context.Background(), execCtx, actionNode); err != nil {
+			logger.Warn("Field action failed",
+				zap.String("field", fieldName),
+				zap.String("action_type", actionNode.Type),
+				zap.Error(err),
+			)
+			// Continue with other actions and extraction
+		}
 	}
 
 	return nil

@@ -1,6 +1,6 @@
 {
   "name": "Oxylabs Sandbox Product Crawler",
-  "description": "Comprehensive crawler for sandbox.oxylabs.io using phase-based architecture",
+  "description": "Comprehensive crawler for sandbox.oxylabs.io using phase-based architecture with field-level actions",
   "config": {
     "start_urls": [
       "https://sandbox.oxylabs.io/products"
@@ -48,16 +48,6 @@
               "wait_between_pages": 1500,
               "timeout": 10000
             }
-          },
-          {
-            "id": "discover_product_links",
-            "type": "extract_links",
-            "name": "Extract Product Links from Current Page",
-            "params": {
-              "selector": "a.card-header",
-              "marker": "product",
-              "limit": 50
-            }
           }
         ],
         "url_filter": {
@@ -83,25 +73,6 @@
             }
           },
           {
-            "id": "wait_for_content",
-            "type": "wait_for",
-            "name": "Wait for Product Content",
-            "params": {
-              "condition": "selector",
-              "selector": "p.description",
-              "state": "visible",
-              "timeout": 15000
-            }
-          },
-          {
-            "id": "wait_extra",
-            "type": "wait",
-            "name": "Wait for Dynamic Content",
-            "params": {
-              "duration": 2000
-            }
-          },
-          {
             "id": "extract_oxylabs_product",
             "type": "extract",
             "name": "Extract Oxylabs Product Details",
@@ -116,18 +87,65 @@
                 "product_name": {
                   "selector": "h4",
                   "type": "text",
-                  "transform": "trim"
+                  "transform": "trim",
+                  "actions": [
+                    {
+                      "id": "wait_for_title",
+                      "type": "wait_for",
+                      "name": "Wait for Product Title",
+                      "params": {
+                        "condition": "selector",
+                        "selector": "h4",
+                        "state": "visible",
+                        "timeout": 10000
+                      }
+                    }
+                  ]
                 },
                 "price": {
                   "selector": ".price-wrapper",
                   "type": "text",
                   "transform": "trim",
-                  "default": "N/A"
+                  "default": "N/A",
+                  "actions": [
+                    {
+                      "id": "wait_for_price",
+                      "type": "wait_for",
+                      "name": "Wait for Price to Load",
+                      "params": {
+                        "condition": "selector",
+                        "selector": ".price-wrapper",
+                        "state": "visible",
+                        "timeout": 10000
+                      }
+                    }
+                  ]
                 },
                 "description": {
                   "selector": "p.description",
                   "type": "text",
-                  "transform": "trim"
+                  "transform": "trim",
+                  "actions": [
+                    {
+                      "id": "scroll_to_description",
+                      "type": "scroll",
+                      "name": "Scroll to Description",
+                      "params": {
+                        "selector": "p.description"
+                      }
+                    },
+                    {
+                      "id": "wait_for_description",
+                      "type": "wait_for",
+                      "name": "Wait for Description Visible",
+                      "params": {
+                        "condition": "selector",
+                        "selector": "p.description",
+                        "state": "visible",
+                        "timeout": 5000
+                      }
+                    }
+                  ]
                 },
                 "image": {
                   "selector": "img[alt]",
