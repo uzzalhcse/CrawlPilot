@@ -27,7 +27,7 @@ type TaskExecutor struct {
 	nodeRegistry  *nodes.Registry
 	pubsubClient  *queue.PubSubClient
 	gcsClient     *storage.GCSClient
-	dbStorage     *storage.DBStorage
+	batchWriter   *storage.BatchWriter // Primary storage: async batch writes to DB
 	deduplicator  *dedup.URLDeduplicator
 	statsReporter *reporter.StatsReporter
 }
@@ -69,10 +69,12 @@ func NewTaskExecutor(
 	// Initialize deduplicator
 	deduplicator := dedup.NewURLDeduplicator(redisCache)
 
-	// Initialize database storage (fallback for when GCS is disabled)
-	var dbStorage *storage.DBStorage
+	// Initialize batch writer for DB (primary storage)
+	// Uses async buffered writes for high throughput
+	var batchWriter *storage.BatchWriter
 	if db != nil {
-		dbStorage = storage.NewDBStorage(db)
+		batchConfig := storage.DefaultBatchWriterConfig()
+		batchWriter = storage.NewBatchWriter(db, batchConfig)
 	}
 
 	// Initialize stats reporter
@@ -80,8 +82,8 @@ func NewTaskExecutor(
 
 	logger.Info("Task executor initialized",
 		zap.Int("registered_nodes", len(nodeRegistry.List())),
-		zap.Bool("gcs_enabled", gcsClient != nil),
-		zap.Bool("db_storage_enabled", dbStorage != nil),
+		zap.Bool("gcs_archive_enabled", gcsClient != nil),
+		zap.Bool("batch_writer_enabled", batchWriter != nil),
 	)
 
 	return &TaskExecutor{
@@ -89,7 +91,7 @@ func NewTaskExecutor(
 		nodeRegistry:  nodeRegistry,
 		pubsubClient:  pubsubClient,
 		gcsClient:     gcsClient,
-		dbStorage:     dbStorage,
+		batchWriter:   batchWriter,
 		deduplicator:  deduplicator,
 		statsReporter: statsReporter,
 	}, nil
@@ -159,40 +161,43 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		return fmt.Errorf("phase execution failed: %w", err)
 	}
 
-	// Upload extracted items to Cloud Storage or save to database
+	// Save extracted items: DB (primary) + optional GCS (archive)
 	if len(result.ExtractedItems) > 0 {
-		if e.gcsClient != nil {
-			// Use GCS for production
-			gcsPath, err := e.gcsClient.UploadExtractedItems(ctx, task.ExecutionID, result.ExtractedItems)
-			if err != nil {
-				logger.Error("Failed to upload extracted items",
+		// Primary: Batch write to database (high throughput)
+		if e.batchWriter != nil {
+			items := make([]storage.ExtractedItem, 0, len(result.ExtractedItems))
+			for _, data := range result.ExtractedItems {
+				items = append(items, storage.ExtractedItem{
+					ExecutionID: task.ExecutionID,
+					WorkflowID:  task.WorkflowID,
+					TaskID:      task.TaskID,
+					URL:         task.URL,
+					Data:        data,
+				})
+			}
+			if err := e.batchWriter.AddBatch(ctx, items); err != nil {
+				logger.Error("Failed to add items to batch writer",
 					zap.String("task_id", task.TaskID),
 					zap.Error(err),
 				)
-			} else {
-				logger.Info("Extracted items uploaded to GCS",
-					zap.String("gcs_path", gcsPath),
-					zap.Int("item_count", len(result.ExtractedItems)),
-				)
 			}
-		} else {
-			// Fallback to database storage for local development
-			if e.dbStorage != nil {
-				err := e.dbStorage.SaveExtractedItems(
-					ctx,
-					task.ExecutionID,
-					task.WorkflowID,
-					task.TaskID,
-					task.URL,
-					result.ExtractedItems,
-				)
+		}
+
+		// Archive: Async upload to GCS (if enabled)
+		if e.gcsClient != nil {
+			go func() {
+				gcsCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				gcsPath, err := e.gcsClient.UploadExtractedItems(gcsCtx, task.ExecutionID, result.ExtractedItems)
 				if err != nil {
-					logger.Error("Failed to save extracted items to database",
+					logger.Warn("Failed to archive to GCS (non-critical)",
 						zap.String("task_id", task.TaskID),
 						zap.Error(err),
 					)
+				} else {
+					logger.Debug("Archived to GCS", zap.String("path", gcsPath))
 				}
-			}
+			}()
 		}
 	}
 
@@ -441,6 +446,13 @@ func (e *TaskExecutor) reportStats(ctx context.Context, executionID string, task
 
 // Close cleans up resources
 func (e *TaskExecutor) Close() error {
+	// Flush batch writer first (ensures all data is written)
+	if e.batchWriter != nil {
+		if err := e.batchWriter.Close(); err != nil {
+			logger.Error("Failed to close batch writer", zap.Error(err))
+		}
+	}
+
 	if e.gcsClient != nil {
 		e.gcsClient.Close()
 	}

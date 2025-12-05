@@ -14,10 +14,10 @@ CREATE TABLE IF NOT EXISTS extracted_items (
 );
 
 -- Indexes for efficient querying
-CREATE INDEX idx_extracted_items_execution_id ON extracted_items(execution_id);
-CREATE INDEX idx_extracted_items_workflow_id ON extracted_items(workflow_id);
-CREATE INDEX idx_extracted_items_task_id ON extracted_items(task_id);
-CREATE INDEX idx_extracted_items_extracted_at ON extracted_items(extracted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_extracted_items_execution_id ON extracted_items(execution_id);
+CREATE INDEX IF NOT EXISTS idx_extracted_items_workflow_id ON extracted_items(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_extracted_items_task_id ON extracted_items(task_id);
+CREATE INDEX IF NOT EXISTS idx_extracted_items_extracted_at ON extracted_items(extracted_at DESC);
 
 -- Table comment
 COMMENT ON TABLE extracted_items IS 'Stores extracted data directly in database (used when GCS is disabled for local development)';

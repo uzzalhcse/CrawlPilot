@@ -70,8 +70,9 @@ type GCPConfig struct {
 	PubSubEmulatorHost string `mapstructure:"pubsub_emulator_host"` // For local development
 
 	// Pub/Sub High-Throughput Settings (for workers)
-	PubSubMaxOutstanding int `mapstructure:"pubsub_max_outstanding"` // Max messages per worker (default: 50)
-	PubSubNumGoroutines  int `mapstructure:"pubsub_num_goroutines"`  // Parallel handlers (default: 10)
+	PubSubMaxOutstanding int    `mapstructure:"pubsub_max_outstanding"` // Max messages per worker (default: 50)
+	PubSubNumGoroutines  int    `mapstructure:"pubsub_num_goroutines"`  // Parallel handlers (default: 10)
+	PubSubMode           string `mapstructure:"pubsub_mode"`            // "pull" (default) or "push" for Cloud Run
 
 	// Pub/Sub Publishing Settings (for orchestrator)
 	PubSubPublishBatchSize int `mapstructure:"pubsub_publish_batch_size"` // Messages per batch (default: 100)
@@ -83,6 +84,13 @@ type GCPConfig struct {
 
 	// Worker configuration
 	OrchestratorURL string `mapstructure:"orchestrator_url"` // Worker → Orchestrator communication
+}
+
+// StorageConfig holds extracted data storage configuration
+type StorageConfig struct {
+	// Batch writer settings
+	BatchSize       int `mapstructure:"batch_size"`        // Items before auto-flush (default: 100)
+	FlushTimeoutSec int `mapstructure:"flush_timeout_sec"` // Seconds before auto-flush (default: 5)
 }
 
 // BrowserConfig holds browser pool configuration
