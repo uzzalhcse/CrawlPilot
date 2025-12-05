@@ -29,7 +29,8 @@ class PluginAPI {
         const url = `${API_BASE}/plugins${params.toString() ? `?${params.toString()}` : ''}`
         const response = await fetch(url)
         if (!response.ok) throw new Error('Failed to fetch plugins')
-        return response.json()
+        const data = await response.json()
+        return data || [] // Return empty array if null
     }
 
     async getPlugin(slug: string): Promise<Plugin> {

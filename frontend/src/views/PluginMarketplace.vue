@@ -247,7 +247,7 @@ const filters = ref<FilterState>({
   verified: false
 })
 
-const featuredPlugins = computed(() => plugins.value.slice(0, 8))
+const featuredPlugins = computed(() => (plugins.value || []).slice(0, 8))
 
 const formatFilterLabel = (value: string, defaultLabel: string) => {
   if (value === 'all') return defaultLabel

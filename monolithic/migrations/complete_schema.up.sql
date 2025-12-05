@@ -1,13 +1,13 @@
 -- ============================================================================
 -- COMPLETE DATABASE SCHEMA - UP MIGRATION
--- Consolidated from all migrations for Crawlify Cloud-Native Architecture
--- Version: 2.0 - Includes all tables for complete system
+-- Consolidated from all migrations (001-024) for Crawlify
+-- Generated: 2025-12-05
 -- ============================================================================
 
 BEGIN;
 
 -- ============================================================================
--- STEP 1: Core Workflow and Execution Tables
+-- STEP 1: Create core workflow and execution tables
 -- ============================================================================
 
 -- Workflows table
@@ -18,12 +18,12 @@ CREATE TABLE IF NOT EXISTS workflows (
     config JSONB NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'draft',
     version INT NOT NULL DEFAULT 1,
-    browser_profile_id UUID, -- Added for browser profile support (will add FK later)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 COMMENT ON TABLE workflows IS 'Workflow definitions and configurations';
+
 CREATE INDEX idx_workflows_status ON workflows(status);
 
 -- Workflow versions table
@@ -58,6 +58,35 @@ CREATE INDEX idx_workflow_executions_workflow_id ON workflow_executions(workflow
 CREATE INDEX idx_workflow_executions_status ON workflow_executions(status);
 CREATE INDEX idx_workflow_executions_started_at ON workflow_executions(started_at DESC);
 
+-- Node executions table (created before url_queue for FK reference)
+CREATE TABLE IF NOT EXISTS node_executions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
+    node_id VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    url_id UUID,  -- Will add FK constraint after url_queue is created
+    parent_node_execution_id UUID REFERENCES node_executions(id) ON DELETE SET NULL,
+    node_type VARCHAR(50),
+    urls_discovered INTEGER DEFAULT 0,
+    items_extracted INTEGER DEFAULT 0,
+    duration_ms INTEGER,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    input JSONB,
+    output JSONB,
+    error TEXT,
+    error_message TEXT,
+    retry_count INTEGER DEFAULT 0
+);
+
+COMMENT ON TABLE node_executions IS 'Node execution tracking with complete debugging info';
+
+CREATE INDEX idx_node_exec_execution_time ON node_executions(execution_id, started_at);
+CREATE INDEX idx_node_exec_parent ON node_executions(parent_node_execution_id) WHERE parent_node_execution_id IS NOT NULL;
+CREATE INDEX idx_node_exec_status ON node_executions(status) WHERE status != 'completed';
+CREATE INDEX idx_node_exec_type ON node_executions(execution_id, node_type);
+CREATE INDEX idx_node_exec_node_id ON node_executions(execution_id, node_id);
+
 -- URL Queue table with hierarchy support
 CREATE TABLE IF NOT EXISTS url_queue (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,6 +113,7 @@ CREATE TABLE IF NOT EXISTS url_queue (
 );
 
 COMMENT ON TABLE url_queue IS 'URL queue with hierarchy tracking';
+COMMENT ON COLUMN url_queue.parent_node_execution_id IS 'Node execution that discovered this URL (cross-URL parent tracking)';
 
 CREATE INDEX idx_url_queue_execution_status ON url_queue(execution_id, status) WHERE status = 'pending';
 CREATE INDEX idx_url_queue_depth ON url_queue(execution_id, depth);
@@ -95,35 +125,12 @@ CREATE INDEX idx_url_queue_marker ON url_queue(marker);
 CREATE INDEX idx_url_queue_phase_id ON url_queue(phase_id);
 CREATE INDEX idx_url_queue_parent_node_exec ON url_queue(parent_node_execution_id) WHERE parent_node_execution_id IS NOT NULL;
 
--- Node executions table
-CREATE TABLE IF NOT EXISTS node_executions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
-    node_id VARCHAR(255) NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    url_id UUID REFERENCES url_queue(id) ON DELETE SET NULL,
-    parent_node_execution_id UUID REFERENCES node_executions(id) ON DELETE SET NULL,
-    node_type VARCHAR(50),
-    urls_discovered INTEGER DEFAULT 0,
-    items_extracted INTEGER DEFAULT 0,
-    duration_ms INTEGER,
-    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP WITH TIME ZONE,
-    input JSONB,
-    output JSONB,
-    error TEXT,
-    error_message TEXT,
-    retry_count INTEGER DEFAULT 0
-);
+-- Add FK constraint for node_executions.url_id now that url_queue exists
+ALTER TABLE node_executions 
+    ADD CONSTRAINT fk_node_exec_url 
+    FOREIGN KEY (url_id) REFERENCES url_queue(id) ON DELETE SET NULL;
 
-COMMENT ON TABLE node_executions IS 'Node execution tracking with complete debugging info';
-
-CREATE INDEX idx_node_exec_execution_time ON node_executions(execution_id, started_at);
 CREATE INDEX idx_node_exec_url ON node_executions(url_id) WHERE url_id IS NOT NULL;
-CREATE INDEX idx_node_exec_parent ON node_executions(parent_node_execution_id) WHERE parent_node_execution_id IS NOT NULL;
-CREATE INDEX idx_node_exec_status ON node_executions(status) WHERE status != 'completed';
-CREATE INDEX idx_node_exec_type ON node_executions(execution_id, node_type);
-CREATE INDEX idx_node_exec_node_id ON node_executions(execution_id, node_id);
 
 -- Extracted items table
 CREATE TABLE IF NOT EXISTS extracted_items (
@@ -145,22 +152,147 @@ CREATE INDEX idx_extracted_items_node_exec ON extracted_items(node_execution_id)
 CREATE INDEX idx_extracted_items_schema ON extracted_items(schema_name) WHERE schema_name IS NOT NULL;
 CREATE INDEX idx_extracted_items_data ON extracted_items USING gin(data);
 
--- Extracted items metadata table (for Cloud Storage integration)
-CREATE TABLE IF NOT EXISTS extracted_items_metadata (
-    id SERIAL PRIMARY KEY,
-    execution_id VARCHAR(255) NOT NULL,
-    url TEXT NOT NULL,
-    item_count INTEGER NOT NULL,
-    gcs_path TEXT NOT NULL,
-    extracted_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
+-- ============================================================================
+-- STEP 2: Browser Profiles
+-- ============================================================================
+
+-- Browser profiles table
+CREATE TABLE IF NOT EXISTS browser_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    folder VARCHAR(255),
+    tags TEXT[],
+    
+    -- Browser Configuration
+    browser_type VARCHAR(50) NOT NULL DEFAULT 'chromium',
+    executable_path TEXT,
+    cdp_endpoint TEXT,
+    launch_args TEXT[],
+    
+    -- Fingerprint Configuration
+    user_agent TEXT,
+    platform VARCHAR(100),
+    screen_width INTEGER DEFAULT 1920,
+    screen_height INTEGER DEFAULT 1080,
+    timezone VARCHAR(100),
+    locale VARCHAR(20) DEFAULT 'en-US',
+    languages TEXT[] DEFAULT ARRAY['en-US', 'en'],
+    
+    -- Advanced Fingerprinting
+    webgl_vendor TEXT,
+    webgl_renderer TEXT,
+    canvas_noise BOOLEAN DEFAULT false,
+    hardware_concurrency INTEGER DEFAULT 4,
+    device_memory INTEGER DEFAULT 8,
+    fonts TEXT[],
+    
+    -- Privacy & Security
+    do_not_track BOOLEAN DEFAULT false,
+    disable_webrtc BOOLEAN DEFAULT false,
+    geolocation_latitude DECIMAL(10, 8),
+    geolocation_longitude DECIMAL(11, 8),
+    geolocation_accuracy INTEGER,
+    
+    -- Proxy Configuration
+    proxy_enabled BOOLEAN DEFAULT false,
+    proxy_type VARCHAR(20),
+    proxy_server TEXT,
+    proxy_username TEXT,
+    proxy_password TEXT,
+    
+    -- Cookies & Storage
+    cookies JSONB,
+    local_storage JSONB,
+    session_storage JSONB,
+    indexed_db JSONB,
+    clear_on_close BOOLEAN DEFAULT true,
+    
+    -- Team & Sharing
+    owner_id UUID,
+    shared_with UUID[],
+    permissions JSONB,
+    
+    -- Statistics
+    usage_count INTEGER DEFAULT 0,
+    last_used_at TIMESTAMP,
+    
+    -- Metadata
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    
+    -- Constraints (includes 'running' status from migration 022)
+    CONSTRAINT valid_status CHECK (status IN ('active', 'inactive', 'archived', 'running')),
+    CONSTRAINT valid_browser_type CHECK (browser_type IN ('chromium', 'firefox', 'webkit')),
+    CONSTRAINT valid_proxy_type CHECK (proxy_type IS NULL OR proxy_type IN ('http', 'https', 'socks5'))
 );
 
-CREATE INDEX idx_extracted_items_metadata_execution ON extracted_items_metadata(execution_id);
-CREATE INDEX idx_extracted_items_metadata_gcs_path ON extracted_items_metadata(gcs_path);
+CREATE INDEX IF NOT EXISTS idx_browser_profiles_status ON browser_profiles(status);
+CREATE INDEX IF NOT EXISTS idx_browser_profiles_folder ON browser_profiles(folder);
+CREATE INDEX IF NOT EXISTS idx_browser_profiles_browser_type ON browser_profiles(browser_type);
+CREATE INDEX IF NOT EXISTS idx_browser_profiles_created_at ON browser_profiles(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_browser_profiles_last_used_at ON browser_profiles(last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_browser_profiles_tags ON browser_profiles USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_browser_profiles_running ON browser_profiles(status) WHERE status = 'running';
+
+COMMENT ON TABLE browser_profiles IS 'Browser profiles with fingerprinting configuration';
+COMMENT ON COLUMN browser_profiles.browser_type IS 'Type of browser: chromium, firefox, or webkit';
+COMMENT ON COLUMN browser_profiles.executable_path IS 'Path to custom browser executable';
+COMMENT ON COLUMN browser_profiles.cdp_endpoint IS 'Chrome DevTools Protocol WebSocket endpoint';
+COMMENT ON COLUMN browser_profiles.canvas_noise IS 'Add noise to canvas fingerprint to avoid detection';
+
+-- Browser profile proxies table
+CREATE TABLE IF NOT EXISTS browser_profile_proxies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    profile_id UUID NOT NULL REFERENCES browser_profiles(id) ON DELETE CASCADE,
+    
+    -- Proxy Configuration
+    proxy_type VARCHAR(20) NOT NULL,
+    proxy_server TEXT NOT NULL,
+    proxy_username TEXT,
+    proxy_password TEXT,
+    
+    -- Rotation Configuration
+    priority INTEGER DEFAULT 0,
+    rotation_strategy VARCHAR(50) DEFAULT 'round-robin',
+    is_active BOOLEAN DEFAULT true,
+    
+    -- Health Check
+    last_health_check TIMESTAMP,
+    health_status VARCHAR(50) DEFAULT 'unknown',
+    failure_count INTEGER DEFAULT 0,
+    success_count INTEGER DEFAULT 0,
+    average_response_time INTEGER,
+    
+    -- Metadata
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    
+    -- Constraints
+    CONSTRAINT valid_proxy_type_proxies CHECK (proxy_type IN ('http', 'https', 'socks5')),
+    CONSTRAINT valid_rotation_strategy CHECK (rotation_strategy IN ('round-robin', 'random', 'sticky')),
+    CONSTRAINT valid_health_status CHECK (health_status IN ('healthy', 'unhealthy', 'unknown'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_browser_profile_proxies_profile_id ON browser_profile_proxies(profile_id);
+CREATE INDEX IF NOT EXISTS idx_browser_profile_proxies_is_active ON browser_profile_proxies(is_active);
+CREATE INDEX IF NOT EXISTS idx_browser_profile_proxies_health_status ON browser_profile_proxies(health_status);
+CREATE INDEX IF NOT EXISTS idx_browser_profile_proxies_priority ON browser_profile_proxies(priority DESC);
+
+COMMENT ON TABLE browser_profile_proxies IS 'Proxy rotation configuration for browser profiles';
+COMMENT ON COLUMN browser_profile_proxies.rotation_strategy IS 'Strategy for selecting proxy: round-robin, random, or sticky';
+
+-- Add browser_profile_id to workflows (after browser_profiles table exists)
+ALTER TABLE workflows
+ADD COLUMN IF NOT EXISTS browser_profile_id UUID REFERENCES browser_profiles(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_workflows_browser_profile_id ON workflows(browser_profile_id);
+
+COMMENT ON COLUMN workflows.browser_profile_id IS 'Browser profile to use for this workflow execution';
 
 -- ============================================================================
--- STEP 2: Monitoring (Health Check) Tables
+-- STEP 3: Monitoring (Health Check) Tables
 -- ============================================================================
 
 -- Monitoring Reports Table
@@ -185,9 +317,12 @@ CREATE INDEX idx_monitoring_status ON monitoring_reports(status);
 CREATE INDEX idx_monitoring_baseline ON monitoring_reports(workflow_id, is_baseline) WHERE is_baseline = true;
 
 COMMENT ON TABLE monitoring_reports IS 'Monitoring validation reports for workflows';
+COMMENT ON COLUMN monitoring_reports.results IS 'Phase-by-phase validation results';
+COMMENT ON COLUMN monitoring_reports.summary IS 'Aggregate summary of validation results';
+COMMENT ON COLUMN monitoring_reports.config IS 'Monitoring check configuration used';
 
 -- Monitoring schedules table
-CREATE TABLE IF NOT EXISTS monitoring_schedules (
+CREATE TABLE monitoring_schedules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     schedule VARCHAR(100) NOT NULL,
@@ -228,10 +363,10 @@ CREATE INDEX idx_monitoring_snapshots_node ON monitoring_snapshots(node_id);
 CREATE INDEX idx_monitoring_snapshots_created ON monitoring_snapshots(created_at DESC);
 
 -- ============================================================================
--- STEP 3: AI and Fix Suggestions
+-- STEP 4: AI and Fix Suggestions
 -- ============================================================================
 
--- AI API Keys table
+-- AI API Keys table (for rotation)
 CREATE TABLE IF NOT EXISTS ai_api_keys (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     api_key VARCHAR(500) NOT NULL UNIQUE,
@@ -250,8 +385,8 @@ CREATE TABLE IF NOT EXISTS ai_api_keys (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_ai_keys_active ON ai_api_keys(provider, is_active, is_rate_limited, cooldown_until);
-CREATE INDEX idx_ai_keys_usage ON ai_api_keys(provider, total_requests ASC);
+CREATE INDEX IF NOT EXISTS idx_ai_keys_active ON ai_api_keys(provider, is_active, is_rate_limited, cooldown_until);
+CREATE INDEX IF NOT EXISTS idx_ai_keys_usage ON ai_api_keys(provider, total_requests ASC);
 
 -- Fix suggestions table
 CREATE TABLE IF NOT EXISTS fix_suggestions (
@@ -285,7 +420,7 @@ CREATE INDEX idx_fix_suggestions_status ON fix_suggestions(status);
 CREATE INDEX idx_fix_suggestions_created ON fix_suggestions(created_at DESC);
 
 -- ============================================================================
--- STEP 4: Plugin Marketplace Tables
+-- STEP 5: Plugin Marketplace Tables
 -- ============================================================================
 
 -- Plugins table
@@ -311,6 +446,9 @@ CREATE TABLE IF NOT EXISTS plugins (
 );
 
 COMMENT ON TABLE plugins IS 'Plugin marketplace - core plugin metadata';
+COMMENT ON COLUMN plugins.slug IS 'URL-friendly unique identifier';
+COMMENT ON COLUMN plugins.phase_type IS 'discovery, extraction, or processing';
+COMMENT ON COLUMN plugins.plugin_type IS 'builtin, official, community, or private';
 
 CREATE INDEX idx_plugins_slug ON plugins(slug);
 CREATE INDEX idx_plugins_category ON plugins(category);
@@ -341,6 +479,8 @@ CREATE TABLE IF NOT EXISTS plugin_versions (
 );
 
 COMMENT ON TABLE plugin_versions IS 'Plugin versions with platform-specific compiled binaries';
+COMMENT ON COLUMN plugin_versions.binary_hash IS 'SHA-256 hash for binary integrity verification';
+COMMENT ON COLUMN plugin_versions.config_schema IS 'JSON Schema defining plugin configuration options';
 
 CREATE INDEX idx_plugin_versions_plugin ON plugin_versions(plugin_id, published_at DESC);
 CREATE INDEX idx_plugin_versions_version ON plugin_versions(version);
@@ -406,109 +546,6 @@ INSERT INTO plugin_categories (id, name, description, display_order) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
--- STEP 5: Browser Profiles Tables
--- ============================================================================
-
--- Browser profiles table
-CREATE TABLE IF NOT EXISTS browser_profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    status VARCHAR(50) NOT NULL DEFAULT 'active',
-    folder VARCHAR(255),
-    tags TEXT[],
-    browser_type VARCHAR(50) NOT NULL DEFAULT 'chromium',
-    executable_path TEXT,
-    cdp_endpoint TEXT,
-    launch_args TEXT[],
-    user_agent TEXT,
-    platform VARCHAR(100),
-    screen_width INTEGER DEFAULT 1920,
-    screen_height INTEGER DEFAULT 1080,
-    timezone VARCHAR(100),
-    locale VARCHAR(20) DEFAULT 'en-US',
-    languages TEXT[] DEFAULT ARRAY['en-US', 'en'],
-    webgl_vendor TEXT,
-    webgl_renderer TEXT,
-    canvas_noise BOOLEAN DEFAULT false,
-    hardware_concurrency INTEGER DEFAULT 4,
-    device_memory INTEGER DEFAULT 8,
-    fonts TEXT[],
-    do_not_track BOOLEAN DEFAULT false,
-    disable_webrtc BOOLEAN DEFAULT false,
-    geolocation_latitude DECIMAL(10, 8),
-    geolocation_longitude DECIMAL(11, 8),
-    geolocation_accuracy INTEGER,
-    proxy_enabled BOOLEAN DEFAULT false,
-    proxy_type VARCHAR(20),
-    proxy_server TEXT,
-    proxy_username TEXT,
-    proxy_password TEXT,
-    cookies JSONB,
-    local_storage JSONB,
-    session_storage JSONB,
-    indexed_db JSONB,
-    clear_on_close BOOLEAN DEFAULT true,
-    owner_id UUID,
-    shared_with UUID[],
-    permissions JSONB,
-    usage_count INTEGER DEFAULT 0,
-    last_used_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    CONSTRAINT valid_status CHECK (status IN ('active', 'inactive', 'archived')),
-    CONSTRAINT valid_browser_type CHECK (browser_type IN ('chromium', 'firefox', 'webkit')),
-    CONSTRAINT valid_proxy_type CHECK (proxy_type IS NULL OR proxy_type IN ('http', 'https', 'socks5'))
-);
-
-COMMENT ON TABLE browser_profiles IS 'Browser profiles with fingerprinting configuration';
-
-CREATE INDEX idx_browser_profiles_status ON browser_profiles(status);
-CREATE INDEX idx_browser_profiles_folder ON browser_profiles(folder);
-CREATE INDEX idx_browser_profiles_browser_type ON browser_profiles(browser_type);
-CREATE INDEX idx_browser_profiles_created_at ON browser_profiles(created_at DESC);
-CREATE INDEX idx_browser_profiles_last_used_at ON browser_profiles(last_used_at DESC);
-CREATE INDEX idx_browser_profiles_tags ON browser_profiles USING GIN(tags);
-
--- Browser profile proxies table
-CREATE TABLE IF NOT EXISTS browser_profile_proxies (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    profile_id UUID NOT NULL REFERENCES browser_profiles(id) ON DELETE CASCADE,
-    proxy_type VARCHAR(20) NOT NULL,
-    proxy_server TEXT NOT NULL,
-    proxy_username TEXT,
-    proxy_password TEXT,
-    priority INTEGER DEFAULT 0,
-    rotation_strategy VARCHAR(50) DEFAULT 'round-robin',
-    is_active BOOLEAN DEFAULT true,
-    last_health_check TIMESTAMP,
-    health_status VARCHAR(50) DEFAULT 'unknown',
-    failure_count INTEGER DEFAULT 0,
-    success_count INTEGER DEFAULT 0,
-    average_response_time INTEGER,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    CONSTRAINT valid_proxy_type CHECK (proxy_type IN ('http', 'https', 'socks5')),
-    CONSTRAINT valid_rotation_strategy CHECK (rotation_strategy IN ('round-robin', 'random', 'sticky')),
-    CONSTRAINT valid_health_status CHECK (health_status IN ('healthy', 'unhealthy', 'unknown'))
-);
-
-COMMENT ON TABLE browser_profile_proxies IS 'Proxy rotation configuration for browser profiles';
-
-CREATE INDEX idx_browser_profile_proxies_profile_id ON browser_profile_proxies(profile_id);
-CREATE INDEX idx_browser_profile_proxies_is_active ON browser_profile_proxies(is_active);
-CREATE INDEX idx_browser_profile_proxies_health_status ON browser_profile_proxies(health_status);
-CREATE INDEX idx_browser_profile_proxies_priority ON browser_profile_proxies(priority DESC);
-
--- Add browser_profile FK to workflows (deferred until browser_profiles exists)
-ALTER TABLE workflows
-ADD CONSTRAINT fk_workflows_browser_profile
-FOREIGN KEY (browser_profile_id) REFERENCES browser_profiles(id) ON DELETE SET NULL;
-
-CREATE INDEX idx_workflows_browser_profile_id ON workflows(browser_profile_id);
-COMMENT ON COLUMN workflows.browser_profile_id IS 'Browser profile to use for this workflow execution';
-
--- ============================================================================
 -- STEP 6: Error Recovery Tables
 -- ============================================================================
 
@@ -547,10 +584,12 @@ CREATE TABLE IF NOT EXISTS error_patterns (
 );
 
 -- Error recovery history table
-CREATE TABLE IF NOT EXISTS error_recovery_history (
+CREATE TABLE error_recovery_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     execution_id UUID,
     workflow_id UUID,
+    
+    -- Error Details
     error_type VARCHAR(255) NOT NULL,
     error_message TEXT NOT NULL,
     status_code INTEGER,
@@ -558,20 +597,32 @@ CREATE TABLE IF NOT EXISTS error_recovery_history (
     domain VARCHAR(255),
     node_id VARCHAR(255),
     phase_id VARCHAR(255),
+    
+    -- Pattern Analysis
     pattern_detected BOOLEAN DEFAULT FALSE,
     pattern_type VARCHAR(50),
     activation_reason TEXT,
     error_rate DECIMAL(5,4),
+    
+    -- Recovery Solution
     rule_id UUID,
     rule_name VARCHAR(255),
     solution_type VARCHAR(50) NOT NULL,
     confidence DECIMAL(3,2),
+    
+    -- Actions Applied
     actions_applied JSONB,
+    
+    -- Outcome
     recovery_attempted BOOLEAN DEFAULT TRUE,
     recovery_successful BOOLEAN,
     retry_count INTEGER DEFAULT 1,
     time_to_recovery_ms INTEGER,
+    
+    -- Full Context
     request_context JSONB,
+    
+    -- Timestamps
     detected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     recovered_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -587,8 +638,13 @@ CREATE INDEX idx_recovery_history_error_type ON error_recovery_history(error_typ
 CREATE INDEX idx_recovery_history_solution_type ON error_recovery_history(solution_type);
 CREATE INDEX idx_recovery_history_workflow_detected ON error_recovery_history(workflow_id, detected_at DESC);
 
+COMMENT ON TABLE error_recovery_history IS 'Tracks all error recovery attempts with full context and outcomes';
+COMMENT ON COLUMN error_recovery_history.pattern_detected IS 'Whether pattern analyzer triggered recovery';
+COMMENT ON COLUMN error_recovery_history.solution_type IS 'How error was resolved: rule-based, AI, or no solution';
+COMMENT ON COLUMN error_recovery_history.time_to_recovery_ms IS 'Time from error detection to recovery completion';
+
 -- ============================================================================
--- STEP 7: Functions and Triggers
+-- STEP 7: Create Functions and Triggers
 -- ============================================================================
 
 -- Update AI keys timestamp
@@ -618,6 +674,34 @@ CREATE TRIGGER fix_suggestions_updated_at
     BEFORE UPDATE ON fix_suggestions
     FOR EACH ROW
     EXECUTE FUNCTION update_fix_suggestions_updated_at();
+
+-- Update browser profiles timestamp
+CREATE OR REPLACE FUNCTION update_browser_profiles_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER browser_profiles_updated_at
+    BEFORE UPDATE ON browser_profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_browser_profiles_updated_at();
+
+-- Update browser profile proxies timestamp
+CREATE OR REPLACE FUNCTION update_browser_profile_proxies_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER browser_profile_proxies_updated_at
+    BEFORE UPDATE ON browser_profile_proxies
+    FOR EACH ROW
+    EXECUTE FUNCTION update_browser_profile_proxies_updated_at();
 
 -- Update plugins timestamp
 CREATE OR REPLACE FUNCTION update_plugins_updated_at()
@@ -681,7 +765,7 @@ CREATE TRIGGER update_rating_on_review_delete
     FOR EACH ROW
     EXECUTE FUNCTION update_plugin_average_rating();
 
--- Increment plugin downloads
+-- Increment download count
 CREATE OR REPLACE FUNCTION increment_plugin_downloads()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -726,39 +810,11 @@ CREATE TRIGGER update_install_count
     FOR EACH ROW
     EXECUTE FUNCTION update_plugin_install_count();
 
--- Update browser profiles timestamp
-CREATE OR REPLACE FUNCTION update_browser_profiles_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER browser_profiles_updated_at
-    BEFORE UPDATE ON browser_profiles
-    FOR EACH ROW
-    EXECUTE FUNCTION update_browser_profiles_updated_at();
-
--- Update browser profile proxies timestamp
-CREATE OR REPLACE FUNCTION update_browser_profile_proxies_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER browser_profile_proxies_updated_at
-    BEFORE UPDATE ON browser_profile_proxies
-    FOR EACH ROW
-    EXECUTE FUNCTION update_browser_profile_proxies_updated_at();
-
 -- ============================================================================
--- STEP 8: Create Views
+-- STEP 8: Create helpful views
 -- ============================================================================
 
--- Execution statistics view
+-- View for execution statistics
 CREATE OR REPLACE VIEW execution_stats AS
 SELECT
     we.id as execution_id,
@@ -784,8 +840,8 @@ GROUP BY we.id, we.workflow_id, w.name, we.status, we.started_at, we.completed_a
 
 COMMENT ON VIEW execution_stats IS 'Aggregated statistics for workflow executions';
 
--- Error recovery statistics view
-CREATE OR REPLACE VIEW error_recovery_stats AS
+-- View for error recovery statistics
+CREATE VIEW error_recovery_stats AS
 SELECT 
     DATE_TRUNC('hour', detected_at) as time_bucket,
     domain,
@@ -803,8 +859,8 @@ GROUP BY DATE_TRUNC('hour', detected_at), domain, error_type, rule_name, solutio
 
 COMMENT ON VIEW error_recovery_stats IS 'Hourly aggregated statistics for recovery performance';
 
--- Rule performance view
-CREATE OR REPLACE VIEW rule_performance AS
+-- View for rule performance
+CREATE VIEW rule_performance AS
 SELECT 
     h.rule_id,
     h.rule_name,
