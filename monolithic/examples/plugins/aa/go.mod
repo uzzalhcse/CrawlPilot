@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/uzzalhcse/crawlify v0.0.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.1
 )
 
 require (
