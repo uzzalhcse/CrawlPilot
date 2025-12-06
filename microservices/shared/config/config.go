@@ -106,7 +106,8 @@ type BrowserConfig struct {
 	Timeout         int    `mapstructure:"timeout"`
 	MaxConcurrency  int    `mapstructure:"max_concurrency"`
 	ContextLifetime int    `mapstructure:"context_lifetime"`
-	Driver          string `mapstructure:"driver"` // "playwright" (default) or "http"
+	Driver          string `mapstructure:"driver"`       // "playwright" (default) or "http"
+	LogWarnings     bool   `mapstructure:"log_warnings"` // Log extraction warnings to execution history (default: false)
 }
 
 // Load loads configuration from a file

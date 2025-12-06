@@ -528,8 +528,12 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		Page:      page,
 		Task:      task,
 		Variables: make(map[string]interface{}),
-		// Log extraction warnings to execution history
-		OnWarning: func(field, message string) {
+	}
+
+	// Log extraction warnings to execution history (only if log_warnings: true in config)
+	// Disabled by default in production to reduce noise
+	if e.browserConfig != nil && e.browserConfig.LogWarnings {
+		execCtx.OnWarning = func(field, message string) {
 			if e.errorLogger != nil {
 				e.errorLogger.Log(reporter.ErrorEntry{
 					ExecutionID: task.ExecutionID,
@@ -540,7 +544,7 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 					RetryCount:  task.RetryCount,
 				})
 			}
-		},
+		}
 	}
 
 	// Track profile-based drivers created during execution for cleanup
