@@ -12,9 +12,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 )
 
-type ProxyContextKey string
-
-const ProxyKey ProxyContextKey = "proxy"
+// ProxyKey is now defined in options.go
 
 // PlaywrightDriver implements the Driver interface using playwright-go
 type PlaywrightDriver struct {

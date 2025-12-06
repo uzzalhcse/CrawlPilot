@@ -9,6 +9,18 @@ const (
 
 // Page Options
 
+type ContextKey string
+
+const (
+	ProxyKey ContextKey = "proxy"
+	JA3Key   ContextKey = "ja3"
+)
+
+type JA3Config struct {
+	BrowserName    string // e.g., "chrome", "firefox"
+	BrowserVersion string // e.g., "120", "115"
+}
+
 func WithPageTimeout(d time.Duration) PageOption {
 	return func(o *PageOptions) {
 		o.Timeout = d
