@@ -121,10 +121,11 @@ func main() {
 	// Initialize repositories
 	workflowRepo := repository.NewWorkflowRepository(db)
 	executionRepo := repository.NewExecutionRepository(db)
+	profileRepo := repository.NewBrowserProfileRepository(db)
 
 	// Initialize services
 	workflowSvc := service.NewWorkflowService(workflowRepo, redisCache)
-	executionSvc := service.NewExecutionService(workflowRepo, executionRepo, workflowSvc, pubsubClient)
+	executionSvc := service.NewExecutionService(workflowRepo, executionRepo, profileRepo, workflowSvc, pubsubClient)
 
 	// Initialize handlers
 	workflowHandler := handlers.NewWorkflowHandler(workflowSvc)
@@ -192,6 +193,23 @@ func main() {
 	incidents.Patch("/:id/status", incidentHandler.UpdateIncidentStatus)
 	incidents.Patch("/:id/assign", incidentHandler.AssignIncident)
 	incidents.Post("/:id/resolve", incidentHandler.ResolveIncident)
+
+	// Initialize browser profile repository and handler
+	browserProfileRepo := repository.NewBrowserProfileRepository(db)
+	browserProfileHandler := handlers.NewBrowserProfileHandler(browserProfileRepo)
+
+	// Browser profile routes (GoLogin/Multilogin-style profile management)
+	profiles := api.Group("/profiles")
+	profiles.Get("/", browserProfileHandler.ListProfiles)
+	profiles.Post("/", browserProfileHandler.CreateProfile)
+	profiles.Get("/browser-types", browserProfileHandler.GetBrowserTypes)
+	profiles.Get("/folders", browserProfileHandler.GetFolders)
+	profiles.Post("/generate-fingerprint", browserProfileHandler.GenerateFingerprint)
+	profiles.Post("/test-browser-config", browserProfileHandler.TestBrowserConfig)
+	profiles.Get("/:id", browserProfileHandler.GetProfile)
+	profiles.Put("/:id", browserProfileHandler.UpdateProfile)
+	profiles.Delete("/:id", browserProfileHandler.DeleteProfile)
+	profiles.Post("/:id/duplicate", browserProfileHandler.DuplicateProfile)
 
 	// Internal API (for worker → orchestrator communication)
 	internal := api.Group("/internal")

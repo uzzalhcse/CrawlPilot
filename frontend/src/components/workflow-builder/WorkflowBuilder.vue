@@ -7,7 +7,6 @@ import WorkflowCanvas from './WorkflowCanvas.vue'
 import PropertiesPanel from './PropertiesPanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import MonacoEditor from '@/components/ui/MonacoEditor.vue'
 import { Save, Play, Layout, Code } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
@@ -65,6 +64,16 @@ watch(
   { immediate: true }
 )
 
+// Sync description from workflowConfig to workflowDescription (for save operations)
+watch(
+  () => workflowConfig.value.description,
+  (newDesc) => {
+    if (newDesc !== undefined && newDesc !== workflowDescription.value) {
+      workflowDescription.value = newDesc
+    }
+  }
+)
+
 // Toggle Mode
 function toggleMode() {
   if (mode.value === 'builder') {
@@ -83,6 +92,8 @@ function toggleMode() {
             rate_limit_delay: workflowConfig.value.rate_limit_delay || 1000,
             storage: workflowConfig.value.storage || { type: 'database' },
             browser_profile_id: workflowConfig.value.browser_profile_id,
+            default_driver: workflowConfig.value.default_driver,
+            default_browser_name: workflowConfig.value.default_browser_name,
           },
           preservedPhaseProps.value,
           preservedWorkflowProps.value
@@ -215,7 +226,10 @@ function loadWorkflow(workflow: Workflow) {
     max_depth: workflow.config.max_depth,
     rate_limit_delay: workflow.config.rate_limit_delay,
     storage: workflow.config.storage,
-    browser_profile_id: workflow.browser_profile_id
+    browser_profile_id: workflow.browser_profile_id,
+    default_driver: workflow.config.default_driver,
+    default_browser_name: workflow.config.default_browser_name,
+    description: workflow.description // Sync description to workflowConfig
   }
   
   selectedNode.value = null
@@ -227,7 +241,7 @@ function loadWorkflow(workflow: Workflow) {
   preservedPhaseProps.value = new Map()
   
   // Extract workflow-level custom properties (headers, etc.)
-  const standardWorkflowKeys = ['start_urls', 'max_depth', 'rate_limit_delay', 'storage', 'phases', 'url_discovery', 'data_extraction', 'browser_profile_id']
+  const standardWorkflowKeys = ['start_urls', 'max_depth', 'rate_limit_delay', 'storage', 'phases', 'url_discovery', 'data_extraction', 'browser_profile_id', 'default_driver', 'default_browser_name']
   Object.keys(workflow.config).forEach(key => {
     if (!standardWorkflowKeys.includes(key)) {
       preservedWorkflowProps.value[key] = (workflow.config as any)[key]
@@ -939,6 +953,8 @@ function handleSave() {
         rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow?.config?.rate_limit_delay,
         storage: workflowConfig.value.storage || props.workflow?.config?.storage,
         browser_profile_id: workflowConfig.value.browser_profile_id || props.workflow?.browser_profile_id,
+        default_driver: workflowConfig.value.default_driver || props.workflow?.config?.default_driver,
+        default_browser_name: workflowConfig.value.default_browser_name || props.workflow?.config?.default_browser_name,
       },
       preservedPhaseProps.value,
       preservedWorkflowProps.value
@@ -971,7 +987,7 @@ function handleSave() {
   // Send only the raw config to preserve exact JSON structure
   emit('save', {
     name: workflowName.value,
-    description: workflowDescription.value,
+    description: workflowConfig.value.description || workflowDescription.value,
     status: workflowStatus.value,
     nodes: mode.value === 'json' ? [] : nodes.value,
     edges: mode.value === 'json' ? [] : edges.value,
@@ -1007,6 +1023,8 @@ async function handleToggleStatus() {
         rate_limit_delay: workflowConfig.value.rate_limit_delay || props.workflow.config.rate_limit_delay,
         storage: workflowConfig.value.storage || props.workflow.config.storage,
         browser_profile_id: workflowConfig.value.browser_profile_id || props.workflow.browser_profile_id,
+        default_driver: workflowConfig.value.default_driver || props.workflow.config.default_driver,
+        default_browser_name: workflowConfig.value.default_browser_name || props.workflow.config.default_browser_name,
       },
       preservedPhaseProps.value,
       preservedWorkflowProps.value
@@ -1175,14 +1193,6 @@ defineExpose({
             Execute
           </Button>
         </div>
-      </div>
-      <div>
-        <Textarea
-          v-model="workflowDescription"
-          placeholder="Add a description for this workflow..."
-          rows="2"
-          class="text-sm resize-none bg-background/50"
-        />
       </div>
     </div>
 

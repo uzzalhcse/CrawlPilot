@@ -37,14 +37,44 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 		zap.Float64("timeout", timeout),
 	)
 
-	// Check if driver switch is requested
-	if targetDriver, ok := node.Params["driver"].(string); ok && targetDriver != "" {
-		if execCtx.SwitchDriver != nil {
-			if err := execCtx.SwitchDriver(targetDriver); err != nil {
-				return fmt.Errorf("failed to switch driver: %w", err)
-			}
+	// Check if driver switch is requested (skip if empty or "default")
+	if targetDriver, ok := node.Params["driver"].(string); ok && targetDriver != "" && targetDriver != "default" {
+		// Check if we're already using the target driver (skip redundant switch)
+		currentDriver := execCtx.Page.DriverName()
+		if currentDriver == targetDriver {
+			logger.Debug("Already using target driver, skipping switch",
+				zap.String("driver", targetDriver),
+			)
 		} else {
-			logger.Warn("Driver switch requested but not supported by execution context")
+			profileID := ""
+			if pid, ok := node.Params["browser_profile_id"].(string); ok {
+				profileID = pid
+			}
+
+			browserName := ""
+			if bn, ok := node.Params["browser_name"].(string); ok {
+				browserName = bn
+			}
+
+			// Priority: profile > browser_name > default
+			if profileID != "" && execCtx.SwitchDriverWithProfile != nil {
+				// Use full profile (for Playwright/Chromedp)
+				if err := execCtx.SwitchDriverWithProfile(targetDriver, profileID); err != nil {
+					return fmt.Errorf("failed to switch driver with profile: %w", err)
+				}
+			} else if browserName != "" && targetDriver == "http" && execCtx.SwitchDriverWithBrowser != nil {
+				// Use browser_name for HTTP driver (JA3 + user agent)
+				if err := execCtx.SwitchDriverWithBrowser(targetDriver, browserName); err != nil {
+					return fmt.Errorf("failed to switch HTTP driver with browser: %w", err)
+				}
+			} else if execCtx.SwitchDriver != nil {
+				// Default driver switch
+				if err := execCtx.SwitchDriver(targetDriver); err != nil {
+					return fmt.Errorf("failed to switch driver: %w", err)
+				}
+			} else {
+				logger.Warn("Driver switch requested but not supported by execution context")
+			}
 		}
 	}
 

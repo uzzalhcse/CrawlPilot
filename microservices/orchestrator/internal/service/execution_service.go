@@ -16,6 +16,7 @@ import (
 type ExecutionService struct {
 	workflowRepo  repository.WorkflowRepository
 	executionRepo repository.ExecutionRepository
+	profileRepo   repository.BrowserProfileRepository // For node-level profile resolution
 	workflowSvc   *WorkflowService
 	pubsubClient  *queue.PubSubClient
 }
@@ -24,12 +25,14 @@ type ExecutionService struct {
 func NewExecutionService(
 	workflowRepo repository.WorkflowRepository,
 	executionRepo repository.ExecutionRepository,
+	profileRepo repository.BrowserProfileRepository,
 	workflowSvc *WorkflowService,
 	pubsubClient *queue.PubSubClient,
 ) *ExecutionService {
 	return &ExecutionService{
 		workflowRepo:  workflowRepo,
 		executionRepo: executionRepo,
+		profileRepo:   profileRepo,
 		workflowSvc:   workflowSvc,
 		pubsubClient:  pubsubClient,
 	}
@@ -117,6 +120,9 @@ func (s *ExecutionService) enqueueStartURLs(ctx context.Context, workflow *model
 	// Use first phase for start URLs
 	firstPhase := workflow.Config.Phases[0]
 
+	// Resolve all node-level browser profiles upfront (zero DB calls during execution)
+	nodeProfiles := s.resolveNodeProfiles(ctx, workflow.Config.Phases)
+
 	// Prepare metadata with workflow config for phase transitions
 	metadata := map[string]interface{}{
 		"max_depth":        workflow.Config.MaxDepth,
@@ -124,20 +130,30 @@ func (s *ExecutionService) enqueueStartURLs(ctx context.Context, workflow *model
 		"phases":           workflow.Config.Phases, // Include phases for transitions
 	}
 
+	// Embed resolved profiles in metadata (workers read from here, no API calls)
+	if len(nodeProfiles) > 0 {
+		metadata["node_profiles"] = nodeProfiles
+		logger.Info("Embedded node profiles in task metadata",
+			zap.Int("profile_count", len(nodeProfiles)),
+		)
+	}
+
 	tasks := make([]*models.Task, 0, len(workflow.Config.StartURLs))
 
 	for _, startURL := range workflow.Config.StartURLs {
 		task := &models.Task{
-			TaskID:      uuid.New().String(),
-			ExecutionID: execution.ID,
-			WorkflowID:  workflow.ID,
-			URL:         startURL,
-			Depth:       0,
-			ParentURLID: nil,
-			PhaseID:     firstPhase.ID,
-			PhaseConfig: firstPhase,
-			Metadata:    metadata,
-			RetryCount:  0,
+			TaskID:           uuid.New().String(),
+			ExecutionID:      execution.ID,
+			WorkflowID:       workflow.ID,
+			URL:              startURL,
+			Depth:            0,
+			ParentURLID:      nil,
+			PhaseID:          firstPhase.ID,
+			PhaseConfig:      firstPhase,
+			WorkflowConfig:   &workflow.Config, // Pass workflow config so worker can access defaults
+			Metadata:         metadata,
+			RetryCount:       0,
+			BrowserProfileID: workflow.BrowserProfileID, // Pass browser profile to task
 		}
 
 		tasks = append(tasks, task)
@@ -149,6 +165,41 @@ func (s *ExecutionService) enqueueStartURLs(ctx context.Context, workflow *model
 	}
 
 	return nil
+}
+
+// resolveNodeProfiles collects and fetches all browser profiles referenced in workflow nodes
+// This is called ONCE at execution start - profiles are embedded in task metadata for workers
+func (s *ExecutionService) resolveNodeProfiles(ctx context.Context, phases []models.WorkflowPhase) map[string]interface{} {
+	profileIDs := make(map[string]bool)
+
+	// Collect unique profile IDs from all nodes
+	for _, phase := range phases {
+		for _, node := range phase.Nodes {
+			if profileID, ok := node.Params["browser_profile_id"].(string); ok && profileID != "" {
+				profileIDs[profileID] = true
+			}
+		}
+	}
+
+	if len(profileIDs) == 0 {
+		return nil
+	}
+
+	// Fetch profiles (one DB query per profile, done once at start)
+	profiles := make(map[string]interface{})
+	for profileID := range profileIDs {
+		profile, err := s.profileRepo.Get(ctx, profileID)
+		if err != nil {
+			logger.Warn("Failed to fetch node profile, will be skipped",
+				zap.String("profile_id", profileID),
+				zap.Error(err),
+			)
+			continue
+		}
+		profiles[profileID] = profile
+	}
+
+	return profiles
 }
 
 // UpdateExecutionStats updates execution statistics (called by workers)

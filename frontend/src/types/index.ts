@@ -15,6 +15,9 @@ export interface WorkflowConfig {
   rate_limit_delay: number
   headers?: Record<string, string>
   browser_profile_id?: string
+  default_driver?: 'playwright' | 'chromedp' | 'http'
+  default_browser_name?: 'chrome' | 'firefox' | 'safari' | 'edge' | 'ios' | 'android'
+  description?: string
   storage: StorageConfig
   // NEW: Phase-based format
   phases?: WorkflowPhase[]
@@ -345,13 +348,14 @@ export interface NodeTemplate {
 export interface ParamField {
   key: string
   label: string
-  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array' | 'field_array' | 'nested_field_array' | 'sequence_steps'
+  type: 'text' | 'number' | 'boolean' | 'select' | 'textarea' | 'array' | 'field_array' | 'nested_field_array' | 'sequence_steps' | 'profile_select'
   required?: boolean
   defaultValue?: any
   options?: { label: string; value: string }[]
   placeholder?: string
   description?: string
   arrayItemSchema?: ParamField[]
+  showWhen?: { field: string; value: string | string[] } // Conditional visibility
 }
 
 // Field configuration for extraction

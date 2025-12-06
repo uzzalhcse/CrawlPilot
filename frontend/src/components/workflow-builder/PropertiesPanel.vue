@@ -15,7 +15,7 @@ import MonacoEditor from '@/components/ui/MonacoEditor.vue'
 import { Code2, FileText, X, Trash2, Settings2, Save, Globe } from 'lucide-vue-next'
 
 // New imports from the provided snippet
-// import { Textarea } from '@/components/ui/textarea'
+import { Textarea } from '@/components/ui/textarea'
 // import { Switch } from '@/components/ui/switch'
 
 // Import modular components
@@ -206,6 +206,18 @@ function updateExtractionMode(mode: string) {
   }
 }
 
+// Filter browser profiles by selected default driver
+const filteredProfiles = computed(() => {
+  const driverType = props.workflowConfig?.default_driver || 'playwright'
+  
+  if (driverType === 'http') {
+    return [] // HTTP driver doesn't use browser profiles
+  }
+  
+  // Filter profiles matching the driver type
+  return profilesStore.profiles.filter(p => p.driver_type === driverType)
+})
+
 // Visual Selector state
 const visualSelectorSessionId = ref<string | null>(null)
 const isVisualSelectorOpen = ref(false)
@@ -374,6 +386,20 @@ function closeVisualSelector() {
       <ScrollArea class="flex-1">
         <div class="p-4 space-y-6">
           
+          <!-- Workflow Description -->
+          <div class="space-y-2">
+            <Label>Description</Label>
+            <Textarea
+              :model-value="workflowConfig?.description || ''"
+              @update:model-value="updateWorkflowConfig('description', $event)"
+              placeholder="Add a description for this workflow..."
+              rows="2"
+              class="text-sm resize-none"
+            />
+          </div>
+
+          <Separator />
+          
           <!-- Browser Configuration -->
           <div class="space-y-4">
             <div class="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -381,7 +407,35 @@ function closeVisualSelector() {
               Browser Configuration
             </div>
             
+            <!-- Default Driver Selection -->
             <div class="space-y-2">
+              <Label>Default Driver</Label>
+              <Select 
+                :model-value="workflowConfig?.default_driver || 'playwright'" 
+                @update:model-value="(val) => updateWorkflowConfig('default_driver', val)"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select driver">
+                    {{ 
+                      workflowConfig?.default_driver === 'chromedp' ? 'Chromedp (Chrome DevTools Protocol)'
+                        : workflowConfig?.default_driver === 'http' ? 'HTTP Client (No Browser)'
+                        : 'Playwright (Default)'
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="playwright">Playwright (Default)</SelectItem>
+                  <SelectItem value="chromedp">Chromedp (Chrome DevTools Protocol)</SelectItem>
+                  <SelectItem value="http">HTTP Client (No Browser)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p class="text-[10px] text-muted-foreground">
+                Default browser automation driver for this workflow.
+              </p>
+            </div>
+
+            <!-- Browser Profile (hidden for HTTP driver) -->
+            <div v-if="workflowConfig?.default_driver !== 'http'" class="space-y-2">
               <Label>Browser Profile</Label>
               <Select 
                 :model-value="workflowConfig?.browser_profile_id || ''" 
@@ -399,11 +453,12 @@ function closeVisualSelector() {
                 <SelectContent>
                   <!-- We use a special value for clearing/default -->
                   <SelectItem value="default_profile">Default Profile</SelectItem>
-                  <template v-for="profile in profilesStore.profiles" :key="profile.id">
+                  <template v-for="profile in filteredProfiles" :key="profile.id">
                     <SelectItem :value="profile.id">
                       <div class="flex items-center gap-2">
                         <span class="w-2 h-2 rounded-full" :class="profile.status === 'active' ? 'bg-green-500' : 'bg-gray-300'"></span>
                         {{ profile.name }}
+                        <span class="text-xs text-muted-foreground">({{ profile.driver_type }})</span>
                       </div>
                     </SelectItem>
                   </template>
@@ -411,6 +466,39 @@ function closeVisualSelector() {
               </Select>
               <p class="text-[10px] text-muted-foreground">
                 Select which browser profile (fingerprint, cookies, etc.) to use for this workflow.
+              </p>
+            </div>
+
+            <!-- HTTP Driver Browser Name Selection -->
+            <div v-if="workflowConfig?.default_driver === 'http'" class="space-y-2">
+              <Label>Default Browser (JA3 Fingerprint)</Label>
+              <Select 
+                :model-value="workflowConfig?.default_browser_name || 'chrome'" 
+                @update:model-value="(val) => updateWorkflowConfig('default_browser_name', val)"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select browser fingerprint">
+                    {{ 
+                      workflowConfig?.default_browser_name === 'firefox' ? 'Firefox'
+                        : workflowConfig?.default_browser_name === 'safari' ? 'Safari'
+                        : workflowConfig?.default_browser_name === 'edge' ? 'Edge'
+                        : workflowConfig?.default_browser_name === 'ios' ? 'iOS Safari'
+                        : workflowConfig?.default_browser_name === 'android' ? 'Android Chrome'
+                        : 'Chrome (Default)'
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="chrome">Chrome (Default)</SelectItem>
+                  <SelectItem value="firefox">Firefox</SelectItem>
+                  <SelectItem value="safari">Safari</SelectItem>
+                  <SelectItem value="edge">Edge</SelectItem>
+                  <SelectItem value="ios">iOS Safari</SelectItem>
+                  <SelectItem value="android">Android Chrome</SelectItem>
+                </SelectContent>
+              </Select>
+              <p class="text-[10px] text-muted-foreground">
+                TLS fingerprint + User-Agent for HTTP requests. Mimics the selected browser's network signature.
               </p>
             </div>
           </div>

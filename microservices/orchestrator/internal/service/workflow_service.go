@@ -32,8 +32,8 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, workflow *models.W
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	// Set initial status
-	if workflow.Status == "" {
+	// Set initial status (only 'active' and 'inactive' are valid in database)
+	if workflow.Status == "" || workflow.Status == "draft" {
 		workflow.Status = "active"
 	}
 

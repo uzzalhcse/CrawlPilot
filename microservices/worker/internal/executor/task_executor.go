@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
@@ -26,6 +27,10 @@ import (
 type TaskExecutor struct {
 	drivers              map[string]driver.Driver
 	defaultDriver        driver.Driver
+	driverFactory        *driver.Factory                   // Factory for creating profile-based drivers
+	browserConfig        *config.BrowserConfig             // Browser config for factory
+	orchestratorURL      string                            // URL for fetching profiles
+	profileCache         map[string]*models.BrowserProfile // Cache of loaded profiles
 	nodeRegistry         *nodes.Registry
 	pubsubClient         *queue.PubSubClient
 	gcsClient            *storage.GCSClient
@@ -134,9 +139,16 @@ func NewTaskExecutor(
 		zap.String("default_driver", defaultDriver.Name()),
 	)
 
+	// Create driver factory for profile-based driver creation
+	driverFactory := driver.NewFactory(cfg)
+
 	return &TaskExecutor{
 		drivers:              drivers,
 		defaultDriver:        defaultDriver,
+		driverFactory:        driverFactory,
+		browserConfig:        cfg,
+		orchestratorURL:      orchestratorURL,
+		profileCache:         make(map[string]*models.BrowserProfile),
 		nodeRegistry:         nodeRegistry,
 		pubsubClient:         pubsubClient,
 		gcsClient:            gcsClient,
@@ -196,11 +208,49 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		)
 	}
 
-	// Create new page via driver
-	page, err := e.defaultDriver.NewPage(execCtx)
+	// If first node uses HTTP driver, set JA3 config from node or workflow defaults
+	if firstNodeDriver := e.getFirstNodeDriver(task); firstNodeDriver == "http" {
+		// Priority: node-level browser_name > workflow-level default_browser_name > "chrome"
+		browserName := e.getFirstNodeBrowserName(task)
+		if browserName == "" && task.WorkflowConfig != nil {
+			browserName = task.WorkflowConfig.DefaultBrowserName
+		}
+		if browserName == "" {
+			browserName = "chrome" // Ultimate default
+		}
+		execCtx = context.WithValue(execCtx, driver.JA3Key, &driver.JA3Config{
+			BrowserName: browserName,
+		})
+		logger.Debug("Setting browser_name for HTTP driver",
+			zap.String("browser_name", browserName),
+			zap.String("source", func() string {
+				if e.getFirstNodeBrowserName(task) != "" {
+					return "node"
+				} else if task.WorkflowConfig != nil && task.WorkflowConfig.DefaultBrowserName != "" {
+					return "workflow"
+				}
+				return "default"
+			}()),
+		)
+	}
+
+	// Get driver for this task (profile-based or default)
+	taskDriver, shouldClose, err := e.getDriverForTask(task)
 	if err != nil {
 		taskStats.Record(0, 0, 1)
 		e.reportStats(ctx, task.ExecutionID, taskStats)
+		return fmt.Errorf("failed to get driver for task: %w", err)
+	}
+
+	// Create new page via driver
+	page, err := taskDriver.NewPage(execCtx)
+	if err != nil {
+		taskStats.Record(0, 0, 1)
+		e.reportStats(ctx, task.ExecutionID, taskStats)
+		// Close profile-specific driver if it was created
+		if shouldClose {
+			taskDriver.Close()
+		}
 		return fmt.Errorf("failed to create page: %w", err)
 	}
 	// Track the current page to ensure the final page is closed
@@ -209,6 +259,10 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	defer func() {
 		if currentPage != nil {
 			currentPage.Close()
+		}
+		// Close profile-specific driver if it was created for this task
+		if shouldClose {
+			taskDriver.Close()
 		}
 	}()
 
@@ -465,6 +519,14 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		Variables: make(map[string]interface{}),
 	}
 
+	// Track profile-based drivers created during execution for cleanup
+	var profileDriversToClose []driver.Driver
+	defer func() {
+		for _, d := range profileDriversToClose {
+			d.Close()
+		}
+	}()
+
 	// Implement SwitchDriver callback
 	execCtx.SwitchDriver = func(targetType string) error {
 		var currentType string
@@ -554,6 +616,132 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 
 		// Update execution context
 		execCtx.Page = newPage
+		return nil
+	}
+
+	// Implement SwitchDriverWithProfile callback for per-node profile support
+	// Uses embedded profiles from task metadata (ZERO API calls)
+	execCtx.SwitchDriverWithProfile = func(targetType, profileID string) error {
+		logger.Info("Switching driver with profile",
+			zap.String("target_driver", targetType),
+			zap.String("profile_id", profileID),
+			zap.String("task_id", task.TaskID),
+		)
+
+		// Get embedded profiles from metadata
+		var profile *models.BrowserProfile
+		if nodeProfiles, ok := task.Metadata["node_profiles"].(map[string]interface{}); ok {
+			if profileData, exists := nodeProfiles[profileID]; exists {
+				// Convert from interface{} to BrowserProfile via JSON
+				profileBytes, err := json.Marshal(profileData)
+				if err == nil {
+					var p models.BrowserProfile
+					if err := json.Unmarshal(profileBytes, &p); err == nil {
+						profile = &p
+					}
+				}
+			}
+		}
+
+		if profile == nil {
+			logger.Warn("Profile not found in embedded metadata, using default driver",
+				zap.String("profile_id", profileID),
+			)
+			// Fall back to legacy driver switch
+			return execCtx.SwitchDriver(targetType)
+		}
+
+		// Validate driver type matches profile
+		if profile.DriverType != targetType {
+			logger.Warn("Profile driver type doesn't match requested driver, using default",
+				zap.String("profile_driver", profile.DriverType),
+				zap.String("requested_driver", targetType),
+			)
+			return execCtx.SwitchDriver(targetType)
+		}
+
+		// Close current page
+		if err := execCtx.Page.Close(); err != nil {
+			logger.Warn("Failed to close page during profile switch", zap.Error(err))
+		}
+
+		// Create driver from profile (no API call - profile is already in memory)
+		profileDriver, err := e.driverFactory.CreateDriverFromProfile(profile)
+		if err != nil {
+			logger.Warn("Failed to create profile driver, using default",
+				zap.String("profile_id", profileID),
+				zap.Error(err),
+			)
+			return execCtx.SwitchDriver(targetType)
+		}
+
+		// Create new page from profile driver
+		pageCtx := ctx
+		if task.ProxyURL != "" {
+			proxyConfig := &browser.ProxyConfig{Server: task.ProxyURL}
+			pageCtx = context.WithValue(ctx, driver.ProxyKey, proxyConfig)
+		}
+
+		newPage, err := profileDriver.NewPage(pageCtx)
+		if err != nil {
+			profileDriver.Close()
+			return fmt.Errorf("failed to create page from profile driver: %w", err)
+		}
+
+		execCtx.Page = newPage
+		profileDriversToClose = append(profileDriversToClose, profileDriver) // Track for cleanup
+		logger.Info("Switched to profile-based driver",
+			zap.String("profile_id", profileID),
+			zap.String("driver_type", targetType),
+			zap.String("browser_type", profile.BrowserType),
+		)
+		return nil
+	}
+
+	// Implement SwitchDriverWithBrowser callback for HTTP driver with browser_name
+	// Used for JA3 fingerprint + matching user agent generation
+	execCtx.SwitchDriverWithBrowser = func(targetType, browserName string) error {
+		if targetType != "http" {
+			// Only HTTP driver uses this - others should use profile
+			return execCtx.SwitchDriver(targetType)
+		}
+
+		logger.Info("Switching to HTTP driver with browser",
+			zap.String("browser_name", browserName),
+			zap.String("task_id", task.TaskID),
+		)
+
+		// Close current page
+		if err := execCtx.Page.Close(); err != nil {
+			logger.Warn("Failed to close page during HTTP driver switch", zap.Error(err))
+		}
+
+		// Create context with JA3 config for the specified browser
+		pageCtx := ctx
+		ja3Config := &driver.JA3Config{BrowserName: browserName}
+		pageCtx = context.WithValue(pageCtx, driver.JA3Key, ja3Config)
+
+		if task.ProxyURL != "" {
+			proxyConfig := &browser.ProxyConfig{Server: task.ProxyURL}
+			pageCtx = context.WithValue(pageCtx, driver.ProxyKey, proxyConfig)
+		}
+
+		// Get HTTP driver from registry
+		httpDriver, ok := e.drivers["http"]
+		if !ok {
+			return fmt.Errorf("HTTP driver not available")
+		}
+
+		// Create new page with JA3 config
+		newPage, err := httpDriver.NewPage(pageCtx)
+		if err != nil {
+			return fmt.Errorf("failed to create HTTP page: %w", err)
+		}
+
+		execCtx.Page = newPage
+		logger.Info("Switched to HTTP driver with browser-specific JA3 and user agent",
+			zap.String("browser_name", browserName),
+		)
 		return nil
 	}
 
@@ -664,17 +852,19 @@ func (e *TaskExecutor) requeueDiscoveredURLs(ctx context.Context, task *models.T
 
 	for _, urlData := range urls {
 		newTask := &models.Task{
-			TaskID:      fmt.Sprintf("%s-%d", task.TaskID, len(tasks)),
-			ExecutionID: task.ExecutionID,
-			WorkflowID:  task.WorkflowID,
-			URL:         urlData.URL,
-			Depth:       task.Depth + 1,
-			ParentURLID: &task.TaskID,
-			Marker:      urlData.Marker, // Propagate marker
-			PhaseID:     nextPhase.ID,
-			PhaseConfig: nextPhase,
-			Metadata:    task.Metadata,
-			RetryCount:  0,
+			TaskID:           fmt.Sprintf("%s-%d", task.TaskID, len(tasks)),
+			ExecutionID:      task.ExecutionID,
+			WorkflowID:       task.WorkflowID,
+			URL:              urlData.URL,
+			Depth:            task.Depth + 1,
+			ParentURLID:      &task.TaskID,
+			Marker:           urlData.Marker, // Propagate marker
+			PhaseID:          nextPhase.ID,
+			PhaseConfig:      nextPhase,
+			WorkflowConfig:   task.WorkflowConfig, // Propagate workflow config to child tasks
+			Metadata:         task.Metadata,
+			RetryCount:       0,
+			BrowserProfileID: task.BrowserProfileID, // Propagate browser profile to child tasks
 		}
 
 		tasks = append(tasks, newTask)
@@ -806,4 +996,136 @@ func extractDomain(url string) string {
 		return url[:end]
 	}
 	return url
+}
+
+// getDriverForTask returns the appropriate driver for the task
+// Returns (driver, shouldClose, error) where shouldClose indicates if the driver should be closed after use
+func (e *TaskExecutor) getDriverForTask(task *models.Task) (driver.Driver, bool, error) {
+	// Check if first node explicitly specifies a driver override
+	// This takes priority over workflow-level browser_profile_id
+	if firstNodeDriver := e.getFirstNodeDriver(task); firstNodeDriver != "" {
+		logger.Info("First node specifies driver override, using direct driver",
+			zap.String("task_id", task.TaskID),
+			zap.String("phase_id", task.PhaseID),
+			zap.String("driver", firstNodeDriver),
+		)
+
+		switch firstNodeDriver {
+		case "http":
+			// Use registered HTTP driver or create on demand
+			if httpDriver, ok := e.drivers["http"]; ok && httpDriver != nil {
+				return httpDriver, false, nil
+			}
+			return driver.NewHttpDriver(), false, nil
+
+		case "chromedp":
+			// Create chromedp driver on demand (doesn't use profile, faster startup)
+			chromedpDriver := driver.NewChromedpDriver(e.browserConfig)
+			return chromedpDriver, true, nil // shouldClose=true to clean up after task
+
+		case "playwright":
+			// Create playwright driver on demand
+			playwrightDriver, err := driver.NewPlaywrightDriver(e.browserConfig)
+			if err != nil {
+				logger.Warn("Failed to create playwright driver, falling back to default",
+					zap.Error(err),
+				)
+				return e.defaultDriver, false, nil
+			}
+			return playwrightDriver, true, nil // shouldClose=true to clean up after task
+		}
+	}
+
+	// If no browser profile ID, use default driver
+	if task.BrowserProfileID == nil || *task.BrowserProfileID == "" {
+		return e.defaultDriver, false, nil
+	}
+
+	profileID := *task.BrowserProfileID
+
+	// Fetch or use cached profile
+	profile, err := e.fetchBrowserProfile(profileID)
+	if err != nil {
+		logger.Warn("Failed to fetch browser profile, using default driver",
+			zap.String("profile_id", profileID),
+			zap.Error(err),
+		)
+		return e.defaultDriver, false, nil
+	}
+
+	// Log profile usage
+	logger.Info("Using browser profile for task",
+		zap.String("task_id", task.TaskID),
+		zap.String("profile_id", profileID),
+		zap.String("driver_type", profile.DriverType),
+		zap.String("browser_type", profile.BrowserType),
+	)
+
+	// Create driver from profile
+	profileDriver, err := e.driverFactory.CreateDriverFromProfile(profile)
+	if err != nil {
+		logger.Warn("Failed to create profile driver, using default",
+			zap.String("profile_id", profileID),
+			zap.Error(err),
+		)
+		return e.defaultDriver, false, nil
+	}
+
+	// Profile-based drivers should be closed after single task (new browser per task)
+	return profileDriver, true, nil
+}
+
+// getFirstNodeDriver returns the driver type specified in the first node of the phase, or empty if not specified
+func (e *TaskExecutor) getFirstNodeDriver(task *models.Task) string {
+	// Check first node in the phase config
+	if len(task.PhaseConfig.Nodes) > 0 {
+		firstNode := task.PhaseConfig.Nodes[0]
+		if driverType, ok := firstNode.Params["driver"].(string); ok && driverType != "" && driverType != "default" {
+			return driverType
+		}
+	}
+	return ""
+}
+
+// getFirstNodeBrowserName returns the browser_name specified in the first node of the phase
+func (e *TaskExecutor) getFirstNodeBrowserName(task *models.Task) string {
+	if len(task.PhaseConfig.Nodes) > 0 {
+		firstNode := task.PhaseConfig.Nodes[0]
+		if browserName, ok := firstNode.Params["browser_name"].(string); ok && browserName != "" {
+			return browserName
+		}
+	}
+	return ""
+}
+
+// fetchBrowserProfile fetches a browser profile from orchestrator or cache
+func (e *TaskExecutor) fetchBrowserProfile(profileID string) (*models.BrowserProfile, error) {
+	// Check cache first
+	if profile, ok := e.profileCache[profileID]; ok {
+		return profile, nil
+	}
+
+	// Fetch from orchestrator
+	url := fmt.Sprintf("%s/api/v1/profiles/%s", e.orchestratorURL, profileID)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch profile: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("profile fetch failed with status: %d", resp.StatusCode)
+	}
+
+	var profile models.BrowserProfile
+	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
+		return nil, fmt.Errorf("failed to decode profile: %w", err)
+	}
+
+	// Cache the profile (profiles don't change frequently)
+	e.profileCache[profileID] = &profile
+
+	return &profile, nil
 }

@@ -28,7 +28,6 @@ func NewUTLSTransport(clientHelloID utls.ClientHelloID, proxyURL *url.URL, insec
 		},
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			// 1. Establish underlying TCP connection
-			// If proxy is set, we need to handle CONNECT manually because DialTLSContext overrides standard proxy handling
 			var conn net.Conn
 			var err error
 
@@ -43,13 +42,29 @@ func NewUTLSTransport(clientHelloID utls.ClientHelloID, proxyURL *url.URL, insec
 				return nil, err
 			}
 
-			// 2. Perform utls handshake
+			// 2. Create utls connection
 			host, _, _ := net.SplitHostPort(addr)
 			uConn := utls.UClient(conn, &utls.Config{
 				ServerName:         host,
 				InsecureSkipVerify: insecure,
 			}, clientHelloID)
 
+			// 3. Build handshake state first, then modify ALPN
+			if err := uConn.BuildHandshakeState(); err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("failed to build handshake state: %w", err)
+			}
+
+			// 4. Force HTTP/1.1 by modifying the ALPN extension
+			// Find and modify ALPN extension to only contain http/1.1
+			for _, ext := range uConn.Extensions {
+				if alpnExt, ok := ext.(*utls.ALPNExtension); ok {
+					alpnExt.AlpnProtocols = []string{"http/1.1"}
+					break
+				}
+			}
+
+			// 5. Perform handshake with modified extensions
 			if err := uConn.Handshake(); err != nil {
 				conn.Close()
 				return nil, fmt.Errorf("utls handshake failed: %w", err)
@@ -57,7 +72,7 @@ func NewUTLSTransport(clientHelloID utls.ClientHelloID, proxyURL *url.URL, insec
 
 			return uConn, nil
 		},
-		ForceAttemptHTTP2: true,
+		ForceAttemptHTTP2: false,
 	}
 }
 

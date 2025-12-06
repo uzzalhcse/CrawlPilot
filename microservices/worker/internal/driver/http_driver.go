@@ -113,9 +113,16 @@ func (d *HttpDriver) NewPage(ctx context.Context) (Page, error) {
 		}
 	}
 
+	// Get browser name for user agent generation
+	browserName := "chrome" // default
+	if ja3Config != nil {
+		browserName = ja3Config.BrowserName
+	}
+
 	return &HttpPage{
-		client: client,
-		ctx:    ctx,
+		client:      client,
+		ctx:         ctx,
+		browserName: browserName,
 	}, nil
 }
 
@@ -130,11 +137,12 @@ func (d *HttpDriver) Name() string {
 
 // HttpPage implements the Page interface
 type HttpPage struct {
-	client *http.Client
-	ctx    context.Context
-	doc    *goquery.Document
-	url    string
-	body   string
+	client      *http.Client
+	ctx         context.Context
+	doc         *goquery.Document
+	url         string
+	body        string
+	browserName string // For user agent generation matching JA3
 }
 
 func (p *HttpPage) Goto(url string, options ...PageOption) error {
@@ -150,9 +158,9 @@ func (p *HttpPage) Goto(url string, options ...PageOption) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set common headers to look like a browser
-	// Set common headers to look like a browser
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	// Generate user agent matching JA3 fingerprint browser
+	userAgent := GenerateUserAgent(p.browserName)
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -297,6 +305,10 @@ func (p *HttpPage) Close() error {
 	p.doc = nil
 	p.body = ""
 	return nil
+}
+
+func (p *HttpPage) DriverName() string {
+	return "http"
 }
 
 func (p *HttpPage) GetCookies() ([]*http.Cookie, error) {

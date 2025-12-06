@@ -26,6 +26,7 @@ const testing = ref(false)
 const formData = ref({
   name: '',
   description: '',
+  driver_type: 'playwright' as 'playwright' | 'chromedp' | 'http',
   browser_type: 'chromium' as 'chromium' | 'firefox' | 'webkit',
   folder: '',
   tags: [] as string[],
@@ -52,6 +53,12 @@ const formData = ref({
   proxy_password: '',
   clear_on_close: true
 })
+
+// Driver types with browser compatibility info (HTTP excluded - uses inline browser_name)
+const driverTypes = ref([
+  { value: 'playwright', label: 'Playwright', description: 'All browsers (Chromium, Firefox, WebKit)', browsers: ['chromium', 'firefox', 'webkit'] },
+  { value: 'chromedp', label: 'Chromedp', description: 'Chromium only (CDP)', browsers: ['chromium'] }
+])
 
 const browserTypes = ref([
   { value: 'chromium', label: 'Chromium', icon: Chrome, description: 'Google Chrome, Microsoft Edge, Brave' },
@@ -211,6 +218,28 @@ const handleCancel = () => {
             </Button>
           </div>
 
+          <!-- Driver Type Selector -->
+          <div class="space-y-2">
+            <Label>Driver Type <span class="text-destructive">*</span></Label>
+            <div class="grid grid-cols-3 gap-3">
+              <button
+                v-for="driver in driverTypes"
+                :key="driver.value"
+                type="button"
+                @click="formData.driver_type = driver.value as any; if (driver.value === 'chromedp') formData.browser_type = 'chromium'"
+                :class="[
+                  'p-3 border-2 rounded-lg text-left transition-all',
+                  formData.driver_type === driver.value 
+                    ? 'border-primary bg-primary/5' 
+                    : 'border-border hover:border-primary/50'
+                ]"
+              >
+                <div class="font-medium text-sm">{{ driver.label }}</div>
+                <div class="text-xs text-muted-foreground mt-1">{{ driver.description }}</div>
+              </button>
+            </div>
+          </div>
+
           <div class="space-y-2">
             <Label>Browser Type <span class="text-destructive">*</span></Label>
             <div class="grid grid-cols-3 gap-3">
@@ -219,11 +248,15 @@ const handleCancel = () => {
                 :key="browser.value"
                 type="button"
                 @click="formData.browser_type = browser.value as any"
+                :disabled="formData.driver_type === 'chromedp' && browser.value !== 'chromium'"
                 :class="[
                   'p-4 border-2 rounded-lg text-left transition-all',
                   formData.browser_type === browser.value 
                     ? 'border-primary bg-primary/5' 
-                    : 'border-border hover:border-primary/50'
+                    : 'border-border hover:border-primary/50',
+                  formData.driver_type === 'chromedp' && browser.value !== 'chromium'
+                    ? 'opacity-50 cursor-not-allowed'
+                    : ''
                 ]"
               >
                 <component :is="browser.icon" class="w-6 h-6 mb-2" :class="formData.browser_type === browser.value ? 'text-primary' : 'text-muted-foreground'" />

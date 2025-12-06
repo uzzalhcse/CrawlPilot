@@ -26,6 +26,14 @@ export const useBrowserProfilesStore = defineStore('browserProfiles', () => {
         }
     })
 
+    const profilesByDriverType = computed(() => {
+        return {
+            playwright: profiles.value.filter(p => p.driver_type === 'playwright'),
+            chromedp: profiles.value.filter(p => p.driver_type === 'chromedp'),
+            all: profiles.value
+        }
+    })
+
     const recentlyUsedProfiles = computed(() =>
         [...profiles.value]
             .filter(p => p.last_used_at)
@@ -203,6 +211,7 @@ export const useBrowserProfilesStore = defineStore('browserProfiles', () => {
         activeProfiles,
         inactiveProfiles,
         profilesByType,
+        profilesByDriverType,
         recentlyUsedProfiles,
         fetchProfiles,
         fetchProfileById,

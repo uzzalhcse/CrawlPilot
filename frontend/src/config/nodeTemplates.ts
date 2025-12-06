@@ -10,7 +10,9 @@ export const nodeTemplates: NodeTemplate[] = [
     defaultParams: {
       url: '',
       timeout: 60000,
-      wait_until: 'load'
+      wait_until: 'load',
+      driver: 'default',
+      browser_name: 'chrome'
     },
     paramSchema: [
       {
@@ -19,6 +21,42 @@ export const nodeTemplates: NodeTemplate[] = [
         type: 'text',
         required: true,
         placeholder: 'https://example.com or {{current_url}}'
+      },
+      {
+        key: 'driver',
+        label: 'Driver Override',
+        type: 'select',
+        defaultValue: 'default',
+        options: [
+          { label: 'Default (from workflow)', value: 'default' },
+          { label: 'Playwright', value: 'playwright' },
+          { label: 'Chromedp', value: 'chromedp' },
+          { label: 'HTTP (static)', value: 'http' }
+        ],
+        description: 'Override the workflow driver for this node'
+      },
+      {
+        key: 'browser_name',
+        label: 'Browser (JA3 Fingerprint)',
+        type: 'select',
+        defaultValue: 'chrome',
+        options: [
+          { label: 'Chrome', value: 'chrome' },
+          { label: 'Firefox', value: 'firefox' },
+          { label: 'Safari', value: 'safari' },
+          { label: 'Edge', value: 'edge' },
+          { label: 'iOS', value: 'ios' },
+          { label: 'Android', value: 'android' }
+        ],
+        description: 'TLS fingerprint + User-Agent for HTTP driver',
+        showWhen: { field: 'driver', value: 'http' }
+      },
+      {
+        key: 'browser_profile_id',
+        label: 'Browser Profile Override',
+        type: 'profile_select',
+        description: 'Override workflow browser profile for this node',
+        showWhen: { field: 'driver', value: ['playwright', 'chromedp'] }
       },
       {
         key: 'timeout',

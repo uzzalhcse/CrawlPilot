@@ -39,15 +39,17 @@ func (r *postgresWorkflowRepo) Create(ctx context.Context, workflow *models.Work
 	configJSON := string(configBytes)
 
 	query := `
-		INSERT INTO workflows (id, name, config, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO workflows (id, name, description, config, status, browser_profile_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	_, err = r.db.Pool.Exec(ctx, query,
 		workflow.ID,
 		workflow.Name,
+		workflow.Description,
 		configJSON,
 		workflow.Status,
+		workflow.BrowserProfileID,
 		workflow.CreatedAt,
 		workflow.UpdatedAt,
 	)
@@ -61,7 +63,7 @@ func (r *postgresWorkflowRepo) Create(ctx context.Context, workflow *models.Work
 
 func (r *postgresWorkflowRepo) Get(ctx context.Context, id string) (*models.Workflow, error) {
 	query := `
-		SELECT id, name, config, status, created_at, updated_at
+		SELECT id, name, description, config, status, browser_profile_id, created_at, updated_at
 		FROM workflows
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -71,8 +73,10 @@ func (r *postgresWorkflowRepo) Get(ctx context.Context, id string) (*models.Work
 	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
 		&workflow.ID,
 		&workflow.Name,
+		&workflow.Description,
 		&workflow.Config,
 		&workflow.Status,
+		&workflow.BrowserProfileID,
 		&workflow.CreatedAt,
 		&workflow.UpdatedAt,
 	)
@@ -89,7 +93,7 @@ func (r *postgresWorkflowRepo) Get(ctx context.Context, id string) (*models.Work
 
 func (r *postgresWorkflowRepo) List(ctx context.Context, filters ListFilters) ([]*models.Workflow, error) {
 	query := `
-		SELECT id, name, config, status, created_at, updated_at
+		SELECT id, name, description, config, status, browser_profile_id, created_at, updated_at
 		FROM workflows
 		WHERE deleted_at IS NULL
 	`
@@ -129,8 +133,10 @@ func (r *postgresWorkflowRepo) List(ctx context.Context, filters ListFilters) ([
 		err := rows.Scan(
 			&workflow.ID,
 			&workflow.Name,
+			&workflow.Description,
 			&workflow.Config,
 			&workflow.Status,
+			&workflow.BrowserProfileID,
 			&workflow.CreatedAt,
 			&workflow.UpdatedAt,
 		)
@@ -155,15 +161,17 @@ func (r *postgresWorkflowRepo) Update(ctx context.Context, workflow *models.Work
 
 	query := `
 		UPDATE workflows
-		SET name = $2, config = $3, status = $4, updated_at = $5
+		SET name = $2, description = $3, config = $4, status = $5, browser_profile_id = $6, updated_at = $7
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
 		workflow.ID,
 		workflow.Name,
+		workflow.Description,
 		configJSON,
 		workflow.Status,
+		workflow.BrowserProfileID,
 		workflow.UpdatedAt,
 	)
 

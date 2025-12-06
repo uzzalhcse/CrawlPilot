@@ -4,22 +4,25 @@ import "time"
 
 // Workflow represents a scraping workflow configuration
 type Workflow struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Config      WorkflowConfig `json:"config"`
-	Status      string         `json:"status"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description,omitempty"`
+	Config           WorkflowConfig `json:"config"`
+	Status           string         `json:"status"`
+	BrowserProfileID *string        `json:"browser_profile_id,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
 // WorkflowConfig contains the workflow configuration
 type WorkflowConfig struct {
-	StartURLs      []string          `json:"start_urls"`
-	MaxDepth       int               `json:"max_depth,omitempty"`
-	RateLimitDelay int               `json:"rate_limit_delay,omitempty"`
-	Headers        map[string]string `json:"headers,omitempty"`
-	Phases         []WorkflowPhase   `json:"phases"`
+	StartURLs          []string          `json:"start_urls"`
+	MaxDepth           int               `json:"max_depth,omitempty"`
+	RateLimitDelay     int               `json:"rate_limit_delay,omitempty"`
+	Headers            map[string]string `json:"headers,omitempty"`
+	DefaultDriver      string            `json:"default_driver,omitempty"`       // playwright, chromedp, http
+	DefaultBrowserName string            `json:"default_browser_name,omitempty"` // chrome, firefox, safari, edge, ios, android (for HTTP driver JA3)
+	Phases             []WorkflowPhase   `json:"phases"`
 }
 
 // WorkflowPhase represents a phase in the workflow
@@ -64,17 +67,19 @@ type Execution struct {
 
 // Task represents a single URL processing task
 type Task struct {
-	TaskID      string                 `json:"task_id"`
-	ExecutionID string                 `json:"execution_id"`
-	WorkflowID  string                 `json:"workflow_id"`
-	URL         string                 `json:"url"`
-	Depth       int                    `json:"depth"`
-	ParentURLID *string                `json:"parent_url_id,omitempty"`
-	Marker      string                 `json:"marker,omitempty"` // URL marker (category, product, etc)
-	PhaseID     string                 `json:"phase_id"`
-	PhaseConfig WorkflowPhase          `json:"phase_config"` // Full phase config with nodes
-	Metadata    map[string]interface{} `json:"metadata"`
-	RetryCount  int                    `json:"retry_count"`
+	TaskID           string                 `json:"task_id"`
+	ExecutionID      string                 `json:"execution_id"`
+	WorkflowID       string                 `json:"workflow_id"`
+	URL              string                 `json:"url"`
+	Depth            int                    `json:"depth"`
+	ParentURLID      *string                `json:"parent_url_id,omitempty"`
+	Marker           string                 `json:"marker,omitempty"` // URL marker (category, product, etc)
+	PhaseID          string                 `json:"phase_id"`
+	PhaseConfig      WorkflowPhase          `json:"phase_config"`              // Full phase config with nodes
+	WorkflowConfig   *WorkflowConfig        `json:"workflow_config,omitempty"` // Workflow-level config (for defaults)
+	Metadata         map[string]interface{} `json:"metadata"`
+	RetryCount       int                    `json:"retry_count"`
+	BrowserProfileID *string                `json:"browser_profile_id,omitempty"` // Browser profile for this task
 
 	// Proxy settings (populated by recovery system)
 	ProxyURL string `json:"proxy_url,omitempty"` // Full proxy URL with auth

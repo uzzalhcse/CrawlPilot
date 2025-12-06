@@ -11,6 +11,7 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
+	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 )
 
@@ -29,6 +30,64 @@ func NewChromedpDriver(cfg *config.BrowserConfig) *ChromedpDriver {
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 	)
+
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+
+	return &ChromedpDriver{
+		cfg:         cfg,
+		allocCtx:    allocCtx,
+		cancelAlloc: cancelAlloc,
+	}
+}
+
+// NewChromedpDriverWithProfile creates a ChromedpDriver using browser profile settings
+func NewChromedpDriverWithProfile(cfg *config.BrowserConfig, profile *models.BrowserProfile) *ChromedpDriver {
+	opts := chromedp.DefaultExecAllocatorOptions[:]
+
+	// Apply profile settings
+	opts = append(opts,
+		chromedp.Flag("headless", cfg.Headless),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+	)
+
+	// Custom executable path from profile
+	if profile.ExecutablePath != "" {
+		opts = append(opts, chromedp.ExecPath(profile.ExecutablePath))
+	}
+
+	// User agent from profile
+	if profile.UserAgent != "" {
+		opts = append(opts, chromedp.UserAgent(profile.UserAgent))
+	}
+
+	// Screen size
+	if profile.ScreenWidth > 0 && profile.ScreenHeight > 0 {
+		opts = append(opts, chromedp.WindowSize(profile.ScreenWidth, profile.ScreenHeight))
+	}
+
+	// Proxy from profile
+	if profile.ProxyEnabled && profile.ProxyServer != "" {
+		proxyURL := profile.ProxyServer
+		if profile.ProxyType != "" {
+			proxyURL = profile.ProxyType + "://" + proxyURL
+		}
+		opts = append(opts, chromedp.ProxyServer(proxyURL))
+	}
+
+	// WebRTC leak prevention
+	if profile.DisableWebRTC {
+		opts = append(opts,
+			chromedp.Flag("disable-webrtc", true),
+			chromedp.Flag("enforce-webrtc-ip-permission-check", true),
+		)
+	}
+
+	// Extra launch args from profile
+	for _, arg := range profile.LaunchArgs {
+		opts = append(opts, chromedp.Flag(arg, true))
+	}
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
 
@@ -118,6 +177,10 @@ func (p *ChromedpPage) Close() error {
 		p.cancelAlloc()
 	}
 	return nil
+}
+
+func (p *ChromedpPage) DriverName() string {
+	return "chromedp"
 }
 
 func (p *ChromedpPage) Goto(url string, options ...PageOption) error {

@@ -9,6 +9,7 @@ import (
 	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
+	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"go.uber.org/zap"
 )
 
@@ -17,6 +18,7 @@ type Pool struct {
 	browser     playwright.Browser
 	contexts    chan playwright.BrowserContext
 	config      *config.BrowserConfig
+	profile     *models.BrowserProfile // Optional profile for fingerprint settings
 	mu          sync.Mutex
 	activeCount int
 	pw          *playwright.Playwright
@@ -31,39 +33,76 @@ type ProxyConfig struct {
 
 // NewPool creates a new browser pool
 func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
+	return newPoolInternal(cfg, nil)
+}
+
+// NewPoolWithProfile creates a new browser pool with profile-specific settings
+// This enables profile-based browser type selection and fingerprint configuration
+func NewPoolWithProfile(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*Pool, error) {
+	return newPoolInternal(cfg, profile)
+}
+
+// newPoolInternal is the internal pool creation function
+func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*Pool, error) {
 	// Initialize Playwright
 	pw, err := playwright.Run()
 	if err != nil {
 		return nil, fmt.Errorf("failed to start playwright: %w", err)
 	}
 
-	// Launch browser
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(cfg.Headless), // Use config setting
+	// Determine browser type from profile or default to Chromium
+	browserType := "chromium"
+	if profile != nil && profile.BrowserType != "" {
+		browserType = profile.BrowserType
+	}
+
+	// Build launch options
+	launchOpts := playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(cfg.Headless),
 		Args: []string{
 			"--no-sandbox",
 			"--disable-setuid-sandbox",
 			"--disable-dev-shm-usage",
 			"--disable-gpu",
-			// Note: --single-process removed - it breaks multiple contexts
-			// For Cloud Run with high memory (4GB+), leave default multi-process
 		},
-	})
+	}
+
+	// Add custom executable path from profile
+	if profile != nil && profile.ExecutablePath != "" {
+		launchOpts.ExecutablePath = playwright.String(profile.ExecutablePath)
+	}
+
+	// Add extra launch args from profile
+	if profile != nil && len(profile.LaunchArgs) > 0 {
+		launchOpts.Args = append(launchOpts.Args, profile.LaunchArgs...)
+	}
+
+	// Launch browser based on type
+	var browser playwright.Browser
+	switch browserType {
+	case "firefox":
+		browser, err = pw.Firefox.Launch(launchOpts)
+	case "webkit":
+		browser, err = pw.WebKit.Launch(launchOpts)
+	default:
+		browser, err = pw.Chromium.Launch(launchOpts)
+	}
 	if err != nil {
 		pw.Stop()
-		return nil, fmt.Errorf("failed to launch browser: %w", err)
+		return nil, fmt.Errorf("failed to launch %s browser: %w", browserType, err)
 	}
 
 	pool := &Pool{
 		browser:  browser,
 		contexts: make(chan playwright.BrowserContext, cfg.PoolSize),
 		config:   cfg,
+		profile:  profile,
 		pw:       pw,
 	}
 
-	// Pre-create contexts (without proxy - proxy applied per-request)
+	// Pre-create contexts with profile fingerprint applied
 	for i := 0; i < cfg.PoolSize; i++ {
-		ctx, err := pool.createContext(nil)
+		ctx, err := pool.createContextWithProfile(nil)
 		if err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("failed to create initial context: %w", err)
@@ -74,6 +113,7 @@ func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
 	logger.Info("Browser pool initialized",
 		zap.Int("pool_size", cfg.PoolSize),
 		zap.Bool("headless", cfg.Headless),
+		zap.String("browser_type", browserType),
 	)
 
 	return pool, nil
@@ -81,14 +121,81 @@ func NewPool(cfg *config.BrowserConfig) (*Pool, error) {
 
 // createContext creates a new browser context with optional proxy
 func (p *Pool) createContext(proxy *ProxyConfig) (playwright.BrowserContext, error) {
+	return p.createContextWithProfile(proxy)
+}
+
+// createContextWithProfile creates a new browser context with profile fingerprint settings
+func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserContext, error) {
 	opts := playwright.BrowserNewContextOptions{
-		UserAgent: playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
-		// ViewportSize removed - not needed, use default
 		IgnoreHttpsErrors: playwright.Bool(true),
 		JavaScriptEnabled: playwright.Bool(true),
 	}
 
-	// Add proxy if provided
+	// Apply profile fingerprint settings if available
+	if p.profile != nil {
+		// User agent
+		if p.profile.UserAgent != "" {
+			opts.UserAgent = playwright.String(p.profile.UserAgent)
+		} else {
+			opts.UserAgent = playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+		}
+
+		// Viewport size - set via Screen property in playwright-go
+		if p.profile.ScreenWidth > 0 && p.profile.ScreenHeight > 0 {
+			opts.Screen = &playwright.Size{
+				Width:  p.profile.ScreenWidth,
+				Height: p.profile.ScreenHeight,
+			}
+		}
+
+		// Locale
+		if p.profile.Locale != "" {
+			opts.Locale = playwright.String(p.profile.Locale)
+		}
+
+		// Timezone
+		if p.profile.Timezone != "" {
+			opts.TimezoneId = playwright.String(p.profile.Timezone)
+		}
+
+		// Geolocation
+		if p.profile.GeolocationLatitude != nil && p.profile.GeolocationLongitude != nil {
+			opts.Geolocation = &playwright.Geolocation{
+				Latitude:  *p.profile.GeolocationLatitude,
+				Longitude: *p.profile.GeolocationLongitude,
+			}
+			if p.profile.GeolocationAccuracy != nil {
+				opts.Geolocation.Accuracy = playwright.Float(float64(*p.profile.GeolocationAccuracy))
+			}
+			opts.Permissions = []string{"geolocation"}
+		}
+
+		// Do Not Track
+		if p.profile.DoNotTrack {
+			opts.ExtraHttpHeaders = map[string]string{
+				"DNT": "1",
+			}
+		}
+
+		// Proxy from profile (if not overridden by proxy parameter)
+		if proxy == nil && p.profile.ProxyEnabled && p.profile.ProxyServer != "" {
+			proxyURL := p.profile.ProxyServer
+			if p.profile.ProxyType != "" && p.profile.ProxyType != "http" {
+				proxyURL = p.profile.ProxyType + "://" + proxyURL
+			}
+			opts.Proxy = &playwright.Proxy{
+				Server: proxyURL,
+			}
+			if p.profile.ProxyUsername != "" {
+				opts.Proxy.Username = playwright.String(p.profile.ProxyUsername)
+				opts.Proxy.Password = playwright.String(p.profile.ProxyPassword)
+			}
+		}
+	} else {
+		opts.UserAgent = playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	}
+
+	// Add proxy if provided (overrides profile proxy)
 	if proxy != nil && proxy.Server != "" {
 		opts.Proxy = &playwright.Proxy{
 			Server: proxy.Server,

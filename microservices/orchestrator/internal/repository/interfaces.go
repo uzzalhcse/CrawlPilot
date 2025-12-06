@@ -77,3 +77,39 @@ type BatchExecutionStats struct {
 	ItemsExtracted int
 	Errors         int
 }
+
+// BrowserProfileRepository defines the interface for browser profile data access
+type BrowserProfileRepository interface {
+	// Create creates a new browser profile
+	Create(ctx context.Context, profile *models.BrowserProfile) error
+
+	// Get retrieves a browser profile by ID
+	Get(ctx context.Context, id string) (*models.BrowserProfile, error)
+
+	// List retrieves browser profiles with optional filters
+	List(ctx context.Context, filters BrowserProfileFilters) ([]*models.BrowserProfile, error)
+
+	// Update updates an existing browser profile
+	Update(ctx context.Context, profile *models.BrowserProfile) error
+
+	// Delete soft-deletes a browser profile
+	Delete(ctx context.Context, id string) error
+
+	// Duplicate creates a copy of a browser profile with a new ID
+	Duplicate(ctx context.Context, id string) (*models.BrowserProfile, error)
+
+	// UpdateUsage increments usage count and updates last_used_at
+	UpdateUsage(ctx context.Context, id string) error
+
+	// GetFolders returns all unique folder names
+	GetFolders(ctx context.Context) ([]string, error)
+}
+
+// BrowserProfileFilters defines browser profile query filters
+type BrowserProfileFilters struct {
+	Limit      int
+	Offset     int
+	Status     string
+	Folder     string
+	DriverType string
+}

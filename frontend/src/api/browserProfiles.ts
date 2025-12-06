@@ -7,6 +7,7 @@ export interface BrowserProfile {
     status: 'active' | 'inactive' | 'archived' | 'running'
     folder?: string
     tags?: string[]
+    driver_type: 'playwright' | 'chromedp' | 'http'
     browser_type: 'chromium' | 'firefox' | 'webkit'
     executable_path?: string
     cdp_endpoint?: string
@@ -48,6 +49,7 @@ export interface BrowserProfile {
 export interface CreateBrowserProfileRequest {
     name: string
     description?: string
+    driver_type?: 'playwright' | 'chromedp' | 'http'
     browser_type: 'chromium' | 'firefox' | 'webkit'
     folder?: string
     tags?: string[]

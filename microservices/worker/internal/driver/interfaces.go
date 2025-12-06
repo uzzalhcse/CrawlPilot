@@ -59,6 +59,9 @@ type Page interface {
 
 	// Lifecycle
 	Close() error
+
+	// Driver identification
+	DriverName() string
 }
 
 // Element defines interaction with DOM elements

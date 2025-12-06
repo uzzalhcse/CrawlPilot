@@ -9,6 +9,7 @@ import (
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
+	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 )
 
@@ -16,7 +17,8 @@ import (
 
 // PlaywrightDriver implements the Driver interface using playwright-go
 type PlaywrightDriver struct {
-	pool *browser.Pool
+	pool    *browser.Pool
+	profile *models.BrowserProfile // Optional profile for fingerprint settings
 }
 
 // NewPlaywrightDriver creates a new PlaywrightDriver
@@ -28,6 +30,21 @@ func NewPlaywrightDriver(cfg *config.BrowserConfig) (*PlaywrightDriver, error) {
 
 	return &PlaywrightDriver{
 		pool: pool,
+	}, nil
+}
+
+// NewPlaywrightDriverWithProfile creates a PlaywrightDriver using browser profile settings
+// This enables profile-specific fingerprints, browser type selection, and custom configurations
+func NewPlaywrightDriverWithProfile(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*PlaywrightDriver, error) {
+	// Create pool with profile settings
+	pool, err := browser.NewPoolWithProfile(cfg, profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create browser pool with profile: %w", err)
+	}
+
+	return &PlaywrightDriver{
+		pool:    pool,
+		profile: profile,
 	}, nil
 }
 
@@ -110,6 +127,10 @@ func (p *PlaywrightPage) Close() error {
 		p.pool.Release(p.browserCtx)
 	}
 	return nil
+}
+
+func (p *PlaywrightPage) DriverName() string {
+	return "playwright"
 }
 
 func (p *PlaywrightPage) Goto(url string, options ...PageOption) error {
