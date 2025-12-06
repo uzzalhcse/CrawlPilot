@@ -7,7 +7,7 @@
       :show-help-icon="true"
     >
       <template #actions>
-        <Button @click="openRuleEditor(null)" variant="default" size="sm">
+        <Button v-if="activeTab === 'rules'" @click="openRuleEditor(null)" variant="default" size="sm">
           <Plus class="w-4 h-4 mr-2" />
           Add Rule
         </Button>
@@ -15,13 +15,14 @@
     </PageHeader>
 
     <!-- Stats -->
-    <StatsBar :stats="stats" />
+    <StatsBar :stats="rulesStats" />
 
     <!-- Tabs -->
     <TabBar :tabs="tabs" v-model="activeTab" />
 
     <!-- Filters -->
     <FilterBar 
+      v-if="activeTab === 'rules'"
       search-placeholder="Search rules..." 
       :search-value="searchQuery"
       @update:search-value="searchQuery = $event"
@@ -46,17 +47,16 @@
 
     <!-- Content -->
     <div class="flex-1 overflow-auto">
-      <div v-if="store.loading" class="flex items-center justify-center py-12">
+      <div v-if="loading" class="flex items-center justify-center py-12">
         <Loader2 class="h-8 w-8 animate-spin text-primary" />
       </div>
 
-      <div v-else-if="filteredRules.length === 0" class="py-12 text-center">
-        <p class="text-muted-foreground">No rules found</p>
-      </div>
-
-      <div v-else>
-        <!-- Rules List (Compact Cards) -->
-        <div v-if="activeTab === 'rules'" class="grid gap-3 p-6">
+      <!-- Rules Tab -->
+      <div v-else-if="activeTab === 'rules'">
+        <div v-if="filteredRules.length === 0" class="py-12 text-center">
+          <p class="text-muted-foreground">No rules found</p>
+        </div>
+        <div v-else class="grid gap-3 p-6">
           <div
             v-for="rule in filteredRules"
             :key="rule.id"
@@ -69,54 +69,46 @@
                   <h3 class="text-sm font-medium truncate">{{ rule.name }}</h3>
                   <Badge 
                     variant="outline"
-                    :class="{
-                      'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20': rule.created_by === 'predefined',
-                      'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20': rule.created_by === 'learned',
-                      'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20': rule.created_by === 'custom'
-                    }"
+                    :class="rule.is_learned 
+                      ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20' 
+                      : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'"
                     class="text-xs px-1.5 py-0"
                   >
-                    {{ rule.created_by }}
+                    {{ rule.is_learned ? 'AI Learned' : 'Manual' }}
                   </Badge>
                   <Badge variant="outline" class="text-xs px-1.5 py-0">
                     P{{ rule.priority }}
                   </Badge>
+                  <Badge v-if="!rule.enabled" variant="outline" class="text-xs px-1.5 py-0 bg-yellow-500/10 text-yellow-600">
+                    Disabled
+                  </Badge>
                 </div>
-                <p class="text-xs text-muted-foreground line-clamp-1 mb-2">{{ rule.description }}</p>
+                <p class="text-xs text-muted-foreground line-clamp-1 mb-2">{{ rule.description || rule.pattern }}</p>
                 
                 <div class="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                  <span>{{ (rule.confidence * 100).toFixed(0) }}% confidence</span>
-                  <span>{{ (rule.success_rate * 100).toFixed(0) }}% success</span>
-                  <span>{{ rule.usage_count }} uses</span>
+                  <span>{{ rule.action }}</span>
+                  <span>{{ rule.success_count }} successes</span>
+                  <span>{{ rule.failure_count }} failures</span>
+                  <span>Max {{ rule.max_retries }} retries</span>
                 </div>
               </div>
               
               <div class="flex items-center gap-1" @click.stop>
-                <Button
-                  @click="openRuleEditor(rule)"
-                  size="sm"
-                  variant="ghost"
-                  class="h-8 w-8 p-0"
-                >
+                <Button @click="openRuleEditor(rule)" size="sm" variant="ghost" class="h-8 w-8 p-0">
                   <Pencil class="h-4 w-4" />
                 </Button>
-                <Button
-                  @click="confirmDelete(rule)"
-                  size="sm"
-                  variant="ghost"
-                  class="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                >
+                <Button @click="confirmDelete(rule)" size="sm" variant="ghost" class="h-8 w-8 p-0 text-destructive hover:text-destructive">
                   <Trash2 class="h-4 w-4" />
                 </Button>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Settings Tab -->
-        <div v-else-if="activeTab === 'settings'" class="p-6">
-          <GeneralSettings />
-        </div>
+      <!-- Settings Tab -->
+      <div v-else-if="activeTab === 'settings'" class="p-6">
+        <GeneralSettings />
       </div>
     </div>
 
@@ -151,13 +143,14 @@ const filterType = ref('all')
 const searchQuery = ref('')
 const showRuleEditor = ref(false)
 const selectedRule = ref<ContextAwareRule | null>(null)
+const loading = ref(false)
 
 const tabs = [
   { id: 'rules', label: 'Rules' },
   { id: 'settings', label: 'Settings' }
 ]
 
-const stats = computed(() => [
+const rulesStats = computed(() => [
   { label: 'Total Rules', value: store.rules.length },
   { label: 'Predefined', value: store.predefinedRules.length, color: 'text-purple-600 dark:text-purple-400' },
   { label: 'AI Learned', value: store.learnedRules.length, color: 'text-green-600 dark:text-green-400' },
@@ -166,19 +159,15 @@ const stats = computed(() => [
 
 const filteredRules = computed(() => {
   let rules = store.rulesSortedByPriority
-  
-  if (filterType.value !== 'all') {
-    rules = rules.filter(r => r.created_by === filterType.value)
+  if (filterType.value === 'learned') {
+    rules = rules.filter(r => r.is_learned)
+  } else if (filterType.value === 'predefined' || filterType.value === 'custom') {
+    rules = rules.filter(r => !r.is_learned)
   }
-  
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
-    rules = rules.filter(r => 
-      r.name.toLowerCase().includes(query) || 
-      r.description?.toLowerCase().includes(query)
-    )
+    rules = rules.filter(r => r.name.toLowerCase().includes(query) || r.description?.toLowerCase().includes(query))
   }
-  
   return rules
 })
 
@@ -207,6 +196,8 @@ async function confirmDelete(rule: ContextAwareRule) {
 }
 
 onMounted(async () => {
+  loading.value = true
   await store.fetchRules()
+  loading.value = false
 })
 </script>

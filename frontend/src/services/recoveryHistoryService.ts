@@ -90,7 +90,7 @@ class RecoveryHistoryService {
      * Get recent recovery events across all workflows
      */
     async getRecentHistory(limit = 100): Promise<RecoveryHistoryRecord[]> {
-        const response = await apiClient.get('/error-recovery/history/recent', {
+        const response = await apiClient.get('/recovery/history/recent', {
             params: { limit }
         })
         return response.data.events || []
@@ -100,7 +100,7 @@ class RecoveryHistoryService {
      * Get aggregated recovery statistics
      */
     async getStats(filter?: RecoveryStatsFilter): Promise<RecoveryStats> {
-        const response = await apiClient.get('/error-recovery/history/stats', {
+        const response = await apiClient.get('/recovery/history/stats', {
             params: filter
         })
         return response.data.stats

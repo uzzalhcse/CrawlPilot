@@ -21,6 +21,7 @@ import {
   GlobeIcon,
   Package,
   Shield,
+  AlertTriangle,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -40,10 +41,11 @@ const menuItems = [
 const antiBotItems = [
   { icon: GlobeIcon, label: 'Browsers', route: '/browser-profiles' },
   { icon: Shield, label: 'Error Recovery', route: '/error-recovery' },
+  { icon: AlertTriangle, label: 'Incidents', route: '/incidents' },
 ]
 
 const bottomItems = [
-  { icon: Server, label: 'Proxy', route: '/proxy' },
+  { icon: Server, label: 'Proxy', route: '/proxies' },
   { icon: HardDrive, label: 'Storage', route: '/storage' },
   { icon: Settings, label: 'Settings', route: '/settings' },
   { icon: HelpCircle, label: 'Help', route: '/help' },

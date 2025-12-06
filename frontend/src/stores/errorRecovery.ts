@@ -23,18 +23,23 @@ export interface RuleContext {
     timeout_multiplier?: number
 }
 
+// Recovery Rule - matches backend schema
 export interface ContextAwareRule {
     id: string
     name: string
     description: string
     priority: number
-    conditions: Condition[]
-    context: RuleContext
-    actions: Action[]
-    confidence: number
-    success_rate: number
-    usage_count: number
-    created_by: string
+    enabled: boolean
+    pattern: string
+    conditions: Record<string, any>
+    action: string
+    action_params: Record<string, any>
+    max_retries: number
+    retry_delay: number
+    is_learned: boolean
+    learned_from?: string
+    success_count: number
+    failure_count: number
     created_at: string
     updated_at: string
 }
@@ -56,8 +61,8 @@ export const useErrorRecoveryStore = defineStore('errorRecovery', {
         async fetchRules() {
             this.loading = true
             try {
-                const response = await axios.get(`${API_BASE}/error-recovery/rules`)
-                this.rules = response.data || []
+                const response = await axios.get(`${API_BASE}/recovery/rules`)
+                this.rules = response.data?.rules || []
             } catch (error: any) {
                 toast.error('Failed to fetch rules', {
                     description: error.response?.data?.error || error.message
@@ -71,7 +76,7 @@ export const useErrorRecoveryStore = defineStore('errorRecovery', {
         async createRule(rule: Partial<ContextAwareRule>) {
             this.loading = true
             try {
-                const response = await axios.post(`${API_BASE}/error-recovery/rules`, rule)
+                const response = await axios.post(`${API_BASE}/recovery/rules`, rule)
                 this.rules.push(response.data)
                 toast.success('Rule created successfully')
                 return response.data
@@ -88,7 +93,7 @@ export const useErrorRecoveryStore = defineStore('errorRecovery', {
         async updateRule(id: string, rule: Partial<ContextAwareRule>) {
             this.loading = true
             try {
-                const response = await axios.put(`${API_BASE}/error-recovery/rules/${id}`, rule)
+                const response = await axios.put(`${API_BASE}/recovery/rules/${id}`, rule)
                 const index = this.rules.findIndex(r => r.id === id)
                 if (index !== -1) {
                     this.rules[index] = response.data
@@ -108,7 +113,7 @@ export const useErrorRecoveryStore = defineStore('errorRecovery', {
         async deleteRule(id: string) {
             this.loading = true
             try {
-                await axios.delete(`${API_BASE}/error-recovery/rules/${id}`)
+                await axios.delete(`${API_BASE}/recovery/rules/${id}`)
                 this.rules = this.rules.filter(r => r.id !== id)
                 toast.success('Rule deleted successfully')
             } catch (error: any) {
@@ -121,9 +126,29 @@ export const useErrorRecoveryStore = defineStore('errorRecovery', {
             }
         },
 
+        async fetchAllConfigs() {
+            try {
+                const response = await axios.get(`${API_BASE}/recovery/config`)
+                // Convert array of {key, value} to object
+                const configMap: Record<string, any> = {}
+                if (response.data?.configs) {
+                    response.data.configs.forEach((c: any) => {
+                        configMap[c.key] = c.value
+                    })
+                }
+                this.config = configMap
+                return configMap
+            } catch (error: any) {
+                toast.error('Failed to fetch configurations', {
+                    description: error.response?.data?.error || error.message
+                })
+                throw error
+            }
+        },
+
         async fetchConfig(key: string) {
             try {
-                const response = await axios.get(`${API_BASE}/error-recovery/config/${key}`)
+                const response = await axios.get(`${API_BASE}/recovery/config/${key}`)
                 this.config[key] = response.data.value
                 return response.data.value
             } catch (error: any) {
@@ -138,11 +163,27 @@ export const useErrorRecoveryStore = defineStore('errorRecovery', {
 
         async updateConfig(key: string, value: any) {
             try {
-                await axios.put(`${API_BASE}/error-recovery/config`, { key, value })
+                await axios.put(`${API_BASE}/recovery/config/item/${key}`, { value })
                 this.config[key] = value
                 toast.success('Configuration updated successfully')
             } catch (error: any) {
                 toast.error('Failed to update configuration', {
+                    description: error.response?.data?.error || error.message
+                })
+                throw error
+            }
+        },
+
+        async updateMultipleConfigs(updates: Record<string, any>) {
+            try {
+                await axios.put(`${API_BASE}/recovery/config`, { updates })
+                // Update local state
+                Object.keys(updates).forEach(key => {
+                    this.config[key] = updates[key]
+                })
+                toast.success('Settings saved successfully')
+            } catch (error: any) {
+                toast.error('Failed to save settings', {
                     description: error.response?.data?.error || error.message
                 })
                 throw error
@@ -160,15 +201,16 @@ export const useErrorRecoveryStore = defineStore('errorRecovery', {
         },
 
         predefinedRules: (state) => {
-            return state.rules.filter(r => r.created_by === 'predefined')
+            return state.rules.filter(r => !r.is_learned)
         },
 
         learnedRules: (state) => {
-            return state.rules.filter(r => r.created_by === 'learned')
+            return state.rules.filter(r => r.is_learned)
         },
 
         customRules: (state) => {
-            return state.rules.filter(r => r.created_by !== 'predefined' && r.created_by !== 'learned')
+            // Custom rules are non-learned rules (manually created)
+            return state.rules.filter(r => !r.is_learned)
         },
     },
 })

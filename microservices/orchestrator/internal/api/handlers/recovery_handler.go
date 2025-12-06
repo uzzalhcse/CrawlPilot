@@ -157,15 +157,16 @@ func (h *RecoveryHandler) GetRule(c *fiber.Ctx) error {
 
 // CreateRuleRequest represents a rule creation request
 type CreateRuleRequest struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Pattern     string                 `json:"pattern"`
-	Domain      string                 `json:"domain,omitempty"`
-	Conditions  map[string]interface{} `json:"conditions,omitempty"`
-	Action      string                 `json:"action"`
-	Params      map[string]interface{} `json:"params,omitempty"`
-	Priority    int                    `json:"priority"`
-	Enabled     bool                   `json:"enabled"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	Priority     int                    `json:"priority"`
+	Enabled      bool                   `json:"enabled"`
+	Pattern      string                 `json:"pattern"`
+	Conditions   []interface{}          `json:"conditions,omitempty"`
+	Action       string                 `json:"action"`
+	ActionParams map[string]interface{} `json:"action_params,omitempty"`
+	MaxRetries   int                    `json:"max_retries"`
+	RetryDelay   int                    `json:"retry_delay"`
 }
 
 // CreateRule handles POST /api/v1/recovery/rules
@@ -185,17 +186,24 @@ func (h *RecoveryHandler) CreateRule(c *fiber.Ctx) error {
 	}
 
 	rule := &repository.RecoveryRule{
-		ID:          uuid.New().String(),
-		Name:        req.Name,
-		Description: req.Description,
-		Pattern:     req.Pattern,
-		Domain:      req.Domain,
-		Conditions:  req.Conditions,
-		Action:      req.Action,
-		Params:      req.Params,
-		Priority:    req.Priority,
-		Enabled:     req.Enabled,
-		Source:      "frontend",
+		ID:           uuid.New().String(),
+		Name:         req.Name,
+		Description:  req.Description,
+		Priority:     req.Priority,
+		Enabled:      req.Enabled,
+		Pattern:      req.Pattern,
+		Conditions:   req.Conditions,
+		Action:       req.Action,
+		ActionParams: req.ActionParams,
+		MaxRetries:   req.MaxRetries,
+		RetryDelay:   req.RetryDelay,
+	}
+
+	if rule.MaxRetries == 0 {
+		rule.MaxRetries = 3
+	}
+	if rule.RetryDelay == 0 {
+		rule.RetryDelay = 5
 	}
 
 	if err := h.configRepo.CreateRule(c.Context(), rule); err != nil {
@@ -220,16 +228,17 @@ func (h *RecoveryHandler) UpdateRule(c *fiber.Ctx) error {
 	}
 
 	rule := &repository.RecoveryRule{
-		ID:          id,
-		Name:        req.Name,
-		Description: req.Description,
-		Pattern:     req.Pattern,
-		Domain:      req.Domain,
-		Conditions:  req.Conditions,
-		Action:      req.Action,
-		Params:      req.Params,
-		Priority:    req.Priority,
-		Enabled:     req.Enabled,
+		ID:           id,
+		Name:         req.Name,
+		Description:  req.Description,
+		Priority:     req.Priority,
+		Enabled:      req.Enabled,
+		Pattern:      req.Pattern,
+		Conditions:   req.Conditions,
+		Action:       req.Action,
+		ActionParams: req.ActionParams,
+		MaxRetries:   req.MaxRetries,
+		RetryDelay:   req.RetryDelay,
 	}
 
 	if err := h.configRepo.UpdateRule(c.Context(), rule); err != nil {
@@ -310,15 +319,13 @@ func (h *RecoveryHandler) GetAllProxies(c *fiber.Ctx) error {
 
 // CreateProxyRequest represents a proxy creation request
 type CreateProxyRequest struct {
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-	Protocol string `json:"protocol"`
-	Location string `json:"location,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Enabled  bool   `json:"enabled"`
+	ProxyID      string `json:"proxy_id"`
+	Server       string `json:"server"`
+	ProxyAddress string `json:"proxy_address"`
+	Port         int    `json:"port"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+	ProxyType    string `json:"proxy_type"`
 }
 
 // CreateProxy handles POST /api/v1/recovery/proxies
@@ -330,27 +337,35 @@ func (h *RecoveryHandler) CreateProxy(c *fiber.Ctx) error {
 		})
 	}
 
-	if req.Host == "" || req.Port == 0 {
+	if req.ProxyAddress == "" || req.Port == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "host and port are required",
+			"error": "proxy_address and port are required",
 		})
 	}
 
-	proxy := &repository.Proxy{
-		ID:       uuid.New().String(),
-		Name:     req.Name,
-		Host:     req.Host,
-		Port:     req.Port,
-		Username: req.Username,
-		Password: req.Password,
-		Protocol: req.Protocol,
-		Location: req.Location,
-		Provider: req.Provider,
-		Enabled:  req.Enabled,
+	id := uuid.New().String()
+	proxyID := req.ProxyID
+	if proxyID == "" {
+		proxyID = id
 	}
 
-	if proxy.Protocol == "" {
-		proxy.Protocol = "http"
+	proxy := &repository.Proxy{
+		ID:           id,
+		ProxyID:      proxyID,
+		Server:       req.Server,
+		ProxyAddress: req.ProxyAddress,
+		Port:         req.Port,
+		Username:     req.Username,
+		Password:     req.Password,
+		ProxyType:    req.ProxyType,
+		IsHealthy:    true,
+	}
+
+	if proxy.ProxyType == "" {
+		proxy.ProxyType = "static"
+	}
+	if proxy.Server == "" {
+		proxy.Server = req.ProxyAddress
 	}
 
 	if err := h.configRepo.CreateProxy(c.Context(), proxy); err != nil {
@@ -375,16 +390,14 @@ func (h *RecoveryHandler) UpdateProxy(c *fiber.Ctx) error {
 	}
 
 	proxy := &repository.Proxy{
-		ID:       id,
-		Name:     req.Name,
-		Host:     req.Host,
-		Port:     req.Port,
-		Username: req.Username,
-		Password: req.Password,
-		Protocol: req.Protocol,
-		Location: req.Location,
-		Provider: req.Provider,
-		Enabled:  req.Enabled,
+		ID:           id,
+		Server:       req.Server,
+		ProxyAddress: req.ProxyAddress,
+		Port:         req.Port,
+		Username:     req.Username,
+		Password:     req.Password,
+		ProxyType:    req.ProxyType,
+		IsHealthy:    true,
 	}
 
 	if err := h.configRepo.UpdateProxy(c.Context(), proxy); err != nil {

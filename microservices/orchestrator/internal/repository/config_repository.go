@@ -24,42 +24,50 @@ type ConfigItem struct {
 	UpdatedAt   time.Time   `json:"updated_at" db:"updated_at"`
 }
 
-// RecoveryRule represents a recovery rule from recovery_rules table
+// RecoveryRule represents a recovery rule from recovery_rules table (matches actual DB schema)
 type RecoveryRule struct {
 	ID           string                 `json:"id" db:"id"`
 	Name         string                 `json:"name" db:"name"`
 	Description  string                 `json:"description" db:"description"`
-	Pattern      string                 `json:"pattern" db:"pattern"`
-	Domain       string                 `json:"domain,omitempty" db:"domain"`
-	Conditions   map[string]interface{} `json:"conditions,omitempty" db:"conditions"`
-	Action       string                 `json:"action" db:"action"`
-	Params       map[string]interface{} `json:"params,omitempty" db:"params"`
 	Priority     int                    `json:"priority" db:"priority"`
 	Enabled      bool                   `json:"enabled" db:"enabled"`
-	Source       string                 `json:"source" db:"source"`
+	Pattern      string                 `json:"pattern" db:"pattern"`
+	Conditions   []interface{}          `json:"conditions,omitempty" db:"conditions"`
+	Action       string                 `json:"action" db:"action"`
+	ActionParams map[string]interface{} `json:"action_params,omitempty" db:"action_params"`
+	MaxRetries   int                    `json:"max_retries" db:"max_retries"`
+	RetryDelay   int                    `json:"retry_delay" db:"retry_delay"`
+	IsLearned    bool                   `json:"is_learned" db:"is_learned"`
+	LearnedFrom  string                 `json:"learned_from,omitempty" db:"learned_from"`
 	SuccessCount int                    `json:"success_count" db:"success_count"`
 	FailureCount int                    `json:"failure_count" db:"failure_count"`
 	CreatedAt    time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time              `json:"updated_at" db:"updated_at"`
 }
 
-// Proxy represents a proxy from proxies table
+// Proxy represents a proxy from proxies table (matches actual DB schema)
 type Proxy struct {
-	ID           string     `json:"id" db:"id"`
-	Name         string     `json:"name" db:"name"`
-	Host         string     `json:"host" db:"host"`
-	Port         int        `json:"port" db:"port"`
-	Username     string     `json:"username,omitempty" db:"username"`
-	Password     string     `json:"password,omitempty" db:"password"`
-	Protocol     string     `json:"protocol" db:"protocol"`
-	Location     string     `json:"location,omitempty" db:"location"`
-	Provider     string     `json:"provider,omitempty" db:"provider"`
-	Enabled      bool       `json:"enabled" db:"enabled"`
-	SuccessCount int        `json:"success_count" db:"success_count"`
-	FailureCount int        `json:"failure_count" db:"failure_count"`
-	LastUsed     *time.Time `json:"last_used,omitempty" db:"last_used"`
-	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
+	ID             string     `json:"id" db:"id"`
+	ProxyID        string     `json:"proxy_id" db:"proxy_id"`
+	Server         string     `json:"server" db:"server"`
+	Username       string     `json:"username,omitempty" db:"username"`
+	Password       string     `json:"password,omitempty" db:"password"`
+	ProxyAddress   string     `json:"proxy_address" db:"proxy_address"`
+	Port           int        `json:"port" db:"port"`
+	Valid          bool       `json:"valid" db:"valid"`
+	LastVerified   *time.Time `json:"last_verified,omitempty" db:"last_verified"`
+	CountryCode    string     `json:"country_code,omitempty" db:"country_code"`
+	CityName       string     `json:"city_name,omitempty" db:"city_name"`
+	ASNName        string     `json:"asn_name,omitempty" db:"asn_name"`
+	ASNNumber      int        `json:"asn_number,omitempty" db:"asn_number"`
+	ConfidenceHigh bool       `json:"confidence_high" db:"confidence_high"`
+	ProxyType      string     `json:"proxy_type" db:"proxy_type"`
+	FailureCount   int        `json:"failure_count" db:"failure_count"`
+	SuccessCount   int        `json:"success_count" db:"success_count"`
+	LastUsed       *time.Time `json:"last_used,omitempty" db:"last_used"`
+	IsHealthy      bool       `json:"is_healthy" db:"is_healthy"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // NewSystemConfigRepository creates a new system config repository
@@ -155,8 +163,8 @@ func (r *SystemConfigRepository) UpdateConfigs(ctx context.Context, updates map[
 
 // GetAllRules returns all recovery rules
 func (r *SystemConfigRepository) GetAllRules(ctx context.Context) ([]RecoveryRule, error) {
-	query := `SELECT id, name, description, pattern, domain, conditions, action, params, 
-	          priority, enabled, source, success_count, failure_count, created_at, updated_at 
+	query := `SELECT id, name, description, priority, enabled, pattern, conditions, action, action_params,
+	          max_retries, retry_delay, is_learned, learned_from, success_count, failure_count, created_at, updated_at 
 	          FROM recovery_rules ORDER BY priority DESC, created_at`
 	rows, err := r.db.Pool.Query(ctx, query)
 	if err != nil {
@@ -167,18 +175,22 @@ func (r *SystemConfigRepository) GetAllRules(ctx context.Context) ([]RecoveryRul
 	rules := make([]RecoveryRule, 0)
 	for rows.Next() {
 		var rule RecoveryRule
-		var conditionsJSON, paramsJSON []byte
-		var domain *string
-		if err := rows.Scan(&rule.ID, &rule.Name, &rule.Description, &rule.Pattern, &domain,
-			&conditionsJSON, &rule.Action, &paramsJSON, &rule.Priority, &rule.Enabled,
-			&rule.Source, &rule.SuccessCount, &rule.FailureCount, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
+		var conditionsJSON, actionParamsJSON []byte
+		var description, learnedFrom *string
+		if err := rows.Scan(&rule.ID, &rule.Name, &description, &rule.Priority, &rule.Enabled,
+			&rule.Pattern, &conditionsJSON, &rule.Action, &actionParamsJSON,
+			&rule.MaxRetries, &rule.RetryDelay, &rule.IsLearned, &learnedFrom,
+			&rule.SuccessCount, &rule.FailureCount, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
 			continue
 		}
-		if domain != nil {
-			rule.Domain = *domain
+		if description != nil {
+			rule.Description = *description
+		}
+		if learnedFrom != nil {
+			rule.LearnedFrom = *learnedFrom
 		}
 		json.Unmarshal(conditionsJSON, &rule.Conditions)
-		json.Unmarshal(paramsJSON, &rule.Params)
+		json.Unmarshal(actionParamsJSON, &rule.ActionParams)
 		rules = append(rules, rule)
 	}
 	return rules, nil
@@ -186,49 +198,53 @@ func (r *SystemConfigRepository) GetAllRules(ctx context.Context) ([]RecoveryRul
 
 // GetRuleByID returns a rule by ID
 func (r *SystemConfigRepository) GetRuleByID(ctx context.Context, id string) (*RecoveryRule, error) {
-	query := `SELECT id, name, description, pattern, domain, conditions, action, params, 
-	          priority, enabled, source, success_count, failure_count, created_at, updated_at 
+	query := `SELECT id, name, description, priority, enabled, pattern, conditions, action, action_params,
+	          max_retries, retry_delay, is_learned, learned_from, success_count, failure_count, created_at, updated_at 
 	          FROM recovery_rules WHERE id = $1`
 	row := r.db.Pool.QueryRow(ctx, query, id)
 
 	var rule RecoveryRule
-	var conditionsJSON, paramsJSON []byte
-	var domain *string
-	if err := row.Scan(&rule.ID, &rule.Name, &rule.Description, &rule.Pattern, &domain,
-		&conditionsJSON, &rule.Action, &paramsJSON, &rule.Priority, &rule.Enabled,
-		&rule.Source, &rule.SuccessCount, &rule.FailureCount, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
+	var conditionsJSON, actionParamsJSON []byte
+	var description, learnedFrom *string
+	if err := row.Scan(&rule.ID, &rule.Name, &description, &rule.Priority, &rule.Enabled,
+		&rule.Pattern, &conditionsJSON, &rule.Action, &actionParamsJSON,
+		&rule.MaxRetries, &rule.RetryDelay, &rule.IsLearned, &learnedFrom,
+		&rule.SuccessCount, &rule.FailureCount, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
 		return nil, err
 	}
-	if domain != nil {
-		rule.Domain = *domain
+	if description != nil {
+		rule.Description = *description
+	}
+	if learnedFrom != nil {
+		rule.LearnedFrom = *learnedFrom
 	}
 	json.Unmarshal(conditionsJSON, &rule.Conditions)
-	json.Unmarshal(paramsJSON, &rule.Params)
+	json.Unmarshal(actionParamsJSON, &rule.ActionParams)
 	return &rule, nil
 }
 
 // CreateRule creates a new recovery rule
 func (r *SystemConfigRepository) CreateRule(ctx context.Context, rule *RecoveryRule) error {
 	conditionsJSON, _ := json.Marshal(rule.Conditions)
-	paramsJSON, _ := json.Marshal(rule.Params)
+	actionParamsJSON, _ := json.Marshal(rule.ActionParams)
 
-	query := `INSERT INTO recovery_rules (id, name, description, pattern, domain, conditions, action, params, priority, enabled, source)
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
-	_, err := r.db.Pool.Exec(ctx, query, rule.ID, rule.Name, rule.Description, rule.Pattern,
-		nilIfEmpty(rule.Domain), conditionsJSON, rule.Action, paramsJSON, rule.Priority, rule.Enabled, rule.Source)
+	query := `INSERT INTO recovery_rules (id, name, description, priority, enabled, pattern, conditions, action, action_params, max_retries, retry_delay, is_learned)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	_, err := r.db.Pool.Exec(ctx, query, rule.ID, rule.Name, nilIfEmpty(rule.Description), rule.Priority, rule.Enabled,
+		rule.Pattern, string(conditionsJSON), rule.Action, string(actionParamsJSON), rule.MaxRetries, rule.RetryDelay, rule.IsLearned)
 	return err
 }
 
 // UpdateRule updates a recovery rule
 func (r *SystemConfigRepository) UpdateRule(ctx context.Context, rule *RecoveryRule) error {
 	conditionsJSON, _ := json.Marshal(rule.Conditions)
-	paramsJSON, _ := json.Marshal(rule.Params)
+	actionParamsJSON, _ := json.Marshal(rule.ActionParams)
 
-	query := `UPDATE recovery_rules SET name = $1, description = $2, pattern = $3, domain = $4, 
-	          conditions = $5, action = $6, params = $7, priority = $8, enabled = $9, updated_at = NOW()
-	          WHERE id = $10`
-	_, err := r.db.Pool.Exec(ctx, query, rule.Name, rule.Description, rule.Pattern, nilIfEmpty(rule.Domain),
-		conditionsJSON, rule.Action, paramsJSON, rule.Priority, rule.Enabled, rule.ID)
+	query := `UPDATE recovery_rules SET name = $1, description = $2, priority = $3, enabled = $4, pattern = $5,
+	          conditions = $6, action = $7, action_params = $8, max_retries = $9, retry_delay = $10, updated_at = NOW()
+	          WHERE id = $11`
+	_, err := r.db.Pool.Exec(ctx, query, rule.Name, nilIfEmpty(rule.Description), rule.Priority, rule.Enabled, rule.Pattern,
+		string(conditionsJSON), rule.Action, string(actionParamsJSON), rule.MaxRetries, rule.RetryDelay, rule.ID)
 	return err
 }
 
@@ -252,9 +268,10 @@ func (r *SystemConfigRepository) ToggleRule(ctx context.Context, id string, enab
 
 // GetAllProxies returns all proxies
 func (r *SystemConfigRepository) GetAllProxies(ctx context.Context) ([]Proxy, error) {
-	query := `SELECT id, name, host, port, username, password, protocol, location, provider,
-	          enabled, success_count, failure_count, last_used, created_at, updated_at 
-	          FROM proxies ORDER BY enabled DESC, success_count DESC`
+	query := `SELECT id, proxy_id, server, username, password, proxy_address, port, valid,
+	          last_verified, country_code, city_name, asn_name, asn_number, confidence_high,
+	          proxy_type, failure_count, success_count, last_used, is_healthy, created_at, updated_at 
+	          FROM proxies ORDER BY is_healthy DESC, success_count DESC`
 	rows, err := r.db.Pool.Query(ctx, query)
 	if err != nil {
 		return nil, err
@@ -264,11 +281,13 @@ func (r *SystemConfigRepository) GetAllProxies(ctx context.Context) ([]Proxy, er
 	proxies := make([]Proxy, 0)
 	for rows.Next() {
 		var proxy Proxy
-		var username, password, location, provider *string
-		if err := rows.Scan(&proxy.ID, &proxy.Name, &proxy.Host, &proxy.Port,
-			&username, &password, &proxy.Protocol, &location, &provider,
-			&proxy.Enabled, &proxy.SuccessCount, &proxy.FailureCount,
-			&proxy.LastUsed, &proxy.CreatedAt, &proxy.UpdatedAt); err != nil {
+		var username, password, countryCode, cityName, asnName *string
+		var asnNumber *int
+		if err := rows.Scan(&proxy.ID, &proxy.ProxyID, &proxy.Server, &username, &password,
+			&proxy.ProxyAddress, &proxy.Port, &proxy.Valid, &proxy.LastVerified,
+			&countryCode, &cityName, &asnName, &asnNumber, &proxy.ConfidenceHigh,
+			&proxy.ProxyType, &proxy.FailureCount, &proxy.SuccessCount,
+			&proxy.LastUsed, &proxy.IsHealthy, &proxy.CreatedAt, &proxy.UpdatedAt); err != nil {
 			continue
 		}
 		if username != nil {
@@ -277,11 +296,17 @@ func (r *SystemConfigRepository) GetAllProxies(ctx context.Context) ([]Proxy, er
 		if password != nil {
 			proxy.Password = *password
 		}
-		if location != nil {
-			proxy.Location = *location
+		if countryCode != nil {
+			proxy.CountryCode = *countryCode
 		}
-		if provider != nil {
-			proxy.Provider = *provider
+		if cityName != nil {
+			proxy.CityName = *cityName
+		}
+		if asnName != nil {
+			proxy.ASNName = *asnName
+		}
+		if asnNumber != nil {
+			proxy.ASNNumber = *asnNumber
 		}
 		proxies = append(proxies, proxy)
 	}
@@ -290,22 +315,22 @@ func (r *SystemConfigRepository) GetAllProxies(ctx context.Context) ([]Proxy, er
 
 // CreateProxy creates a new proxy
 func (r *SystemConfigRepository) CreateProxy(ctx context.Context, proxy *Proxy) error {
-	query := `INSERT INTO proxies (id, name, host, port, username, password, protocol, location, provider, enabled)
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-	_, err := r.db.Pool.Exec(ctx, query, proxy.ID, proxy.Name, proxy.Host, proxy.Port,
-		nilIfEmpty(proxy.Username), nilIfEmpty(proxy.Password), proxy.Protocol,
-		nilIfEmpty(proxy.Location), nilIfEmpty(proxy.Provider), proxy.Enabled)
+	query := `INSERT INTO proxies (id, proxy_id, server, username, password, proxy_address, port, proxy_type, is_healthy)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	_, err := r.db.Pool.Exec(ctx, query, proxy.ID, proxy.ProxyID, proxy.Server,
+		nilIfEmpty(proxy.Username), nilIfEmpty(proxy.Password), proxy.ProxyAddress,
+		proxy.Port, proxy.ProxyType, true)
 	return err
 }
 
 // UpdateProxy updates a proxy
 func (r *SystemConfigRepository) UpdateProxy(ctx context.Context, proxy *Proxy) error {
-	query := `UPDATE proxies SET name = $1, host = $2, port = $3, username = $4, password = $5,
-	          protocol = $6, location = $7, provider = $8, enabled = $9, updated_at = NOW()
-	          WHERE id = $10`
-	_, err := r.db.Pool.Exec(ctx, query, proxy.Name, proxy.Host, proxy.Port,
-		nilIfEmpty(proxy.Username), nilIfEmpty(proxy.Password), proxy.Protocol,
-		nilIfEmpty(proxy.Location), nilIfEmpty(proxy.Provider), proxy.Enabled, proxy.ID)
+	query := `UPDATE proxies SET server = $1, username = $2, password = $3, proxy_address = $4,
+	          port = $5, proxy_type = $6, is_healthy = $7, updated_at = NOW()
+	          WHERE id = $8`
+	_, err := r.db.Pool.Exec(ctx, query, proxy.Server,
+		nilIfEmpty(proxy.Username), nilIfEmpty(proxy.Password), proxy.ProxyAddress,
+		proxy.Port, proxy.ProxyType, proxy.IsHealthy, proxy.ID)
 	return err
 }
 
@@ -317,9 +342,9 @@ func (r *SystemConfigRepository) DeleteProxy(ctx context.Context, id string) err
 }
 
 // ToggleProxy enables/disables a proxy
-func (r *SystemConfigRepository) ToggleProxy(ctx context.Context, id string, enabled bool) error {
-	query := `UPDATE proxies SET enabled = $1, updated_at = NOW() WHERE id = $2`
-	_, err := r.db.Pool.Exec(ctx, query, enabled, id)
+func (r *SystemConfigRepository) ToggleProxy(ctx context.Context, id string, isHealthy bool) error {
+	query := `UPDATE proxies SET is_healthy = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.db.Pool.Exec(ctx, query, isHealthy, id)
 	return err
 }
 
@@ -327,22 +352,22 @@ func (r *SystemConfigRepository) ToggleProxy(ctx context.Context, id string, ena
 func (r *SystemConfigRepository) GetProxyStats(ctx context.Context) (map[string]interface{}, error) {
 	query := `SELECT 
 	          COUNT(*) as total,
-	          COUNT(*) FILTER (WHERE enabled = true) as enabled,
-	          SUM(success_count) as total_success,
-	          SUM(failure_count) as total_failure
+	          COUNT(*) FILTER (WHERE is_healthy = true) as healthy,
+	          COALESCE(SUM(success_count), 0) as total_success,
+	          COALESCE(SUM(failure_count), 0) as total_failure
 	          FROM proxies`
 	row := r.db.Pool.QueryRow(ctx, query)
 
-	var total, enabled int
+	var total, healthy int
 	var totalSuccess, totalFailure int64
-	if err := row.Scan(&total, &enabled, &totalSuccess, &totalFailure); err != nil {
+	if err := row.Scan(&total, &healthy, &totalSuccess, &totalFailure); err != nil {
 		return nil, err
 	}
 
 	return map[string]interface{}{
 		"total":         total,
-		"enabled":       enabled,
-		"disabled":      total - enabled,
+		"healthy":       healthy,
+		"unhealthy":     total - healthy,
 		"total_success": totalSuccess,
 		"total_failure": totalFailure,
 	}, nil

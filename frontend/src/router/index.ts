@@ -89,6 +89,21 @@ const router = createRouter({
           component: () => import('@/views/ErrorRecoverySettings.vue')
         },
         {
+          path: 'proxies',
+          name: 'proxies',
+          component: () => import('@/views/ProxyManagementView.vue')
+        },
+        {
+          path: 'incidents',
+          name: 'incidents',
+          component: () => import('@/views/IncidentsView.vue')
+        },
+        {
+          path: 'incidents/:id',
+          name: 'incident-detail',
+          component: () => import('@/views/IncidentDetailView.vue')
+        },
+        {
           path: '/:pathMatch(.*)*',
           name: 'not-found',
           component: () => import('@/views/NotFoundView.vue')
