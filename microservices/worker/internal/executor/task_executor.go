@@ -31,7 +31,6 @@ type TaskExecutor struct {
 	gcsClient            *storage.GCSClient
 	itemWriter           storage.Writer                 // Primary storage: COPY protocol for max throughput
 	deduplicator         dedup.Deduplicator             // URL deduplication (interface)
-	bloomDedup           *dedup.BloomDeduplicator       // Bloom filter dedup (for cleanup)
 	batchedStatsReporter *reporter.BatchedStatsReporter // High-throughput batched stats
 	retryConfig          RetryConfig                    // Retry configuration for transient failures
 	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
@@ -98,10 +97,9 @@ func NewTaskExecutor(
 		gcsClient = nil
 	}
 
-	// Initialize deduplicator (Bloom filter for 99% memory reduction)
-	// At 10M URLs: Redis ~1GB vs Bloom ~12MB
-	bloomDedup := dedup.NewBloomDeduplicator(redisCache)
-	var deduplicator dedup.Deduplicator = bloomDedup
+	// Initialize deduplicator (Redis-based for distributed safety)
+	// Uses SETNX for atomic check-and-set
+	deduplicator := dedup.NewURLDeduplicator(redisCache)
 
 	// Initialize COPY writer for DB (primary storage)
 	// Uses PostgreSQL COPY protocol for 10x faster inserts than batch INSERT
@@ -131,7 +129,7 @@ func NewTaskExecutor(
 		zap.Bool("gcs_archive_enabled", gcsClient != nil),
 		zap.Bool("item_writer_enabled", itemWriter != nil),
 		zap.Bool("recovery_enabled", recoveryManager != nil),
-		zap.String("dedup_type", "bloom_filter"),
+		zap.String("dedup_type", "redis_distributed"),
 		zap.String("writer_type", "copy_protocol"),
 		zap.String("default_driver", defaultDriver.Name()),
 	)
@@ -144,7 +142,6 @@ func NewTaskExecutor(
 		gcsClient:            gcsClient,
 		itemWriter:           itemWriter,
 		deduplicator:         deduplicator,
-		bloomDedup:           bloomDedup,
 		batchedStatsReporter: batchedStatsReporter,
 		retryConfig:          DefaultRetryConfig(),
 		recoveryManager:      recoveryManager,
@@ -765,13 +762,6 @@ func (e *TaskExecutor) Close() error {
 	if e.itemWriter != nil {
 		if err := e.itemWriter.Close(); err != nil {
 			logger.Error("Failed to close item writer", zap.Error(err))
-		}
-	}
-
-	// Close bloom deduplicator
-	if e.bloomDedup != nil {
-		if err := e.bloomDedup.Close(); err != nil {
-			logger.Error("Failed to close bloom deduplicator", zap.Error(err))
 		}
 	}
 
