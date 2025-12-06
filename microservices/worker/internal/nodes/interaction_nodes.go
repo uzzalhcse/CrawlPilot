@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"go.uber.org/zap"
 )
 
@@ -87,9 +87,9 @@ func (n *HoverNode) Execute(ctx context.Context, execCtx *ExecutionContext, node
 	logger.Info("Hovering over element", zap.String("selector", selector))
 
 	// Wait for element to be visible
-	if _, err := execCtx.Page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
-		State: playwright.WaitForSelectorStateVisible,
-	}); err != nil {
+	if err := execCtx.Page.WaitForSelector(selector,
+		driver.WithState("visible"),
+	); err != nil {
 		return fmt.Errorf("element not found: %w", err)
 	}
 
@@ -134,17 +134,17 @@ func (n *ScreenshotNode) Execute(ctx context.Context, execCtx *ExecutionContext,
 			return fmt.Errorf("element not found for screenshot: %w", err)
 		}
 
-		screenshotData, err = element.Screenshot(playwright.ElementHandleScreenshotOptions{
-			Type: playwright.ScreenshotTypePng,
-		})
+		screenshotData, err = element.Screenshot(
+			driver.WithScreenshotType("png"),
+		)
 	} else {
 		// Screenshot full page or viewport
 		logger.Info("Taking page screenshot", zap.Bool("full_page", fullPage))
 
-		screenshotData, err = execCtx.Page.Screenshot(playwright.PageScreenshotOptions{
-			FullPage: playwright.Bool(fullPage),
-			Type:     playwright.ScreenshotTypePng,
-		})
+		screenshotData, err = execCtx.Page.Screenshot(
+			driver.WithFullPage(fullPage),
+			driver.WithScreenshotType("png"),
+		)
 	}
 
 	if err != nil {

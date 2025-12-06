@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
-	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"go.uber.org/zap"
 )
 
@@ -77,7 +78,7 @@ func (n *ConditionalNode) Execute(ctx context.Context, execCtx *ExecutionContext
 }
 
 // evaluateCondition evaluates the specified condition
-func (n *ConditionalNode) evaluateCondition(page playwright.Page, condition, selector, value string) (bool, error) {
+func (n *ConditionalNode) evaluateCondition(page driver.Page, condition, selector, value string) (bool, error) {
 	switch condition {
 	case "exists":
 		return n.elementExists(page, selector)
@@ -137,24 +138,40 @@ func (n *ConditionalNode) evaluateCondition(page playwright.Page, condition, sel
 	}
 }
 
-func (n *ConditionalNode) elementExists(page playwright.Page, selector string) (bool, error) {
-	count, err := page.Locator(selector).Count()
+func (n *ConditionalNode) elementExists(page driver.Page, selector string) (bool, error) {
+	elements, err := page.QuerySelectorAll(selector)
 	if err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	return len(elements) > 0, nil
 }
 
-func (n *ConditionalNode) elementVisible(page playwright.Page, selector string) (bool, error) {
-	locator := page.Locator(selector).First()
-	return locator.IsVisible()
+func (n *ConditionalNode) elementVisible(page driver.Page, selector string) (bool, error) {
+	// Check visibility using WaitForSelector with immediate timeout?
+	// Or Evaluate?
+	// Let's use WaitForSelector with short timeout and Visible option
+	err := page.WaitForSelector(selector,
+		driver.WithWaitTimeout(100*time.Millisecond),
+		driver.WithState("visible"),
+	)
+	return err == nil, nil
 }
 
-func (n *ConditionalNode) elementCount(page playwright.Page, selector string) (int, error) {
-	return page.Locator(selector).Count()
+func (n *ConditionalNode) elementCount(page driver.Page, selector string) (int, error) {
+	elements, err := page.QuerySelectorAll(selector)
+	if err != nil {
+		return 0, err
+	}
+	return len(elements), nil
 }
 
-func (n *ConditionalNode) getElementText(page playwright.Page, selector string) (string, error) {
-	locator := page.Locator(selector).First()
-	return locator.TextContent()
+func (n *ConditionalNode) getElementText(page driver.Page, selector string) (string, error) {
+	element, err := page.QuerySelector(selector)
+	if err != nil {
+		return "", err
+	}
+	if element == nil {
+		return "", fmt.Errorf("element not found: %s", selector)
+	}
+	return element.Text()
 }

@@ -47,30 +47,41 @@ func (n *ExtractLinksNode) Execute(ctx context.Context, execCtx *ExecutionContex
 	)
 
 	// Get current page URL for resolving relative URLs
-	currentURL := execCtx.Page.URL()
-	baseURL, err := url.Parse(currentURL)
+	currentURL, err := execCtx.Page.URL()
 	if err != nil {
-		logger.Warn("Failed to parse current URL", zap.String("url", currentURL), zap.Error(err))
-		baseURL = nil
+		// If URL retrieval fails, we might still proceed if we don't need to resolve relative URLs
+		// But usually we need it. Let's log warning.
+		logger.Warn("Failed to get current URL", zap.Error(err))
+		currentURL = ""
+	}
+
+	var baseURL *url.URL
+	if currentURL != "" {
+		baseURL, err = url.Parse(currentURL)
+		if err != nil {
+			logger.Warn("Failed to parse current URL", zap.String("url", currentURL), zap.Error(err))
+			baseURL = nil
+		}
 	}
 
 	// Find all links
-	links := execCtx.Page.Locator(selector)
-	count, err := links.Count()
+	elements, err := execCtx.Page.QuerySelectorAll(selector)
 	if err != nil {
-		return fmt.Errorf("failed to count links: %w", err)
+		return fmt.Errorf("failed to find links: %w", err)
 	}
+
+	count := len(elements)
 
 	// Apply limit if specified
 	if limit > 0 && count > limit {
 		count = limit
+		elements = elements[:limit]
 	}
 
 	discoveredURLs := make([]map[string]interface{}, 0)
 
-	for i := 0; i < count; i++ {
-		link := links.Nth(i)
-		href, err := link.GetAttribute("href")
+	for _, element := range elements {
+		href, err := element.Attribute("href")
 		if err != nil {
 			continue
 		}

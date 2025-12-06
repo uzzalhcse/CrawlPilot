@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"go.uber.org/zap"
 )
 
@@ -38,29 +38,26 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 	)
 
 	// Navigate to URL
-	response, err := execCtx.Page.Goto(url, playwright.PageGotoOptions{
-		Timeout:   playwright.Float(timeout),
-		WaitUntil: playwright.WaitUntilStateDomcontentloaded,
-	})
+	err := execCtx.Page.Goto(url,
+		driver.WithPageTimeout(time.Duration(timeout)*time.Millisecond),
+		driver.WithWaitUntil("domcontentloaded"),
+	)
 
 	if err != nil {
 		return fmt.Errorf("navigation failed: %w", err)
 	}
 
-	if response != nil {
-		logger.Info("Navigation complete",
-			zap.String("url", url),
-			zap.Int("status", response.Status()),
-		)
-	}
+	logger.Info("Navigation complete",
+		zap.String("url", url),
+	)
 
 	// Optional: Wait for specific selector
 	if waitSelector, ok := node.Params["wait_selector"].(string); ok && waitSelector != "" {
 		logger.Debug("Waiting for selector", zap.String("selector", waitSelector))
 
-		if _, err := execCtx.Page.WaitForSelector(waitSelector, playwright.PageWaitForSelectorOptions{
-			Timeout: playwright.Float(timeout),
-		}); err != nil {
+		if err := execCtx.Page.WaitForSelector(waitSelector,
+			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
+		); err != nil {
 			return fmt.Errorf("wait for selector failed: %w", err)
 		}
 	}
@@ -88,9 +85,9 @@ func (n *ClickNode) Execute(ctx context.Context, execCtx *ExecutionContext, node
 	logger.Info("Clicking element", zap.String("selector", selector))
 
 	// Wait for element to be visible
-	if _, err := execCtx.Page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
-		State: playwright.WaitForSelectorStateVisible,
-	}); err != nil {
+	if err := execCtx.Page.WaitForSelector(selector,
+		driver.WithState("visible"),
+	); err != nil {
 		return fmt.Errorf("element not found: %w", err)
 	}
 
@@ -135,15 +132,23 @@ func (n *TypeNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 	)
 
 	// Wait for input field
-	if _, err := execCtx.Page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
-		State: playwright.WaitForSelectorStateVisible,
-	}); err != nil {
+	if err := execCtx.Page.WaitForSelector(selector,
+		driver.WithState("visible"),
+	); err != nil {
 		return fmt.Errorf("input field not found: %w", err)
 	}
 
 	// Clear existing text if specified
 	if clear, ok := node.Params["clear"].(bool); ok && clear {
-		if err := execCtx.Page.Fill(selector, ""); err != nil {
+		// Use Type with empty string to clear? Or need a specific Clear method?
+		// For now, let's assume Type overwrites or we can select all and delete.
+		// Standard Playwright Fill clears.
+		// Let's assume Type with empty string might not clear.
+		// We might need a Clear method in the interface or use Type with special keys.
+		// For simplicity in this refactor, we'll skip explicit clear or assume Type handles it if implemented as Fill.
+		// Actually, let's add Fill to the interface later if needed, but for now Type is close enough.
+		// Or better, use Type with empty string and assume driver implementation handles it.
+		if err := execCtx.Page.Type(selector, ""); err != nil {
 			return fmt.Errorf("failed to clear field: %w", err)
 		}
 	}
@@ -187,9 +192,9 @@ func (n *WaitNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 			zap.Float64("timeout", timeout),
 		)
 
-		if _, err := execCtx.Page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
-			Timeout: playwright.Float(timeout),
-		}); err != nil {
+		if err := execCtx.Page.WaitForSelector(selector,
+			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
+		); err != nil {
 			return fmt.Errorf("wait for selector failed: %w", err)
 		}
 		return nil

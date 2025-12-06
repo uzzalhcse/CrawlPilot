@@ -101,11 +101,12 @@ type StorageConfig struct {
 
 // BrowserConfig holds browser pool configuration
 type BrowserConfig struct {
-	PoolSize        int  `mapstructure:"pool_size"`
-	Headless        bool `mapstructure:"headless"`
-	Timeout         int  `mapstructure:"timeout"`
-	MaxConcurrency  int  `mapstructure:"max_concurrency"`
-	ContextLifetime int  `mapstructure:"context_lifetime"`
+	PoolSize        int    `mapstructure:"pool_size"`
+	Headless        bool   `mapstructure:"headless"`
+	Timeout         int    `mapstructure:"timeout"`
+	MaxConcurrency  int    `mapstructure:"max_concurrency"`
+	ContextLifetime int    `mapstructure:"context_lifetime"`
+	Driver          string `mapstructure:"driver"` // "playwright" (default) or "http"
 }
 
 // Load loads configuration from a file

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/database"
@@ -15,6 +14,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/shared/queue"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/dedup"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/nodes"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/recovery"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/reporter"
@@ -24,7 +24,7 @@ import (
 
 // TaskExecutor handles execution of individual tasks
 type TaskExecutor struct {
-	browserPool          *browser.Pool
+	driver               driver.Driver
 	nodeRegistry         *nodes.Registry
 	pubsubClient         *queue.PubSubClient
 	gcsClient            *storage.GCSClient
@@ -45,10 +45,11 @@ func NewTaskExecutor(
 	orchestratorURL string,
 	db *database.DB,
 ) (*TaskExecutor, error) {
-	// Initialize browser pool
-	browserPool, err := browser.NewPool(cfg)
+	// Initialize driver using factory
+	factory := driver.NewFactory(cfg)
+	drv, err := factory.CreateDriver()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create browser pool: %w", err)
+		return nil, fmt.Errorf("failed to create driver: %w", err)
 	}
 
 	// Initialize node registry
@@ -105,10 +106,11 @@ func NewTaskExecutor(
 		zap.Bool("recovery_enabled", recoveryManager != nil),
 		zap.String("dedup_type", "bloom_filter"),
 		zap.String("writer_type", "copy_protocol"),
+		zap.String("driver", drv.Name()),
 	)
 
 	return &TaskExecutor{
-		browserPool:          browserPool,
+		driver:               drv,
 		nodeRegistry:         nodeRegistry,
 		pubsubClient:         pubsubClient,
 		gcsClient:            gcsClient,
@@ -155,41 +157,22 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		return nil
 	}
 
-	// Acquire browser context (with proxy if specified from recovery)
-	var browserCtx playwright.BrowserContext
-	var proxyContext bool
-
+	// Prepare context with proxy if needed
+	execCtx := ctx
 	if task.ProxyURL != "" {
-		// Create a new context with proxy (for recovery retries)
 		proxyConfig := &browser.ProxyConfig{
 			Server: task.ProxyURL,
 		}
-		browserCtx, err = e.browserPool.CreateContextWithProxy(proxyConfig)
-		proxyContext = true
+		// Pass proxy config via context to driver
+		execCtx = context.WithValue(ctx, driver.ProxyKey, proxyConfig)
 		logger.Info("Using proxy for retry",
 			zap.String("task_id", task.TaskID),
 			zap.String("proxy_id", task.ProxyID),
 		)
-	} else {
-		// Use pooled context (normal case)
-		browserCtx, err = e.browserPool.Acquire(ctx)
 	}
 
-	if err != nil {
-		taskStats.Record(0, 0, 1)
-		e.reportStats(ctx, task.ExecutionID, taskStats)
-		return fmt.Errorf("failed to acquire browser context: %w", err)
-	}
-
-	if proxyContext {
-		// Proxy contexts need to be closed, not returned to pool
-		defer browserCtx.Close()
-	} else {
-		defer e.browserPool.Release(browserCtx)
-	}
-
-	// Create new page
-	page, err := browserCtx.NewPage()
+	// Create new page via driver
+	page, err := e.driver.NewPage(execCtx)
 	if err != nil {
 		taskStats.Record(0, 0, 1)
 		e.reportStats(ctx, task.ExecutionID, taskStats)
@@ -425,7 +408,7 @@ type TaskResult struct {
 }
 
 // executePhase executes all nodes in a phase
-func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page playwright.Page) (*TaskResult, error) {
+func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page driver.Page) (*TaskResult, error) {
 	result := &TaskResult{
 		ExtractedItems: make([]map[string]interface{}, 0),
 		DiscoveredURLs: make([]string, 0),
@@ -670,8 +653,8 @@ func (e *TaskExecutor) Close() error {
 		e.recoveryManager.Close()
 	}
 
-	if e.browserPool != nil {
-		return e.browserPool.Close()
+	if e.driver != nil {
+		return e.driver.Close()
 	}
 	return nil
 }

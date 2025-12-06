@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"go.uber.org/zap"
 )
 
@@ -65,25 +65,27 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 
 	for pagesProcessed < maxPages {
 		// Check if next button exists
-		locator := execCtx.Page.Locator(nextSelector)
-		count, err := locator.Count()
-		if err != nil || count == 0 {
+		elements, err := execCtx.Page.QuerySelectorAll(nextSelector)
+		if err != nil || len(elements) == 0 {
 			logger.Info("No more pagination buttons found, stopping")
 			break
 		}
 
-		// Check if button is visible and enabled
-		isVisible, _ := locator.First().IsVisible()
-		isEnabled, _ := locator.First().IsEnabled()
-		if !isVisible || !isEnabled {
-			logger.Info("Pagination button not visible/enabled, stopping")
+		// Check if button is visible
+		// We can check visibility by trying to wait for it with a short timeout
+		// or just assume if it's found it might be clickable.
+		// Better: use WaitForSelector with Visible option
+		err = execCtx.Page.WaitForSelector(nextSelector,
+			driver.WithWaitTimeout(100*time.Millisecond),
+			driver.WithState("visible"),
+		)
+		if err != nil {
+			logger.Info("Pagination button not visible, stopping")
 			break
 		}
 
 		// Click next button
-		err = execCtx.Page.Click(nextSelector, playwright.PageClickOptions{
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		err = execCtx.Page.Click(nextSelector, driver.WithElementTimeout(time.Duration(timeout)*time.Millisecond))
 		if err != nil {
 			logger.Warn("Failed to click next button",
 				zap.Int("page", pagesProcessed+1),
@@ -93,16 +95,10 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 		}
 
 		// Wait for page to load
-		err = execCtx.Page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateNetworkidle,
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		err = execCtx.Page.WaitForState("networkidle", driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond))
 		if err != nil {
 			// Fall back to domcontentloaded
-			execCtx.Page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-				State:   playwright.LoadStateDomcontentloaded,
-				Timeout: playwright.Float(float64(timeout)),
-			})
+			execCtx.Page.WaitForState("domcontentloaded", driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond))
 		}
 
 		// Wait between pages
@@ -164,17 +160,10 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 }
 
 // extractLinks extracts links from the page using the given selector
-func (n *PaginateNode) extractLinks(page playwright.Page, selector, baseURL string) ([]string, error) {
-	result, err := page.EvalOnSelectorAll(selector, `
-		(elements) => elements.map(el => el.href || el.getAttribute('href')).filter(href => href)
-	`)
+func (n *PaginateNode) extractLinks(page driver.Page, selector, baseURL string) ([]string, error) {
+	elements, err := page.QuerySelectorAll(selector)
 	if err != nil {
 		return nil, err
-	}
-
-	rawLinks, ok := result.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type from link extraction")
 	}
 
 	// Parse base URL for resolving relative links
@@ -186,9 +175,9 @@ func (n *PaginateNode) extractLinks(page playwright.Page, selector, baseURL stri
 	var links []string
 	seen := make(map[string]bool)
 
-	for _, link := range rawLinks {
-		href, ok := link.(string)
-		if !ok || href == "" {
+	for _, element := range elements {
+		href, err := element.Attribute("href")
+		if err != nil || href == "" {
 			continue
 		}
 

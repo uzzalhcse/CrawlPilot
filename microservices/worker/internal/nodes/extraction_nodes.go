@@ -151,17 +151,17 @@ func (n *ExtractNode) extractField(ctx context.Context, execCtx *ExecutionContex
 
 // extractSingleValue extracts a single value from the page
 func (n *ExtractNode) extractSingleValue(execCtx *ExecutionContext, selector string, extractType string, config map[string]interface{}) (interface{}, error) {
-	element := execCtx.Page.Locator(selector).First()
-
-	// Check if element exists
-	count, err := execCtx.Page.Locator(selector).Count()
-	if err != nil || count == 0 {
+	element, err := execCtx.Page.QuerySelector(selector)
+	if err != nil {
+		return nil, fmt.Errorf("error querying element: %s (%w)", selector, err)
+	}
+	if element == nil {
 		return nil, fmt.Errorf("element not found: %s", selector)
 	}
 
 	switch extractType {
 	case "text":
-		return element.TextContent()
+		return element.Text()
 
 	case "html":
 		return element.InnerHTML()
@@ -171,7 +171,7 @@ func (n *ExtractNode) extractSingleValue(execCtx *ExecutionContext, selector str
 		if !ok || attrName == "" {
 			return nil, fmt.Errorf("attribute name is required for attr type")
 		}
-		return element.GetAttribute(attrName)
+		return element.Attribute(attrName)
 
 	default:
 		return nil, fmt.Errorf("unknown extract type: %s", extractType)
@@ -180,25 +180,24 @@ func (n *ExtractNode) extractSingleValue(execCtx *ExecutionContext, selector str
 
 // extractMultipleValues extracts multiple values from the page
 func (n *ExtractNode) extractMultipleValues(execCtx *ExecutionContext, selector string, extractType string, config map[string]interface{}) (interface{}, error) {
-	elements := execCtx.Page.Locator(selector)
-	count, err := elements.Count()
+	elements, err := execCtx.Page.QuerySelectorAll(selector)
 	if err != nil {
 		return nil, err
 	}
 
-	if count == 0 {
+	if len(elements) == 0 {
 		return []string{}, nil
 	}
 
-	results := make([]string, 0, count)
+	results := make([]string, 0, len(elements))
 
-	for i := 0; i < count; i++ {
-		element := elements.Nth(i)
+	for i, element := range elements {
 		var value string
+		var err error
 
 		switch extractType {
 		case "text":
-			value, err = element.TextContent()
+			value, err = element.Text()
 		case "html":
 			value, err = element.InnerHTML()
 		case "attr":
@@ -206,7 +205,7 @@ func (n *ExtractNode) extractMultipleValues(execCtx *ExecutionContext, selector 
 			if !ok || attrName == "" {
 				continue
 			}
-			value, err = element.GetAttribute(attrName)
+			value, err = element.Attribute(attrName)
 		default:
 			continue
 		}
@@ -251,12 +250,21 @@ func (n *ExtractNode) extractNested(ctx context.Context, execCtx *ExecutionConte
 	}
 
 	// Extract key-value pairs
-	keys := execCtx.Page.Locator(keySelector)
-	values := execCtx.Page.Locator(valueSelector)
-
-	keyCount, err := keys.Count()
+	keys, err := execCtx.Page.QuerySelectorAll(keySelector)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to find keys: %w", err)
+	}
+
+	values, err := execCtx.Page.QuerySelectorAll(valueSelector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find values: %w", err)
+	}
+
+	keyCount := len(keys)
+
+	// Ensure we don't go out of bounds if counts mismatch
+	if len(values) < keyCount {
+		keyCount = len(values)
 	}
 
 	// Get key and value types
@@ -280,14 +288,15 @@ func (n *ExtractNode) extractNested(ctx context.Context, execCtx *ExecutionConte
 	result := make([]map[string]string, 0, keyCount)
 
 	for i := 0; i < keyCount; i++ {
-		keyElement := keys.Nth(i)
-		valueElement := values.Nth(i)
+		keyElement := keys[i]
+		valueElement := values[i]
 
 		var key, value string
+		var err error
 
 		// Extract key
 		if keyType == "text" {
-			key, err = keyElement.TextContent()
+			key, err = keyElement.Text()
 		} else {
 			key, err = keyElement.InnerHTML()
 		}
@@ -297,7 +306,7 @@ func (n *ExtractNode) extractNested(ctx context.Context, execCtx *ExecutionConte
 
 		// Extract value
 		if valueType == "text" {
-			value, err = valueElement.TextContent()
+			value, err = valueElement.Text()
 		} else {
 			value, err = valueElement.InnerHTML()
 		}
@@ -397,17 +406,15 @@ func (n *DiscoverLinksNode) Execute(ctx context.Context, execCtx *ExecutionConte
 	logger.Info("Discovering links", zap.String("selector", selector))
 
 	// Find all links
-	links := execCtx.Page.Locator(selector)
-	count, err := links.Count()
+	elements, err := execCtx.Page.QuerySelectorAll(selector)
 	if err != nil {
-		return fmt.Errorf("failed to count links: %w", err)
+		return fmt.Errorf("failed to find links: %w", err)
 	}
 
 	discoveredURLs := make([]string, 0)
 
-	for i := 0; i < count; i++ {
-		link := links.Nth(i)
-		href, err := link.GetAttribute("href")
+	for _, element := range elements {
+		href, err := element.Attribute("href")
 		if err != nil {
 			continue
 		}

@@ -3,13 +3,13 @@ package nodes
 import (
 	"context"
 
-	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 )
 
 // ExecutionContext holds the current execution state
 type ExecutionContext struct {
-	Page           playwright.Page
+	Page           driver.Page
 	Task           *models.Task
 	Variables      map[string]interface{}
 	ExtractedItems []map[string]interface{} // Items extracted during execution

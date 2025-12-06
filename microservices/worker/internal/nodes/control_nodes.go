@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"go.uber.org/zap"
 )
 
@@ -39,22 +39,15 @@ func (n *WaitForNode) Execute(ctx context.Context, execCtx *ExecutionContext, no
 			return fmt.Errorf("selector is required for wait_for with condition=selector")
 		}
 
-		state := playwright.WaitForSelectorStateVisible
+		state := "visible"
 		if stateStr := getStringParam(node.Params, "state", "visible"); stateStr != "" {
-			switch stateStr {
-			case "attached":
-				state = playwright.WaitForSelectorStateAttached
-			case "detached":
-				state = playwright.WaitForSelectorStateDetached
-			case "hidden":
-				state = playwright.WaitForSelectorStateHidden
-			}
+			state = stateStr
 		}
 
-		_, err := execCtx.Page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
-			State:   state,
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		err := execCtx.Page.WaitForSelector(selector,
+			driver.WithState(state),
+			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
+		)
 		return err
 
 	case "text":
@@ -64,30 +57,25 @@ func (n *WaitForNode) Execute(ctx context.Context, execCtx *ExecutionContext, no
 		}
 
 		// Wait for text to appear on page
-		_, err := execCtx.Page.WaitForFunction(fmt.Sprintf(`
+		err := execCtx.Page.WaitForFunction(fmt.Sprintf(`
 			() => document.body.innerText.includes('%s')
-		`, strings.ReplaceAll(text, "'", "\\'")), playwright.PageWaitForFunctionOptions{
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		`, strings.ReplaceAll(text, "'", "\\'"))) // TODO: Add timeout option to WaitForFunction if needed, or rely on context/default
 		return err
 
 	case "network_idle":
-		return execCtx.Page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateNetworkidle,
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		return execCtx.Page.WaitForState("networkidle",
+			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
+		)
 
 	case "load":
-		return execCtx.Page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateLoad,
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		return execCtx.Page.WaitForState("load",
+			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
+		)
 
 	case "domcontentloaded":
-		return execCtx.Page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
-			State:   playwright.LoadStateDomcontentloaded,
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		return execCtx.Page.WaitForState("domcontentloaded",
+			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
+		)
 
 	case "url":
 		urlPattern := getStringParam(node.Params, "url", "")
@@ -95,9 +83,9 @@ func (n *WaitForNode) Execute(ctx context.Context, execCtx *ExecutionContext, no
 			return fmt.Errorf("url is required for wait_for with condition=url")
 		}
 
-		return execCtx.Page.WaitForURL(urlPattern, playwright.PageWaitForURLOptions{
-			Timeout: playwright.Float(float64(timeout)),
-		})
+		return execCtx.Page.WaitForURL(urlPattern,
+			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
+		)
 
 	default:
 		return fmt.Errorf("unknown wait_for condition: %s", condition)
@@ -131,9 +119,9 @@ func (n *InputNode) Execute(ctx context.Context, execCtx *ExecutionContext, node
 	)
 
 	// Wait for element
-	if _, err := execCtx.Page.WaitForSelector(selector, playwright.PageWaitForSelectorOptions{
-		State: playwright.WaitForSelectorStateVisible,
-	}); err != nil {
+	if err := execCtx.Page.WaitForSelector(selector,
+		driver.WithState("visible"),
+	); err != nil {
 		return fmt.Errorf("input element not found: %w", err)
 	}
 
@@ -170,11 +158,12 @@ func (n *LoopNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 	)
 
 	// Get all matching elements
-	locator := execCtx.Page.Locator(selector)
-	count, err := locator.Count()
+	elements, err := execCtx.Page.QuerySelectorAll(selector)
 	if err != nil {
-		return fmt.Errorf("failed to count elements: %w", err)
+		return fmt.Errorf("failed to find elements: %w", err)
 	}
+
+	count := len(elements)
 
 	if count == 0 {
 		logger.Info("No elements found for loop")
@@ -203,17 +192,10 @@ func (n *LoopNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 		execCtx.Variables["loop_index"] = i
 
 		// Get nth element handle
-		elementHandle, err := locator.Nth(i).ElementHandle()
-		if err != nil {
-			logger.Warn("Failed to get element handle",
-				zap.Int("index", i),
-				zap.Error(err),
-			)
-			continue
-		}
+		element := elements[i]
 
 		// Store element for child nodes to use
-		execCtx.Variables["loop_element"] = elementHandle
+		execCtx.Variables["loop_element"] = element
 
 		// Parse and queue child nodes for execution
 		for _, childNodeData := range childNodes {
@@ -260,8 +242,8 @@ func (n *InfiniteScrollNode) Execute(ctx context.Context, execCtx *ExecutionCont
 	for i := 0; i < maxScrolls; i++ {
 		// Check for end marker
 		if endSelector != "" {
-			count, _ := execCtx.Page.Locator(endSelector).Count()
-			if count > 0 {
+			elements, _ := execCtx.Page.QuerySelectorAll(endSelector)
+			if len(elements) > 0 {
 				logger.Info("End selector found, stopping scroll", zap.Int("iteration", i))
 				break
 			}
@@ -286,7 +268,12 @@ func (n *InfiniteScrollNode) Execute(ctx context.Context, execCtx *ExecutionCont
 
 		currentHeight, ok := heightResult.(float64)
 		if !ok {
-			continue
+			// Try int
+			if ch, ok := heightResult.(int); ok {
+				currentHeight = float64(ch)
+			} else {
+				continue
+			}
 		}
 
 		// Check if height changed (new content loaded)
