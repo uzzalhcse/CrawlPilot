@@ -1,10 +1,5 @@
 import type { WorkflowNode, WorkflowEdge, WorkflowConfig, WorkflowPhase, Node } from '@/types'
 
-// Helper to generate a unique ID
-function generateId(): string {
-    return Math.random().toString(36).substr(2, 9)
-}
-
 export function convertNodesToWorkflowConfig(
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
