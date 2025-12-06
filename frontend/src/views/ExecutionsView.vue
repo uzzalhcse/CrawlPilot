@@ -313,7 +313,7 @@ onUnmounted(() => {
             </div>
           </td>
           <td class="px-6 py-3">
-            <div class="flex items-center gap-2">
+            <div v-if="row.stats && row.stats.total_urls > 0" class="flex items-center gap-2">
               <div class="h-2 w-24 overflow-hidden rounded-full bg-muted">
                 <div 
                   class="h-full bg-primary transition-all"
@@ -326,10 +326,11 @@ onUnmounted(() => {
                 {{ row.stats.completed }}/{{ row.stats.total_urls }}
               </span>
             </div>
+            <span v-else class="text-xs text-muted-foreground">-</span>
           </td>
           <td class="px-6 py-3">
             <div class="text-sm font-medium">
-              {{ row.stats.items_extracted }}
+              {{ row.stats?.items_extracted || 0 }}
             </div>
           </td>
           <td class="px-6 py-3 text-right" @click.stop>

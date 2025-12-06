@@ -58,6 +58,29 @@ func (h *ExecutionHandler) GetExecution(c *fiber.Ctx) error {
 	return c.JSON(execution)
 }
 
+// ListAllExecutions handles GET /api/v1/executions
+func (h *ExecutionHandler) ListAllExecutions(c *fiber.Ctx) error {
+	filters := repository.ListFilters{
+		Limit:      c.QueryInt("limit", 50),
+		Offset:     c.QueryInt("offset", 0),
+		Status:     c.Query("status", ""),
+		WorkflowID: c.Query("workflow_id", ""),
+	}
+
+	executions, err := h.executionSvc.ListAllExecutions(c.Context(), filters)
+	if err != nil {
+		logger.Error("Failed to list all executions", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to list executions",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"executions": executions,
+		"count":      len(executions),
+	})
+}
+
 // ListExecutions handles GET /api/v1/workflows/:id/executions
 func (h *ExecutionHandler) ListExecutions(c *fiber.Ctx) error {
 	workflowID := c.Params("id")

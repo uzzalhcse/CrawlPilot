@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useExecutionsStore } from '@/stores/executions'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { 
+import {
   Loader2, 
   CheckCircle, 
   XCircle, 
@@ -39,15 +39,10 @@ import {
   Pause,
   ChevronLeft,
   ChevronRight,
-  Maximize2,
-  AlertTriangle
+  Maximize2
 } from 'lucide-vue-next'
-import ExecutionLiveView from '@/components/execution/ExecutionLiveView.vue'
-import ExecutionNodeTree from '@/components/execution/ExecutionNodeTree.vue'
-import RecoveryEventCard from '@/components/error-recovery/RecoveryEventCard.vue'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
-import recoveryHistoryService, { type RecoveryHistoryRecord } from '@/services/recoveryHistoryService'
 import { executionsApi } from '@/api/executions'
 import type { ExecutionError } from '@/types'
 
@@ -55,8 +50,7 @@ const route = useRoute()
 const executionsStore = useExecutionsStore()
 const executionId = route.params.id as string
 
-const refreshInterval = ref<number | null>(null)
-const activeTab = ref('live')
+const activeTab = ref('data')
 
 // Pagination State
 const currentPage = ref(1)
@@ -66,10 +60,6 @@ const pageSize = ref(50)
 const isDialogOpen = ref(false)
 const selectedItemData = ref<any>(null)
 const selectedItemTitle = ref('')
-
-// Recovery History State
-const recoveryHistory = ref<RecoveryHistoryRecord[]>([])
-const loadingRecoveryHistory = ref(false)
 
 // Error Log State
 const executionErrors = ref<ExecutionError[]>([])
@@ -135,27 +125,6 @@ const openDetailDialog = (key: string, value: any) => {
   selectedItemData.value = value
   isDialogOpen.value = true
 }
-
-// Auto-switch tab based on status
-const updateActiveTab = () => {
-  if (execution.value) {
-    if (execution.value.status === 'running') {
-      activeTab.value = 'live'
-    } else if (execution.value.status === 'completed' && activeTab.value === 'live') {
-      // Switch to data tab when completed and data is available
-      activeTab.value = 'data'
-    }
-  }
-}
-
-// Watch for status changes to auto-switch tabs
-watch(() => execution.value?.status, (newStatus, oldStatus) => {
-  if (newStatus === 'completed' && oldStatus === 'running') {
-    // Execution just completed, switch to data tab and reload data
-    activeTab.value = 'data'
-    loadExtractedData()
-  }
-})
 
 
 const getStatusVariant = (status: string) => {
@@ -255,16 +224,7 @@ const loadExtractedData = async () => {
   }
 }
 
-const loadRecoveryHistory = async () => {
-  loadingRecoveryHistory.value = true
-  try {
-    recoveryHistory.value = await recoveryHistoryService.getExecutionHistory(executionId)
-  } catch (error) {
-    console.error('Failed to load recovery history:', error)
-  } finally {
-    loadingRecoveryHistory.value = false
-  }
-}
+
 
 const loadExecutionErrors = async () => {
   loadingErrors.value = true
@@ -311,27 +271,9 @@ const handlePageSizeChange = (value: any) => {
   loadExtractedData()
 }
 
-const startAutoRefresh = () => {
-  refreshInterval.value = window.setInterval(() => {
-    if (execution.value && execution.value.status === 'running') {
-      loadExecutionData()
-      loadRecoveryHistory()
-    }
-  }, 5000)
-}
-
 onMounted(async () => {
   await loadExecutionData()
-  await loadRecoveryHistory()
   await loadExecutionErrors()
-  updateActiveTab()
-  // startAutoRefresh()
-})
-
-onUnmounted(() => {
-  if (refreshInterval.value) {
-    clearInterval(refreshInterval.value)
-  }
 })
 </script>
 
@@ -426,7 +368,6 @@ onUnmounted(() => {
       <!-- Main Content -->
       <Tabs v-model="activeTab" class="space-y-3 w-full max-w-full">
         <TabsList class="h-8">
-          <TabsTrigger value="live" class="text-xs">Live View</TabsTrigger>
           <TabsTrigger value="data" class="text-xs">Extracted Data</TabsTrigger>
           <TabsTrigger value="errors" class="text-xs">
             Errors
@@ -440,22 +381,7 @@ onUnmounted(() => {
               {{ Object.keys(execution.phase_stats).length }}
             </span>
           </TabsTrigger>
-          <TabsTrigger value="tree" class="text-xs">Node Tree</TabsTrigger>
-          <TabsTrigger value="recovery" class="text-xs">
-            Recovery History
-            <span v-if="recoveryHistory.length > 0" class="ml-1.5 px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-medium">
-              {{ recoveryHistory.length }}
-            </span>
-          </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="live" class="space-y-3">
-          <ExecutionLiveView 
-            :execution-id="executionId" 
-            :workflow-config="execution.workflow_config || {}" 
-            :execution-status="execution.status"
-          />
-        </TabsContent>
 
         <TabsContent value="data" class="min-w-0 w-full max-w-full">
           <Card class="p-4 w-full max-w-full">
@@ -678,56 +604,6 @@ onUnmounted(() => {
           </Card>
         </TabsContent>
 
-        <TabsContent value="tree" class="min-w-0 w-full max-w-full">
-          <Card class="p-4 w-full max-w-full">
-            <ExecutionNodeTree />
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="recovery" class="min-w-0 w-full max-w-full">
-          <Card class="p-4 w-full max-w-full">
-            <div class="mb-4 flex items-center justify-between">
-              <div>
-                <h3 class="text-sm font-semibold mb-1">Error Recovery History</h3>
-                <p class="text-xs text-muted-foreground">
-                  View all error recovery attempts during this execution
-                </p>
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                @click="loadRecoveryHistory"
-                :disabled="loadingRecoveryHistory"
-                class="h-8 text-xs"
-              >
-                <Loader2 v-if="loadingRecoveryHistory" class="mr-1.5 h-3 w-3 animate-spin" />
-                <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-                Refresh
-              </Button>
-            </div>
-
-            <div v-if="loadingRecoveryHistory" class="flex items-center justify-center py-12">
-              <Loader2 class="h-6 w-6 animate-spin text-primary" />
-            </div>
-
-            <div v-else-if="recoveryHistory.length === 0" class="py-12 text-center">
-              <div class="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
-              </div>
-              <p class="text-sm text-muted-foreground mb-1">No recovery events recorded</p>
-              <p class="text-xs text-muted-foreground">This execution completed without any error recovery attempts</p>
-            </div>
-
-            <div v-else class="space-y-3">  
-              <RecoveryEventCard 
-                v-for="event in recoveryHistory" 
-                :key="event.id" 
-                :event="event"
-                :show-details="true"
-              />
-            </div>
-          </Card>
-        </TabsContent>
       </Tabs>
     </div>
 

@@ -38,6 +38,7 @@ type TaskExecutor struct {
 	deduplicator         dedup.Deduplicator             // URL deduplication (interface)
 	batchedStatsReporter *reporter.BatchedStatsReporter // High-throughput batched stats
 	errorLogger          *reporter.BatchedErrorLogger   // High-throughput batched error logging
+	completionTracker    *reporter.CompletionTracker    // Tracks outstanding tasks for completion
 	retryConfig          RetryConfig                    // Retry configuration for transient failures
 	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
 }
@@ -121,6 +122,9 @@ func NewTaskExecutor(
 	// Initialize batched error logger (high-throughput: aggregates locally, flushes periodically)
 	errorLogger := reporter.NewBatchedErrorLogger(orchestratorURL)
 
+	// Initialize completion tracker for distributed completion detection
+	completionTracker := reporter.NewCompletionTracker(redisCache, batchedStatsReporter, orchestratorURL)
+
 	// Initialize recovery manager for smart error recovery
 	var recoveryManager *recovery.RecoveryManager
 	if db != nil && redisCache != nil {
@@ -139,6 +143,7 @@ func NewTaskExecutor(
 		zap.Bool("item_writer_enabled", itemWriter != nil),
 		zap.Bool("recovery_enabled", recoveryManager != nil),
 		zap.Bool("error_logger_enabled", errorLogger != nil),
+		zap.Bool("completion_tracking_enabled", completionTracker != nil),
 		zap.String("dedup_type", "redis_distributed"),
 		zap.String("writer_type", "copy_protocol"),
 		zap.String("default_driver", defaultDriver.Name()),
@@ -161,6 +166,7 @@ func NewTaskExecutor(
 		deduplicator:         deduplicator,
 		batchedStatsReporter: batchedStatsReporter,
 		errorLogger:          errorLogger,
+		completionTracker:    completionTracker,
 		retryConfig:          DefaultRetryConfig(),
 		recoveryManager:      recoveryManager,
 	}, nil
@@ -496,6 +502,19 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		zap.Int("total_discovered", discoveredCount),
 		zap.Int("duplicates_filtered", discoveredCount-len(uniqueURLs)),
 	)
+
+	// Track task completion for distributed completion detection
+	if e.completionTracker != nil {
+		isComplete, err := e.completionTracker.TaskCompleted(ctx, task.ExecutionID)
+		if err != nil {
+			logger.Warn("Failed to track task completion", zap.Error(err))
+		}
+		if isComplete {
+			logger.Info("Execution complete - signaling orchestrator",
+				zap.String("execution_id", task.ExecutionID),
+			)
+		}
+	}
 
 	return nil
 }
@@ -910,6 +929,13 @@ func (e *TaskExecutor) requeueDiscoveredURLs(ctx context.Context, task *models.T
 		return fmt.Errorf("failed to publish discovered URLs: %w", err)
 	}
 
+	// Track new tasks queued for completion detection
+	if e.completionTracker != nil && len(tasks) > 0 {
+		if err := e.completionTracker.TaskQueued(ctx, task.ExecutionID, int64(len(tasks))); err != nil {
+			logger.Warn("Failed to track queued tasks", zap.Error(err))
+		}
+	}
+
 	logger.Info("Discovered URLs requeued",
 		zap.Int("count", len(tasks)),
 		zap.String("next_phase", nextPhase.ID),
@@ -997,6 +1023,13 @@ func (e *TaskExecutor) Close() error {
 	if e.errorLogger != nil {
 		if err := e.errorLogger.Close(); err != nil {
 			logger.Error("Failed to close error logger", zap.Error(err))
+		}
+	}
+
+	// Flush completion tracker (ensures all counters are synced)
+	if e.completionTracker != nil {
+		if err := e.completionTracker.Close(); err != nil {
+			logger.Error("Failed to close completion tracker", zap.Error(err))
 		}
 	}
 

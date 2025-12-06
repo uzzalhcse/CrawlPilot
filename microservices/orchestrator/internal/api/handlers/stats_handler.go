@@ -166,6 +166,51 @@ func (h *StatsHandler) BatchUpdateStats(c *fiber.Ctx) error {
 	})
 }
 
+// CompleteExecutionRequest is the request body for marking execution complete
+type CompleteExecutionRequest struct {
+	Status string `json:"status"` // "completed" or "failed"
+	Reason string `json:"reason,omitempty"`
+}
+
+// CompleteExecution handles POST /api/v1/internal/executions/:id/complete
+// Workers call this when they detect an execution should be marked as completed
+func (h *StatsHandler) CompleteExecution(c *fiber.Ctx) error {
+	executionID := c.Params("id")
+
+	var req CompleteExecutionRequest
+	if err := c.BodyParser(&req); err != nil {
+		// Default to completed if no body
+		req.Status = "completed"
+	}
+
+	// Validate status
+	if req.Status != "completed" && req.Status != "failed" {
+		req.Status = "completed"
+	}
+
+	// Mark execution as complete
+	if err := h.executionRepo.Complete(c.Context(), executionID, req.Status); err != nil {
+		logger.Error("Failed to complete execution",
+			zap.String("execution_id", executionID),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to complete execution",
+		})
+	}
+
+	logger.Info("Execution completed",
+		zap.String("execution_id", executionID),
+		zap.String("status", req.Status),
+		zap.String("reason", req.Reason),
+	)
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "execution completed",
+		"status":  req.Status,
+	})
+}
+
 // BatchErrorsRequest is the request body for batch error inserts
 type BatchErrorsRequest struct {
 	Errors    map[string][]ErrorEntry `json:"errors"` // keyed by execution_id

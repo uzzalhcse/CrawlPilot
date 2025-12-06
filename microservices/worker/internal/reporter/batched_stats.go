@@ -273,6 +273,59 @@ func (r *BatchedStatsReporter) sendBatchedStats(ctx context.Context, updates []B
 	return nil
 }
 
+// MarkComplete signals the orchestrator that an execution is complete
+func (r *BatchedStatsReporter) MarkComplete(executionID string, status string) error {
+	if r.orchestratorURL == "" {
+		logger.Debug("Orchestrator URL not configured, skipping completion signal")
+		return nil
+	}
+
+	// Flush any pending stats first
+	r.flush()
+
+	// Clear local counters for this execution
+	r.counters.Delete(executionID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Build completion request
+	reqBody := map[string]string{
+		"status": status,
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal completion request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/internal/executions/%s/complete", r.orchestratorURL, executionID)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create completion request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("completion request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("completion request returned status: %d", resp.StatusCode)
+	}
+
+	logger.Info("Execution marked as complete",
+		zap.String("execution_id", executionID),
+		zap.String("status", status),
+	)
+
+	return nil
+}
+
 // Close gracefully shuts down the batched reporter
 func (r *BatchedStatsReporter) Close() error {
 	if r.shutdown.Swap(true) {

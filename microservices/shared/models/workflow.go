@@ -65,14 +65,30 @@ type Execution struct {
 	TriggeredBy string                 `json:"triggered_by,omitempty"` // manual, scheduled, api
 	Metadata    map[string]interface{} `json:"metadata"`
 
+	// Denormalized workflow name for list views
+	WorkflowName string `json:"workflow_name,omitempty"`
+
 	// Stats fields (aggregated)
 	URLsProcessed  int `json:"urls_processed"`
 	URLsDiscovered int `json:"urls_discovered"`
 	ItemsExtracted int `json:"items_extracted"`
 	Errors         int `json:"errors"`
 
+	// Stats object for list view compatibility
+	Stats *ExecutionStats `json:"stats,omitempty"`
+
 	// Phase breakdown stats
 	PhaseStats map[string]PhaseStatEntry `json:"phase_stats,omitempty"`
+}
+
+// ExecutionStats holds execution statistics for the execution list view
+type ExecutionStats struct {
+	TotalURLs      int `json:"total_urls"`
+	Pending        int `json:"pending"`
+	Processing     int `json:"processing"`
+	Completed      int `json:"completed"`
+	Failed         int `json:"failed"`
+	ItemsExtracted int `json:"items_extracted"`
 }
 
 // PhaseStatEntry holds stats for a single phase

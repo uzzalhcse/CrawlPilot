@@ -125,7 +125,7 @@ func main() {
 
 	// Initialize services
 	workflowSvc := service.NewWorkflowService(workflowRepo, redisCache)
-	executionSvc := service.NewExecutionService(workflowRepo, executionRepo, profileRepo, workflowSvc, pubsubClient)
+	executionSvc := service.NewExecutionService(workflowRepo, executionRepo, profileRepo, workflowSvc, pubsubClient, redisCache)
 
 	// Initialize handlers
 	workflowHandler := handlers.NewWorkflowHandler(workflowSvc)
@@ -152,6 +152,7 @@ func main() {
 	workflows.Get("/:id/executions", executionHandler.ListExecutions)
 
 	executions := api.Group("/executions")
+	executions.Get("/", executionHandler.ListAllExecutions) // List all executions
 	executions.Get("/:id", executionHandler.GetExecution)
 	executions.Delete("/:id", executionHandler.StopExecution)
 	executions.Get("/:id/errors", executionHandler.GetExecutionErrors)
@@ -219,6 +220,8 @@ func main() {
 	internal.Post("/stats/batch", statsHandler.BatchUpdateStats)
 	// Batch errors endpoint for execution error logging
 	internal.Post("/errors/batch", statsHandler.BatchInsertErrors)
+	// Execution completion signal from workers
+	internal.Post("/executions/:id/complete", statsHandler.CompleteExecution)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

@@ -39,6 +39,9 @@ type ExecutionRepository interface {
 	// List retrieves executions for a workflow
 	List(ctx context.Context, workflowID string, filters ListFilters) ([]*models.Execution, error)
 
+	// ListAll retrieves all executions across all workflows with optional filters
+	ListAll(ctx context.Context, filters ListFilters) ([]*models.Execution, error)
+
 	// UpdateStatus updates execution status
 	UpdateStatus(ctx context.Context, id string, status string) error
 
@@ -64,9 +67,10 @@ type ExecutionRepository interface {
 
 // ListFilters defines common list query filters
 type ListFilters struct {
-	Limit  int
-	Offset int
-	Status string
+	Limit      int
+	Offset     int
+	Status     string
+	WorkflowID string // Optional: filter by workflow
 }
 
 // ExecutionStats holds execution statistics

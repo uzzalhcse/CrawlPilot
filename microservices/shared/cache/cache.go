@@ -108,6 +108,21 @@ func (c *Cache) Increment(ctx context.Context, key string) (int64, error) {
 	return c.client.Incr(ctx, key).Result()
 }
 
+// Decrement decrements a counter
+func (c *Cache) Decrement(ctx context.Context, key string) (int64, error) {
+	return c.client.Decr(ctx, key).Result()
+}
+
+// IncrBy increments a counter by a specific amount
+func (c *Cache) IncrBy(ctx context.Context, key string, value int64) (int64, error) {
+	return c.client.IncrBy(ctx, key, value).Result()
+}
+
+// DecrBy decrements a counter by a specific amount
+func (c *Cache) DecrBy(ctx context.Context, key string, value int64) (int64, error) {
+	return c.client.DecrBy(ctx, key, value).Result()
+}
+
 // Expire sets a TTL on an existing key
 func (c *Cache) Expire(ctx context.Context, key string, ttl time.Duration) error {
 	return c.client.Expire(ctx, key, ttl).Err()

@@ -165,6 +165,97 @@ func (r *postgresExecutionRepo) List(ctx context.Context, workflowID string, fil
 	return executions, nil
 }
 
+// ListAll retrieves all executions across all workflows with optional filters
+func (r *postgresExecutionRepo) ListAll(ctx context.Context, filters ListFilters) ([]*models.Execution, error) {
+	query := `
+		SELECT e.id, e.workflow_id, e.status, e.started_at, e.completed_at, e.metadata,
+		       COALESCE(e.urls_processed, 0), COALESCE(e.urls_discovered, 0), 
+		       COALESCE(e.items_extracted, 0), COALESCE(e.errors, 0),
+		       w.name as workflow_name
+		FROM workflow_executions e
+		LEFT JOIN workflows w ON e.workflow_id = w.id
+		WHERE 1=1
+	`
+
+	args := []interface{}{}
+	argPos := 1
+
+	// Optional workflow filter
+	if filters.WorkflowID != "" {
+		query += fmt.Sprintf(" AND e.workflow_id = $%d", argPos)
+		args = append(args, filters.WorkflowID)
+		argPos++
+	}
+
+	// Optional status filter
+	if filters.Status != "" {
+		query += fmt.Sprintf(" AND e.status = $%d", argPos)
+		args = append(args, filters.Status)
+		argPos++
+	}
+
+	query += " ORDER BY e.started_at DESC"
+
+	if filters.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", argPos)
+		args = append(args, filters.Limit)
+		argPos++
+	}
+
+	if filters.Offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", argPos)
+		args = append(args, filters.Offset)
+	}
+
+	rows, err := r.db.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all executions: %w", err)
+	}
+	defer rows.Close()
+
+	executions := make([]*models.Execution, 0)
+
+	for rows.Next() {
+		var execution models.Execution
+		var workflowName *string
+		err := rows.Scan(
+			&execution.ID,
+			&execution.WorkflowID,
+			&execution.Status,
+			&execution.StartedAt,
+			&execution.CompletedAt,
+			&execution.Metadata,
+			&execution.URLsProcessed,
+			&execution.URLsDiscovered,
+			&execution.ItemsExtracted,
+			&execution.Errors,
+			&workflowName,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan execution: %w", err)
+		}
+		if workflowName != nil {
+			execution.WorkflowName = *workflowName
+		}
+		// Populate stats for the list view
+		// Use max(urls_processed, urls_discovered) for total to handle edge cases
+		// where tasks are processed before all URLs are fully discovered
+		totalURLs := execution.URLsDiscovered
+		if execution.URLsProcessed > totalURLs {
+			totalURLs = execution.URLsProcessed
+		}
+		execution.Stats = &models.ExecutionStats{
+			TotalURLs:      totalURLs,
+			Completed:      execution.URLsProcessed,
+			Failed:         execution.Errors,
+			ItemsExtracted: execution.ItemsExtracted,
+		}
+		executions = append(executions, &execution)
+	}
+
+	return executions, nil
+}
+
 func (r *postgresExecutionRepo) UpdateStatus(ctx context.Context, id string, status string) error {
 	query := `
 		UPDATE workflow_executions
