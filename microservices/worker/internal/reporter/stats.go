@@ -1,5 +1,7 @@
 package reporter
 
+import "time"
+
 // Note: Old synchronous StatsReporter removed - use BatchedStatsReporter instead
 // See batched_stats.go for the high-throughput implementation
 
@@ -9,6 +11,8 @@ type TaskStats struct {
 	URLsDiscovered int
 	ItemsExtracted int
 	Errors         int
+	PhaseID        string        // Phase that processed this task
+	Duration       time.Duration // How long the phase took
 }
 
 // NewTaskStats creates a new task stats tracker
@@ -22,4 +26,10 @@ func (s *TaskStats) Record(itemsExtracted int, urlsDiscovered int, errorCount in
 	s.ItemsExtracted += itemsExtracted
 	s.URLsDiscovered += urlsDiscovered
 	s.Errors += errorCount
+}
+
+// SetPhase sets the phase context for this stats
+func (s *TaskStats) SetPhase(phaseID string, duration time.Duration) {
+	s.PhaseID = phaseID
+	s.Duration = duration
 }

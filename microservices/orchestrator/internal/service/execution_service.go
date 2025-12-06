@@ -206,3 +206,13 @@ func (s *ExecutionService) resolveNodeProfiles(ctx context.Context, phases []mod
 func (s *ExecutionService) UpdateExecutionStats(ctx context.Context, executionID string, stats repository.ExecutionStats) error {
 	return s.executionRepo.UpdateStats(ctx, executionID, stats)
 }
+
+// GetExecutionErrors retrieves error logs for an execution
+func (s *ExecutionService) GetExecutionErrors(ctx context.Context, executionID string, limit, offset int) ([]*models.ExecutionError, error) {
+	return s.executionRepo.GetErrors(ctx, executionID, limit, offset)
+}
+
+// BatchInsertErrors inserts multiple errors (called by internal stats batch endpoint)
+func (s *ExecutionService) BatchInsertErrors(ctx context.Context, errors []models.ExecutionError) error {
+	return s.executionRepo.BatchInsertErrors(ctx, errors)
+}

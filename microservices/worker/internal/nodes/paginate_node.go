@@ -54,6 +54,9 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 			logger.Warn("Failed to extract links from first page",
 				zap.Error(err),
 			)
+			if execCtx.OnWarning != nil {
+				execCtx.OnWarning("paginate", fmt.Sprintf("first page: %s", err.Error()))
+			}
 		} else {
 			allLinks = append(allLinks, links...)
 			logger.Info("Extracted links from first page",
@@ -91,6 +94,9 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 				zap.Int("page", pagesProcessed+1),
 				zap.Error(err),
 			)
+			if execCtx.OnWarning != nil {
+				execCtx.OnWarning("paginate", fmt.Sprintf("page %d: %s", pagesProcessed+1, err.Error()))
+			}
 			break
 		}
 
@@ -114,6 +120,9 @@ func (n *PaginateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 					zap.Int("page", pagesProcessed+1),
 					zap.Error(err),
 				)
+				if execCtx.OnWarning != nil {
+					execCtx.OnWarning("paginate", fmt.Sprintf("page %d: %s", pagesProcessed+1, err.Error()))
+				}
 			} else {
 				allLinks = append(allLinks, links...)
 				logger.Info("Extracted links from page",

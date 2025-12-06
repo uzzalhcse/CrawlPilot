@@ -52,6 +52,9 @@ func (n *ExtractLinksNode) Execute(ctx context.Context, execCtx *ExecutionContex
 		// If URL retrieval fails, we might still proceed if we don't need to resolve relative URLs
 		// But usually we need it. Let's log warning.
 		logger.Warn("Failed to get current URL", zap.Error(err))
+		if execCtx.OnWarning != nil {
+			execCtx.OnWarning("extract_links", fmt.Sprintf("current URL: %s", err.Error()))
+		}
 		currentURL = ""
 	}
 
@@ -60,6 +63,9 @@ func (n *ExtractLinksNode) Execute(ctx context.Context, execCtx *ExecutionContex
 		baseURL, err = url.Parse(currentURL)
 		if err != nil {
 			logger.Warn("Failed to parse current URL", zap.String("url", currentURL), zap.Error(err))
+			if execCtx.OnWarning != nil {
+				execCtx.OnWarning("extract_links", fmt.Sprintf("parse URL %s: %s", currentURL, err.Error()))
+			}
 			baseURL = nil
 		}
 	}

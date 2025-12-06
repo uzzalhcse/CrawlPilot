@@ -47,6 +47,15 @@ type executionCounters struct {
 	urlsDiscovered atomic.Int64
 	itemsExtracted atomic.Int64
 	errors         atomic.Int64
+	// Phase-level stats
+	phaseStats sync.Map // map[phaseID]*phaseCounters
+}
+
+// phaseCounters holds per-phase statistics
+type phaseCounters struct {
+	processed  atomic.Int64
+	errors     atomic.Int64
+	durationMs atomic.Int64
 }
 
 // NewBatchedStatsReporter creates a new batched stats reporter
@@ -89,6 +98,15 @@ func (r *BatchedStatsReporter) Record(executionID string, stats TaskStats) {
 	counters.urlsDiscovered.Add(int64(stats.URLsDiscovered))
 	counters.itemsExtracted.Add(int64(stats.ItemsExtracted))
 	counters.errors.Add(int64(stats.Errors))
+
+	// Track per-phase stats if PhaseID is set
+	if stats.PhaseID != "" {
+		phaseI, _ := counters.phaseStats.LoadOrStore(stats.PhaseID, &phaseCounters{})
+		phase := phaseI.(*phaseCounters)
+		phase.processed.Add(int64(stats.URLsProcessed))
+		phase.errors.Add(int64(stats.Errors))
+		phase.durationMs.Add(stats.Duration.Milliseconds())
+	}
 }
 
 // runFlushLoop periodically flushes accumulated stats
@@ -131,6 +149,25 @@ func (r *BatchedStatsReporter) flush() {
 		itemsExtracted := counters.itemsExtracted.Swap(0)
 		errors := counters.errors.Swap(0)
 
+		// Collect phase stats
+		phaseStats := make(map[string]PhaseStatsEntry)
+		counters.phaseStats.Range(func(phaseKey, phaseValue any) bool {
+			phaseID := phaseKey.(string)
+			pc := phaseValue.(*phaseCounters)
+			processed := pc.processed.Swap(0)
+			phaseErrors := pc.errors.Swap(0)
+			durationMs := pc.durationMs.Swap(0)
+
+			if processed > 0 || phaseErrors > 0 {
+				phaseStats[phaseID] = PhaseStatsEntry{
+					Processed:  int(processed),
+					Errors:     int(phaseErrors),
+					DurationMs: int(durationMs),
+				}
+			}
+			return true
+		})
+
 		// Only include if there's data
 		if urlsProcessed > 0 || urlsDiscovered > 0 || itemsExtracted > 0 || errors > 0 {
 			updates = append(updates, BatchedStatsUpdate{
@@ -139,6 +176,7 @@ func (r *BatchedStatsReporter) flush() {
 				URLsDiscovered: int(urlsDiscovered),
 				ItemsExtracted: int(itemsExtracted),
 				Errors:         int(errors),
+				PhaseStats:     phaseStats,
 			})
 		}
 
@@ -178,11 +216,19 @@ func (r *BatchedStatsReporter) flush() {
 
 // BatchedStatsUpdate represents stats update for one execution
 type BatchedStatsUpdate struct {
-	ExecutionID    string `json:"execution_id"`
-	URLsProcessed  int    `json:"urls_processed"`
-	URLsDiscovered int    `json:"urls_discovered"`
-	ItemsExtracted int    `json:"items_extracted"`
-	Errors         int    `json:"errors"`
+	ExecutionID    string                     `json:"execution_id"`
+	URLsProcessed  int                        `json:"urls_processed"`
+	URLsDiscovered int                        `json:"urls_discovered"`
+	ItemsExtracted int                        `json:"items_extracted"`
+	Errors         int                        `json:"errors"`
+	PhaseStats     map[string]PhaseStatsEntry `json:"phase_stats,omitempty"`
+}
+
+// PhaseStatsEntry holds per-phase statistics
+type PhaseStatsEntry struct {
+	Processed  int `json:"processed"`
+	Errors     int `json:"errors"`
+	DurationMs int `json:"duration_ms"`
 }
 
 // BatchedStatsRequest is the request body for batch stats endpoint

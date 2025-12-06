@@ -71,6 +71,8 @@ export interface Execution {
   stats?: ExecutionStats
   workflow_name?: string
   workflow_config?: WorkflowConfig
+  phase_stats?: Record<string, PhaseStatEntry>
+  triggered_by?: string
 }
 
 export interface ExecutionStats {
@@ -89,6 +91,24 @@ export interface ExtractedData {
   schema: string
   data: Record<string, any>
   extracted_at: string
+}
+
+// Execution Error types
+export interface ExecutionError {
+  id: number
+  execution_id: string
+  url: string
+  error_type: 'timeout' | 'blocked' | 'parse_error' | 'network' | 'extraction' | string
+  message: string
+  phase_id?: string
+  retry_count: number
+  created_at: string
+}
+
+export interface PhaseStatEntry {
+  processed: number
+  errors: number
+  duration_ms: number
 }
 
 // Health Check types

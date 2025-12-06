@@ -39,7 +39,8 @@ import {
   Pause,
   ChevronLeft,
   ChevronRight,
-  Maximize2
+  Maximize2,
+  AlertTriangle
 } from 'lucide-vue-next'
 import ExecutionLiveView from '@/components/execution/ExecutionLiveView.vue'
 import ExecutionNodeTree from '@/components/execution/ExecutionNodeTree.vue'
@@ -47,6 +48,8 @@ import RecoveryEventCard from '@/components/error-recovery/RecoveryEventCard.vue
 import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import recoveryHistoryService, { type RecoveryHistoryRecord } from '@/services/recoveryHistoryService'
+import { executionsApi } from '@/api/executions'
+import type { ExecutionError } from '@/types'
 
 const route = useRoute()
 const executionsStore = useExecutionsStore()
@@ -67,6 +70,13 @@ const selectedItemTitle = ref('')
 // Recovery History State
 const recoveryHistory = ref<RecoveryHistoryRecord[]>([])
 const loadingRecoveryHistory = ref(false)
+
+// Error Log State
+const executionErrors = ref<ExecutionError[]>([])
+const errorCount = ref(0)
+const loadingErrors = ref(false)
+const errorPage = ref(1)
+const errorPageSize = ref(50)
 
 // Real execution data from store
 const execution = computed(() => executionsStore.currentExecution)
@@ -256,6 +266,39 @@ const loadRecoveryHistory = async () => {
   }
 }
 
+const loadExecutionErrors = async () => {
+  loadingErrors.value = true
+  try {
+    const response = await executionsApi.getErrors(executionId, {
+      limit: errorPageSize.value,
+      offset: (errorPage.value - 1) * errorPageSize.value
+    })
+    executionErrors.value = response.data.errors || []
+    errorCount.value = response.data.count || 0
+  } catch (error) {
+    console.error('Failed to load execution errors:', error)
+    executionErrors.value = []
+  } finally {
+    loadingErrors.value = false
+  }
+}
+
+const handleErrorPageChange = (page: number) => {
+  errorPage.value = page
+  loadExecutionErrors()
+}
+
+const getErrorTypeBadge = (errorType: string) => {
+  switch (errorType) {
+    case 'timeout': return 'secondary'
+    case 'blocked': return 'destructive'
+    case 'network': return 'destructive'
+    case 'parse_error': return 'outline'
+    case 'extraction': return 'outline'
+    default: return 'secondary'
+  }
+}
+
 const handlePageChange = (page: number) => {
   currentPage.value = page
   loadExtractedData()
@@ -280,6 +323,7 @@ const startAutoRefresh = () => {
 onMounted(async () => {
   await loadExecutionData()
   await loadRecoveryHistory()
+  await loadExecutionErrors()
   updateActiveTab()
   // startAutoRefresh()
 })
@@ -384,6 +428,18 @@ onUnmounted(() => {
         <TabsList class="h-8">
           <TabsTrigger value="live" class="text-xs">Live View</TabsTrigger>
           <TabsTrigger value="data" class="text-xs">Extracted Data</TabsTrigger>
+          <TabsTrigger value="errors" class="text-xs">
+            Errors
+            <span v-if="errorCount > 0" class="ml-1.5 px-1.5 py-0.5 bg-destructive/10 text-destructive rounded text-[10px] font-medium">
+              {{ errorCount }}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="phases" class="text-xs">
+            Phase Stats
+            <span v-if="execution.phase_stats && Object.keys(execution.phase_stats).length > 0" class="ml-1.5 px-1.5 py-0.5 bg-blue-500/10 text-blue-500 rounded text-[10px] font-medium">
+              {{ Object.keys(execution.phase_stats).length }}
+            </span>
+          </TabsTrigger>
           <TabsTrigger value="tree" class="text-xs">Node Tree</TabsTrigger>
           <TabsTrigger value="recovery" class="text-xs">
             Recovery History
@@ -489,6 +545,133 @@ onUnmounted(() => {
                     Next
                     <ChevronRight class="h-3 w-3" />
                   </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="errors" class="min-w-0 w-full max-w-full">
+          <Card class="p-4 w-full max-w-full">
+            <div class="mb-3 flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-semibold mb-1">Error Log ({{ errorCount }} errors)</h3>
+                <p class="text-xs text-muted-foreground">Errors encountered during execution</p>
+              </div>
+              <Button variant="outline" size="sm" @click="loadExecutionErrors" :disabled="loadingErrors" class="h-8 text-xs">
+                <Loader2 v-if="loadingErrors" class="mr-1.5 h-3 w-3 animate-spin" />
+                Refresh
+              </Button>
+            </div>
+
+            <div v-if="loadingErrors" class="flex items-center justify-center py-12">
+              <Loader2 class="h-6 w-6 animate-spin text-primary" />
+            </div>
+
+            <div v-else-if="executionErrors.length === 0" class="py-12 text-center">
+              <div class="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                <CheckCircle class="h-6 w-6 text-green-500" />
+              </div>
+              <p class="text-sm text-muted-foreground mb-1">No errors recorded</p>
+              <p class="text-xs text-muted-foreground">This execution completed without any errors</p>
+            </div>
+
+            <div v-else class="space-y-3">
+              <div class="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead class="w-[140px] text-xs h-9">Time</TableHead>
+                      <TableHead class="w-[90px] text-xs h-9">Type</TableHead>
+                      <TableHead class="text-xs h-9">URL</TableHead>
+                      <TableHead class="text-xs h-9">Message</TableHead>
+                      <TableHead class="w-[60px] text-xs h-9">Retries</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow v-for="err in executionErrors" :key="err.id">
+                      <TableCell class="whitespace-nowrap text-[11px] text-muted-foreground py-2">
+                        {{ formatDate(err.created_at) }}
+                      </TableCell>
+                      <TableCell class="py-2">
+                        <Badge :variant="getErrorTypeBadge(err.error_type)" class="text-[10px]">
+                          {{ err.error_type }}
+                        </Badge>
+                      </TableCell>
+                      <TableCell class="max-w-[200px] truncate text-xs py-2 font-mono">
+                        {{ err.url }}
+                      </TableCell>
+                      <TableCell class="max-w-[300px] truncate text-xs py-2 text-muted-foreground">
+                        {{ err.message }}
+                      </TableCell>
+                      <TableCell class="text-center text-xs py-2">
+                        {{ err.retry_count }}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              <!-- Pagination -->
+              <div class="flex items-center justify-between">
+                <div class="text-xs text-muted-foreground">
+                  Showing {{ (errorPage - 1) * errorPageSize + 1 }} to {{ Math.min(errorPage * errorPageSize, errorCount) }} of {{ errorCount }} errors
+                </div>
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" size="sm" :disabled="errorPage === 1" @click="handleErrorPageChange(errorPage - 1)" class="h-8 text-xs">
+                    <ChevronLeft class="h-3 w-3" /> Previous
+                  </Button>
+                  <div class="text-xs font-medium">Page {{ errorPage }}</div>
+                  <Button variant="outline" size="sm" :disabled="errorPage * errorPageSize >= errorCount" @click="handleErrorPageChange(errorPage + 1)" class="h-8 text-xs">
+                    Next <ChevronRight class="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="phases" class="min-w-0 w-full max-w-full">
+          <Card class="p-4 w-full max-w-full">
+            <div class="mb-4">
+              <h3 class="text-sm font-semibold mb-1">Phase Breakdown</h3>
+              <p class="text-xs text-muted-foreground">Per-phase execution statistics</p>
+            </div>
+
+            <div v-if="!execution.phase_stats || Object.keys(execution.phase_stats).length === 0" class="py-12 text-center">
+              <div class="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                <Clock class="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p class="text-sm text-muted-foreground mb-1">No phase data yet</p>
+              <p class="text-xs text-muted-foreground">Phase stats will appear as the execution progresses</p>
+            </div>
+
+            <div v-else class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div 
+                v-for="(stats, phaseId) in execution.phase_stats" 
+                :key="phaseId"
+                class="border rounded-lg p-4 space-y-3"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium truncate">{{ phaseId }}</span>
+                  <Badge variant="outline" class="text-[10px]">
+                    {{ ((stats.processed / (stats.processed + stats.errors)) * 100 || 0).toFixed(0) }}% success
+                  </Badge>
+                </div>
+                
+                <div class="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <div class="text-lg font-semibold text-green-500">{{ stats.processed }}</div>
+                    <div class="text-[10px] text-muted-foreground">Processed</div>
+                  </div>
+                  <div>
+                    <div class="text-lg font-semibold text-red-500">{{ stats.errors }}</div>
+                    <div class="text-[10px] text-muted-foreground">Errors</div>
+                  </div>
+                  <div>
+                    <div class="text-lg font-semibold">{{ (stats.duration_ms / 1000).toFixed(1) }}s</div>
+                    <div class="text-[10px] text-muted-foreground">Duration</div>
+                  </div>
                 </div>
               </div>
             </div>

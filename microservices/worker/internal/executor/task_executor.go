@@ -37,6 +37,7 @@ type TaskExecutor struct {
 	itemWriter           storage.Writer                 // Primary storage: COPY protocol for max throughput
 	deduplicator         dedup.Deduplicator             // URL deduplication (interface)
 	batchedStatsReporter *reporter.BatchedStatsReporter // High-throughput batched stats
+	errorLogger          *reporter.BatchedErrorLogger   // High-throughput batched error logging
 	retryConfig          RetryConfig                    // Retry configuration for transient failures
 	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
 }
@@ -117,6 +118,9 @@ func NewTaskExecutor(
 	// Initialize batched stats reporter (high-throughput: aggregates locally, flushes periodically)
 	batchedStatsReporter := reporter.NewBatchedStatsReporter(orchestratorURL, redisCache)
 
+	// Initialize batched error logger (high-throughput: aggregates locally, flushes periodically)
+	errorLogger := reporter.NewBatchedErrorLogger(orchestratorURL)
+
 	// Initialize recovery manager for smart error recovery
 	var recoveryManager *recovery.RecoveryManager
 	if db != nil && redisCache != nil {
@@ -134,6 +138,7 @@ func NewTaskExecutor(
 		zap.Bool("gcs_archive_enabled", gcsClient != nil),
 		zap.Bool("item_writer_enabled", itemWriter != nil),
 		zap.Bool("recovery_enabled", recoveryManager != nil),
+		zap.Bool("error_logger_enabled", errorLogger != nil),
 		zap.String("dedup_type", "redis_distributed"),
 		zap.String("writer_type", "copy_protocol"),
 		zap.String("default_driver", defaultDriver.Name()),
@@ -155,6 +160,7 @@ func NewTaskExecutor(
 		itemWriter:           itemWriter,
 		deduplicator:         deduplicator,
 		batchedStatsReporter: batchedStatsReporter,
+		errorLogger:          errorLogger,
 		retryConfig:          DefaultRetryConfig(),
 		recoveryManager:      recoveryManager,
 	}, nil
@@ -276,6 +282,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 			zap.String("task_id", task.TaskID),
 			zap.Error(err),
 		)
+		// Log error for execution history
+		e.logError(task, "execution", err.Error())
 		taskStats.Record(0, 0, 1)
 		e.reportStats(ctx, task.ExecutionID, taskStats)
 
@@ -299,6 +307,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 				// Handle based on recovery action
 				if plan.Action == recovery.ActionSendToDLQ {
 					// Recovery determined this is a permanent failure
+					e.logError(task, "dlq", plan.Reason)
 					if e.pubsubClient != nil {
 						if dlqErr := e.pubsubClient.PublishToDLQ(ctx, task, plan.Reason); dlqErr != nil {
 							logger.Error("Failed to publish to DLQ",
@@ -461,10 +470,12 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	// Record stats
 	taskStats.Record(len(result.ExtractedItems), len(uniqueURLs), len(result.Errors))
 
+	// Set phase context for stats (enables per-phase breakdown)
+	duration := time.Since(startTime)
+	taskStats.SetPhase(task.PhaseID, duration)
+
 	// Report stats to orchestrator
 	e.reportStats(ctx, task.ExecutionID, taskStats)
-
-	duration := time.Since(startTime)
 
 	// Get count of discovered URLs (handle both types)
 	discoveredCount := 0
@@ -517,6 +528,19 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		Page:      page,
 		Task:      task,
 		Variables: make(map[string]interface{}),
+		// Log extraction warnings to execution history
+		OnWarning: func(field, message string) {
+			if e.errorLogger != nil {
+				e.errorLogger.Log(reporter.ErrorEntry{
+					ExecutionID: task.ExecutionID,
+					URL:         task.URL,
+					ErrorType:   "warning",
+					Message:     fmt.Sprintf("field '%s': %s", field, message),
+					PhaseID:     task.PhaseID,
+					RetryCount:  task.RetryCount,
+				})
+			}
+		},
 	}
 
 	// Track profile-based drivers created during execution for cleanup
@@ -735,7 +759,8 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		// Create new page with JA3 config
 		newPage, err := httpDriver.NewPage(pageCtx)
 		if err != nil {
-			return fmt.Errorf("failed to create HTTP page: %w", err)
+			e.logError(task, "navigation", fmt.Sprintf("failed to create page: %v", err))
+			return fmt.Errorf("failed to create page: %w", err)
 		}
 
 		execCtx.Page = newPage
@@ -939,12 +964,35 @@ func (e *TaskExecutor) reportStats(ctx context.Context, executionID string, task
 	e.batchedStatsReporter.Record(executionID, *taskStats)
 }
 
+// logError logs an error to the batched error logger for execution history
+func (e *TaskExecutor) logError(task *models.Task, errorType string, message string) {
+	if e.errorLogger == nil {
+		return
+	}
+
+	e.errorLogger.Log(reporter.ErrorEntry{
+		ExecutionID: task.ExecutionID,
+		URL:         task.URL,
+		ErrorType:   errorType,
+		Message:     message,
+		PhaseID:     task.PhaseID,
+		RetryCount:  task.RetryCount,
+	})
+}
+
 // Close cleans up resources
 func (e *TaskExecutor) Close() error {
 	// Flush batched stats reporter first (ensures all stats are sent)
 	if e.batchedStatsReporter != nil {
 		if err := e.batchedStatsReporter.Close(); err != nil {
 			logger.Error("Failed to close batched stats reporter", zap.Error(err))
+		}
+	}
+
+	// Flush error logger (ensures all errors are sent)
+	if e.errorLogger != nil {
+		if err := e.errorLogger.Close(); err != nil {
+			logger.Error("Failed to close error logger", zap.Error(err))
 		}
 	}
 

@@ -51,6 +51,10 @@ func (n *ExtractNode) Execute(ctx context.Context, execCtx *ExecutionContext, no
 				zap.String("field", fieldName),
 				zap.Error(err),
 			)
+			// Log warning to execution history
+			if execCtx.OnWarning != nil {
+				execCtx.OnWarning(fieldName, err.Error())
+			}
 			// Check for default value
 			if configMap, ok := fieldConfig.(map[string]interface{}); ok {
 				if defaultVal, hasDefault := configMap["default"]; hasDefault {
@@ -107,6 +111,9 @@ func (n *ExtractNode) extractField(ctx context.Context, execCtx *ExecutionContex
 			zap.String("field", fieldName),
 			zap.Error(err),
 		)
+		if execCtx.OnWarning != nil {
+			execCtx.OnWarning("field_actions", fmt.Sprintf("%s: %s", fieldName, err.Error()))
+		}
 		// Continue with extraction even if actions fail
 	}
 
@@ -517,6 +524,9 @@ func (n *ExtractNode) executeFieldActions(execCtx *ExecutionContext, config map[
 				zap.String("field", fieldName),
 				zap.String("type", actionNode.Type),
 			)
+			if execCtx.OnWarning != nil {
+				execCtx.OnWarning("action", fmt.Sprintf("unknown type '%s' for field '%s'", actionNode.Type, fieldName))
+			}
 			continue
 		}
 
@@ -533,6 +543,9 @@ func (n *ExtractNode) executeFieldActions(execCtx *ExecutionContext, config map[
 				zap.String("action_type", actionNode.Type),
 				zap.Error(err),
 			)
+			if execCtx.OnWarning != nil {
+				execCtx.OnWarning("action", fmt.Sprintf("%s action for field '%s': %s", actionNode.Type, fieldName, err.Error()))
+			}
 			// Continue with other actions and extraction
 		}
 	}

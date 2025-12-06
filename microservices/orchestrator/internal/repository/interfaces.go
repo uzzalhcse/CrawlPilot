@@ -51,6 +51,15 @@ type ExecutionRepository interface {
 
 	// Complete marks an execution as completed
 	Complete(ctx context.Context, id string, status string) error
+
+	// GetErrors retrieves error logs for an execution
+	GetErrors(ctx context.Context, executionID string, limit int, offset int) ([]*models.ExecutionError, error)
+
+	// BatchInsertErrors inserts multiple errors in a single operation
+	BatchInsertErrors(ctx context.Context, errors []models.ExecutionError) error
+
+	// UpdatePhaseStats updates phase-level statistics
+	UpdatePhaseStats(ctx context.Context, id string, phaseStats map[string]models.PhaseStatEntry) error
 }
 
 // ListFilters defines common list query filters

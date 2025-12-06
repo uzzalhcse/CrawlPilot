@@ -18,6 +18,7 @@ type ExecutionContext struct {
 	SwitchDriver            func(string) error                         // Callback to switch driver (legacy)
 	SwitchDriverWithProfile func(driverType, profileID string) error   // Switch driver with optional profile
 	SwitchDriverWithBrowser func(driverType, browserName string) error // Switch HTTP driver with browser name for JA3
+	OnWarning               func(field, message string)                // Callback for logging warnings
 }
 
 // NodeExecutor defines the interface for node execution

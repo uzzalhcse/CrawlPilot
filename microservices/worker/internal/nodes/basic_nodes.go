@@ -74,6 +74,9 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 				}
 			} else {
 				logger.Warn("Driver switch requested but not supported by execution context")
+				if execCtx.OnWarning != nil {
+					execCtx.OnWarning("navigate", "driver switch not supported")
+				}
 			}
 		}
 	}

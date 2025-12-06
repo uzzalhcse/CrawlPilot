@@ -95,3 +95,26 @@ func (h *ExecutionHandler) StopExecution(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusNoContent).Send(nil)
 }
+
+// GetExecutionErrors handles GET /api/v1/executions/:id/errors
+func (h *ExecutionHandler) GetExecutionErrors(c *fiber.Ctx) error {
+	id := c.Params("id")
+	limit := c.QueryInt("limit", 100)
+	offset := c.QueryInt("offset", 0)
+
+	errors, err := h.executionSvc.GetExecutionErrors(c.Context(), id, limit, offset)
+	if err != nil {
+		logger.Error("Failed to get execution errors",
+			zap.String("execution_id", id),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get errors",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"errors": errors,
+		"count":  len(errors),
+	})
+}

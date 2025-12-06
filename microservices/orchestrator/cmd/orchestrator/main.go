@@ -154,6 +154,7 @@ func main() {
 	executions := api.Group("/executions")
 	executions.Get("/:id", executionHandler.GetExecution)
 	executions.Delete("/:id", executionHandler.StopExecution)
+	executions.Get("/:id/errors", executionHandler.GetExecutionErrors)
 
 	// Recovery system routes (frontend-manageable)
 	recovery := api.Group("/recovery")
@@ -216,6 +217,8 @@ func main() {
 	internal.Post("/executions/:id/stats", statsHandler.UpdateExecutionStats)
 	// Batch stats endpoint for high-throughput scenarios (10k+ URLs/sec)
 	internal.Post("/stats/batch", statsHandler.BatchUpdateStats)
+	// Batch errors endpoint for execution error logging
+	internal.Post("/errors/batch", statsHandler.BatchInsertErrors)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

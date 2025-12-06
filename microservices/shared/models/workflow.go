@@ -59,10 +59,39 @@ type Node struct {
 type Execution struct {
 	ID          string                 `json:"id"`
 	WorkflowID  string                 `json:"workflow_id"`
-	Status      string                 `json:"status"` // running, completed, failed, paused
+	Status      string                 `json:"status"` // running, completed, failed, stopped
 	StartedAt   time.Time              `json:"started_at"`
 	CompletedAt *time.Time             `json:"completed_at,omitempty"`
+	TriggeredBy string                 `json:"triggered_by,omitempty"` // manual, scheduled, api
 	Metadata    map[string]interface{} `json:"metadata"`
+
+	// Stats fields (aggregated)
+	URLsProcessed  int `json:"urls_processed"`
+	URLsDiscovered int `json:"urls_discovered"`
+	ItemsExtracted int `json:"items_extracted"`
+	Errors         int `json:"errors"`
+
+	// Phase breakdown stats
+	PhaseStats map[string]PhaseStatEntry `json:"phase_stats,omitempty"`
+}
+
+// PhaseStatEntry holds stats for a single phase
+type PhaseStatEntry struct {
+	Processed  int   `json:"processed"`
+	Errors     int   `json:"errors"`
+	DurationMs int64 `json:"duration_ms"`
+}
+
+// ExecutionError represents an error that occurred during execution
+type ExecutionError struct {
+	ID          int64     `json:"id"`
+	ExecutionID string    `json:"execution_id"`
+	URL         string    `json:"url"`
+	ErrorType   string    `json:"error_type"` // timeout, blocked, parse_error, network, extraction
+	Message     string    `json:"message"`
+	PhaseID     string    `json:"phase_id,omitempty"`
+	RetryCount  int       `json:"retry_count"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Task represents a single URL processing task

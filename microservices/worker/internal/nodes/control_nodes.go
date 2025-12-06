@@ -183,6 +183,9 @@ func (n *LoopNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 	childNodes, ok := node.Params["nodes"].([]interface{})
 	if !ok || len(childNodes) == 0 {
 		logger.Warn("No child nodes specified for loop")
+		if execCtx.OnWarning != nil {
+			execCtx.OnWarning("loop", "no child nodes specified")
+		}
 		return nil
 	}
 

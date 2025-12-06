@@ -164,9 +164,15 @@ func (n *ScreenshotNode) Execute(ctx context.Context, execCtx *ExecutionContext,
 		// Ensure directory exists
 		if err := os.MkdirAll(savePath, 0755); err != nil {
 			logger.Warn("Failed to create screenshot directory", zap.Error(err))
+			if execCtx.OnWarning != nil {
+				execCtx.OnWarning("screenshot", fmt.Sprintf("mkdir: %s", err.Error()))
+			}
 		} else {
 			if err := os.WriteFile(fullPath, screenshotData, 0644); err != nil {
 				logger.Warn("Failed to save screenshot to disk", zap.Error(err))
+				if execCtx.OnWarning != nil {
+					execCtx.OnWarning("screenshot", fmt.Sprintf("write: %s", err.Error()))
+				}
 			} else {
 				logger.Info("Screenshot saved to disk", zap.String("path", fullPath))
 			}

@@ -160,5 +160,10 @@ export const executionsApi = {
   // Get node execution tree
   getNodeTree(id: string) {
     return apiClient.get<NodeTreeResponse>(`/executions/${id}/node-tree`)
+  },
+
+  // Get execution errors
+  getErrors(id: string, params?: { limit?: number; offset?: number }) {
+    return apiClient.get<{ errors: import('@/types').ExecutionError[]; count: number }>(`/executions/${id}/errors`, { params })
   }
 }
