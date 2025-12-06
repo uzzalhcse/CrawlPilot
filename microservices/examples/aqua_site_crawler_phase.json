@@ -53,7 +53,8 @@
                         "type": "navigate",
                         "name": "Navigate to Category Page",
                         "params": {
-                            "url": "{{current_url}}"
+                            "url": "{{current_url}}",
+                            "driver": "chromedp"
                         }
                     },
                     {

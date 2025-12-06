@@ -24,8 +24,7 @@ import (
 
 // TaskExecutor handles execution of individual tasks
 type TaskExecutor struct {
-	playwrightDriver     *driver.PlaywrightDriver
-	httpDriver           *driver.HttpDriver
+	drivers              map[string]driver.Driver
 	defaultDriver        driver.Driver
 	nodeRegistry         *nodes.Registry
 	pubsubClient         *queue.PubSubClient
@@ -47,19 +46,37 @@ func NewTaskExecutor(
 	orchestratorURL string,
 	db *database.DB,
 ) (*TaskExecutor, error) {
-	// Initialize drivers
-	// We initialize both to support hybrid navigation
+	// Initialize drivers registry
+	drivers := make(map[string]driver.Driver)
+
+	// 1. Playwright Driver
 	pwDriver, err := driver.NewPlaywrightDriver(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create playwright driver: %w", err)
 	}
-	httpDriver := driver.NewHttpDriver()
+	drivers[pwDriver.Name()] = pwDriver
 
-	// Determine default driver based on config (if we had a preference)
-	// For now, default to Playwright as it's the main one
-	var defaultDriver driver.Driver = pwDriver
-	if cfg.Driver == "http" {
-		defaultDriver = httpDriver
+	// 2. HTTP Driver
+	httpDriver := driver.NewHttpDriver()
+	drivers[httpDriver.Name()] = httpDriver
+
+	// 3. Chromedp Driver
+	chromedpDriver := driver.NewChromedpDriver(cfg)
+	drivers[chromedpDriver.Name()] = chromedpDriver
+
+	// Determine default driver based on config
+	// Default to Playwright if not specified or not found
+	defaultDriverName := cfg.Driver
+	if defaultDriverName == "" {
+		defaultDriverName = "playwright"
+	}
+
+	defaultDriver, ok := drivers[defaultDriverName]
+	if !ok {
+		logger.Warn("Configured default driver not found, falling back to playwright",
+			zap.String("configured", defaultDriverName),
+		)
+		defaultDriver = pwDriver
 	}
 
 	// Initialize node registry
@@ -120,8 +137,7 @@ func NewTaskExecutor(
 	)
 
 	return &TaskExecutor{
-		playwrightDriver:     pwDriver,
-		httpDriver:           httpDriver,
+		drivers:              drivers,
 		defaultDriver:        defaultDriver,
 		nodeRegistry:         nodeRegistry,
 		pubsubClient:         pubsubClient,
@@ -190,10 +206,20 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		e.reportStats(ctx, task.ExecutionID, taskStats)
 		return fmt.Errorf("failed to create page: %w", err)
 	}
-	defer page.Close()
+	// Track the current page to ensure the final page is closed
+	// (SwitchDriver might change the page instance)
+	currentPage := page
+	defer func() {
+		if currentPage != nil {
+			currentPage.Close()
+		}
+	}()
 
 	// Execute workflow nodes for this phase
-	result, err := e.executePhase(ctx, task, page)
+	finalPage, result, err := e.executePhase(ctx, task, page)
+	if finalPage != nil {
+		currentPage = finalPage
+	}
 	if err != nil {
 		logger.Error("Phase execution failed",
 			zap.String("task_id", task.TaskID),
@@ -420,7 +446,7 @@ type TaskResult struct {
 }
 
 // executePhase executes all nodes in a phase
-func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page driver.Page) (*TaskResult, error) {
+func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page driver.Page) (driver.Page, *TaskResult, error) {
 	result := &TaskResult{
 		ExtractedItems: make([]map[string]interface{}, 0),
 		DiscoveredURLs: make([]string, 0),
@@ -511,13 +537,13 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 			pageCtx = context.WithValue(ctx, driver.ProxyKey, proxyConfig)
 		}
 
-		if targetType == "playwright" {
-			newPage, createErr = e.playwrightDriver.NewPage(pageCtx)
-		} else if targetType == "http" {
-			newPage, createErr = e.httpDriver.NewPage(pageCtx)
-		} else {
+		// Look up target driver in registry
+		targetDriverInstance, ok := e.drivers[targetType]
+		if !ok {
 			return fmt.Errorf("unsupported driver type: %s", targetType)
 		}
+
+		newPage, createErr = targetDriverInstance.NewPage(pageCtx)
 
 		if createErr != nil {
 			return fmt.Errorf("failed to create new page for driver switch: %w", createErr)
@@ -603,7 +629,7 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		result.DiscoveredURLs = execCtx.DiscoveredURLs
 	}
 
-	return result, nil
+	return execCtx.Page, result, nil
 }
 
 // getPhaseNodes returns nodes from the current phase
@@ -757,11 +783,13 @@ func (e *TaskExecutor) Close() error {
 		e.recoveryManager.Close()
 	}
 
-	if e.playwrightDriver != nil {
-		e.playwrightDriver.Close()
-	}
-	if e.httpDriver != nil {
-		e.httpDriver.Close()
+	for name, d := range e.drivers {
+		if err := d.Close(); err != nil {
+			logger.Error("Failed to close driver",
+				zap.String("driver", name),
+				zap.Error(err),
+			)
+		}
 	}
 	return nil
 }

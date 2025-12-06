@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/playwright-community/playwright-go"
@@ -77,6 +78,8 @@ type PlaywrightPage struct {
 	browserCtx playwright.BrowserContext
 	pool       *browser.Pool
 	isProxy    bool
+	closed     bool
+	mu         sync.Mutex
 }
 
 // NewPlaywrightPage creates a new PlaywrightPage from an existing playwright.Page
@@ -86,9 +89,18 @@ func NewPlaywrightPage(page playwright.Page) *PlaywrightPage {
 }
 
 func (p *PlaywrightPage) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		return nil
+	}
+	p.closed = true
+
 	// Close page first
 	if err := p.page.Close(); err != nil {
-		return err
+		// Log error but continue to release context
+		// logger.Warn("Failed to close playwright page", zap.Error(err))
 	}
 
 	// Release or close context

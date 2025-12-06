@@ -123,6 +123,9 @@ func main() {
 
 		// Give time for current tasks to complete
 		time.Sleep(time.Duration(cfg.Server.ShutdownTimeout) * time.Second)
+
+		logger.Warn("Shutdown timeout reached, forcing exit")
+		os.Exit(1)
 	}()
 
 	// Start HTTP server
