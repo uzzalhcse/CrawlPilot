@@ -3,6 +3,7 @@ package driver
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 )
 
@@ -51,6 +52,10 @@ type Page interface {
 	// Extraction
 	QuerySelector(selector string) (Element, error)
 	QuerySelectorAll(selector string) ([]Element, error)
+
+	// State Management
+	GetCookies() ([]*http.Cookie, error)
+	SetCookies(cookies []*http.Cookie) error
 
 	// Lifecycle
 	Close() error

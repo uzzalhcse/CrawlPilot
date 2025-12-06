@@ -37,6 +37,17 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 		zap.Float64("timeout", timeout),
 	)
 
+	// Check if driver switch is requested
+	if targetDriver, ok := node.Params["driver"].(string); ok && targetDriver != "" {
+		if execCtx.SwitchDriver != nil {
+			if err := execCtx.SwitchDriver(targetDriver); err != nil {
+				return fmt.Errorf("failed to switch driver: %w", err)
+			}
+		} else {
+			logger.Warn("Driver switch requested but not supported by execution context")
+		}
+	}
+
 	// Navigate to URL
 	err := execCtx.Page.Goto(url,
 		driver.WithPageTimeout(time.Duration(timeout)*time.Millisecond),

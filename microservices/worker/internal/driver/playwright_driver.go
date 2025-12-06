@@ -3,6 +3,8 @@ package driver
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/playwright-community/playwright-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
@@ -313,6 +315,61 @@ func (p *PlaywrightPage) Screenshot(options ...ScreenshotOption) ([]byte, error)
 	}
 
 	return p.page.Screenshot(pwOpts)
+}
+
+func (p *PlaywrightPage) GetCookies() ([]*http.Cookie, error) {
+	pwCookies, err := p.browserCtx.Cookies()
+	if err != nil {
+		return nil, err
+	}
+
+	cookies := make([]*http.Cookie, len(pwCookies))
+	for i, c := range pwCookies {
+		cookies[i] = &http.Cookie{
+			Name:     c.Name,
+			Value:    c.Value,
+			Domain:   c.Domain,
+			Path:     c.Path,
+			Expires:  time.Unix(int64(c.Expires), 0),
+			Secure:   c.Secure,
+			HttpOnly: c.HttpOnly,
+			SameSite: http.SameSiteDefaultMode,
+		}
+		if c.SameSite != nil {
+			if c.SameSite == playwright.SameSiteAttributeStrict {
+				cookies[i].SameSite = http.SameSiteStrictMode
+			} else if c.SameSite == playwright.SameSiteAttributeLax {
+				cookies[i].SameSite = http.SameSiteLaxMode
+			} else if c.SameSite == playwright.SameSiteAttributeNone {
+				cookies[i].SameSite = http.SameSiteNoneMode
+			}
+		}
+	}
+	return cookies, nil
+}
+
+func (p *PlaywrightPage) SetCookies(cookies []*http.Cookie) error {
+	pwCookies := make([]playwright.OptionalCookie, len(cookies))
+	for i, c := range cookies {
+		sameSite := playwright.SameSiteAttributeNone
+		if c.SameSite == http.SameSiteStrictMode {
+			sameSite = playwright.SameSiteAttributeStrict
+		} else if c.SameSite == http.SameSiteLaxMode {
+			sameSite = playwright.SameSiteAttributeLax
+		}
+
+		pwCookies[i] = playwright.OptionalCookie{
+			Name:     c.Name,
+			Value:    c.Value,
+			Domain:   playwright.String(c.Domain),
+			Path:     playwright.String(c.Path),
+			Expires:  playwright.Float(float64(c.Expires.Unix())),
+			Secure:   playwright.Bool(c.Secure),
+			HttpOnly: playwright.Bool(c.HttpOnly),
+			SameSite: sameSite,
+		}
+	}
+	return p.browserCtx.AddCookies(pwCookies)
 }
 
 // PlaywrightElement implements the Element interface

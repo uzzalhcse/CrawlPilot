@@ -15,6 +15,7 @@ type ExecutionContext struct {
 	ExtractedItems []map[string]interface{} // Items extracted during execution
 	DiscoveredURLs []string                 // URLs discovered during execution
 	BranchNodes    []models.Node            // Nodes to execute from conditional branches
+	SwitchDriver   func(string) error       // Callback to switch driver
 }
 
 // NodeExecutor defines the interface for node execution

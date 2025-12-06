@@ -24,7 +24,9 @@ import (
 
 // TaskExecutor handles execution of individual tasks
 type TaskExecutor struct {
-	driver               driver.Driver
+	playwrightDriver     *driver.PlaywrightDriver
+	httpDriver           *driver.HttpDriver
+	defaultDriver        driver.Driver
 	nodeRegistry         *nodes.Registry
 	pubsubClient         *queue.PubSubClient
 	gcsClient            *storage.GCSClient
@@ -45,11 +47,19 @@ func NewTaskExecutor(
 	orchestratorURL string,
 	db *database.DB,
 ) (*TaskExecutor, error) {
-	// Initialize driver using factory
-	factory := driver.NewFactory(cfg)
-	drv, err := factory.CreateDriver()
+	// Initialize drivers
+	// We initialize both to support hybrid navigation
+	pwDriver, err := driver.NewPlaywrightDriver(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create driver: %w", err)
+		return nil, fmt.Errorf("failed to create playwright driver: %w", err)
+	}
+	httpDriver := driver.NewHttpDriver()
+
+	// Determine default driver based on config (if we had a preference)
+	// For now, default to Playwright as it's the main one
+	var defaultDriver driver.Driver = pwDriver
+	if cfg.Driver == "http" {
+		defaultDriver = httpDriver
 	}
 
 	// Initialize node registry
@@ -106,11 +116,13 @@ func NewTaskExecutor(
 		zap.Bool("recovery_enabled", recoveryManager != nil),
 		zap.String("dedup_type", "bloom_filter"),
 		zap.String("writer_type", "copy_protocol"),
-		zap.String("driver", drv.Name()),
+		zap.String("default_driver", defaultDriver.Name()),
 	)
 
 	return &TaskExecutor{
-		driver:               drv,
+		playwrightDriver:     pwDriver,
+		httpDriver:           httpDriver,
+		defaultDriver:        defaultDriver,
 		nodeRegistry:         nodeRegistry,
 		pubsubClient:         pubsubClient,
 		gcsClient:            gcsClient,
@@ -172,7 +184,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	}
 
 	// Create new page via driver
-	page, err := e.driver.NewPage(execCtx)
+	page, err := e.defaultDriver.NewPage(execCtx)
 	if err != nil {
 		taskStats.Record(0, 0, 1)
 		e.reportStats(ctx, task.ExecutionID, taskStats)
@@ -430,6 +442,98 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		Variables: make(map[string]interface{}),
 	}
 
+	// Implement SwitchDriver callback
+	execCtx.SwitchDriver = func(targetType string) error {
+		var currentType string
+		switch execCtx.Page.(type) {
+		case *driver.PlaywrightPage:
+			currentType = "playwright"
+		case *driver.HttpPage:
+			currentType = "http"
+		default:
+			return fmt.Errorf("unknown page type")
+		}
+
+		if currentType == targetType {
+			return nil // Already on target driver
+		}
+
+		logger.Info("Switching driver",
+			zap.String("from", currentType),
+			zap.String("to", targetType),
+			zap.String("task_id", task.TaskID),
+		)
+
+		// Get cookies from current page
+		cookies, err := execCtx.Page.GetCookies()
+		if err != nil {
+			return fmt.Errorf("failed to get cookies for driver switch: %w", err)
+		}
+
+		// Close current page
+		if err := execCtx.Page.Close(); err != nil {
+			logger.Warn("Failed to close page during switch", zap.Error(err))
+		}
+
+		// Create new page
+		var newPage driver.Page
+		var createErr error
+
+		// Reuse the same context (with proxy if any)
+		// Note: We need to ensure the context passed to NewPage has the proxy info if needed.
+		// executePhase receives 'ctx' which might not have the proxy info if it was added in Execute.
+		// Wait, Execute creates 'execCtx' (context.Context) with proxy and passes it to NewPage.
+		// But executePhase receives 'ctx' (context.Context) and 'page'.
+		// We need the context that has the proxy info.
+		// In Execute: execCtx = context.WithValue(ctx, driver.ProxyKey, proxyConfig)
+		// But executePhase receives 'ctx' which is the *original* context (or the one passed to Execute).
+		// Actually Execute passes 'ctx' to executePhase.
+		// Let's check Execute again.
+		// In Execute:
+		// execCtx := ctx
+		// if task.ProxyURL != "" { ... execCtx = context.WithValue(...) }
+		// page, err := e.driver.NewPage(execCtx)
+		// result, err := e.executePhase(ctx, task, page)
+		// Ah, it passes 'ctx' (original) to executePhase, not 'execCtx' (with proxy).
+		// This is a bug if we want to reuse proxy in new driver.
+		// However, the 'page' already has the proxy context if it was created with it.
+		// But when creating a NEW page, we need that context.
+		// I should update Execute to pass the correct context or reconstruct it.
+		// For now, I'll assume we can use 'ctx' but we might lose proxy if it was added in Execute.
+		// I'll fix Execute to pass the correct context in a separate step if needed.
+		// Or I can reconstruct it from task.ProxyURL.
+
+		pageCtx := ctx
+		if task.ProxyURL != "" {
+			proxyConfig := &browser.ProxyConfig{
+				Server: task.ProxyURL,
+			}
+			pageCtx = context.WithValue(ctx, driver.ProxyKey, proxyConfig)
+		}
+
+		if targetType == "playwright" {
+			newPage, createErr = e.playwrightDriver.NewPage(pageCtx)
+		} else if targetType == "http" {
+			newPage, createErr = e.httpDriver.NewPage(pageCtx)
+		} else {
+			return fmt.Errorf("unsupported driver type: %s", targetType)
+		}
+
+		if createErr != nil {
+			return fmt.Errorf("failed to create new page for driver switch: %w", createErr)
+		}
+
+		// Set cookies on new page
+		if err := newPage.SetCookies(cookies); err != nil {
+			newPage.Close()
+			return fmt.Errorf("failed to set cookies on new page: %w", err)
+		}
+
+		// Update execution context
+		execCtx.Page = newPage
+		return nil
+	}
+
 	// Execute each node in sequence
 	for i, node := range phaseNodes {
 		logger.Debug("Executing node",
@@ -653,8 +757,11 @@ func (e *TaskExecutor) Close() error {
 		e.recoveryManager.Close()
 	}
 
-	if e.driver != nil {
-		return e.driver.Close()
+	if e.playwrightDriver != nil {
+		e.playwrightDriver.Close()
+	}
+	if e.httpDriver != nil {
+		e.httpDriver.Close()
 	}
 	return nil
 }

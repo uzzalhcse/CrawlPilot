@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -22,9 +23,11 @@ type HttpDriver struct {
 
 // NewHttpDriver creates a new HttpDriver
 func NewHttpDriver() *HttpDriver {
+	jar, _ := cookiejar.New(nil)
 	return &HttpDriver{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
+			Jar:     jar,
 		},
 	}
 }
@@ -243,6 +246,45 @@ func (p *HttpPage) QuerySelectorAll(selector string) ([]Element, error) {
 func (p *HttpPage) Close() error {
 	p.doc = nil
 	p.body = ""
+	return nil
+}
+
+func (p *HttpPage) GetCookies() ([]*http.Cookie, error) {
+	if p.client.Jar == nil {
+		return []*http.Cookie{}, nil
+	}
+	u, err := url.Parse(p.url)
+	if err != nil {
+		return nil, err
+	}
+	return p.client.Jar.Cookies(u), nil
+}
+
+func (p *HttpPage) SetCookies(cookies []*http.Cookie) error {
+	if p.client.Jar == nil {
+		return fmt.Errorf("cookie jar not initialized")
+	}
+	u, err := url.Parse(p.url)
+	if err != nil {
+		return p.setCookiesByDomain(cookies)
+	}
+	p.client.Jar.SetCookies(u, cookies)
+	return nil
+}
+
+func (p *HttpPage) setCookiesByDomain(cookies []*http.Cookie) error {
+	for _, c := range cookies {
+		domain := c.Domain
+		if strings.HasPrefix(domain, ".") {
+			domain = domain[1:]
+		}
+		scheme := "http"
+		if c.Secure {
+			scheme = "https"
+		}
+		u := &url.URL{Scheme: scheme, Host: domain, Path: c.Path}
+		p.client.Jar.SetCookies(u, []*http.Cookie{c})
+	}
 	return nil
 }
 
