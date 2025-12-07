@@ -69,7 +69,7 @@ recovery:
   llm_model: "gpt-4o-mini"        # gpt-4o-mini, gpt-4o (for OpenAI)
   llm_endpoint: ""                # Leave empty for OpenAI default
   llm_timeout: 120                # seconds
-  llm_api_key: ""                 # Your OpenAI API key (or set OPENAI_API_KEY env var)
+  llm_api_key: "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"                 # Your OpenAI API key (or set OPENAI_API_KEY env var)
   
   # Proxy settings (used when switching proxies)
   proxy_source: "database"       # database (seeded from JSON)
