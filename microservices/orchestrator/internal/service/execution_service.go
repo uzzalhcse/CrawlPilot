@@ -359,10 +359,13 @@ func (s *ExecutionService) enqueueProbeURLs(ctx context.Context, workflow *model
 }
 
 // getSampleURLForPhase determines the sample URL for a phase
+// Priority: 1) Node-level probe_url, 2) Start URLs for depth 0, 3) Fallback to start URL
 func (s *ExecutionService) getSampleURLForPhase(workflow *models.Workflow, phase models.WorkflowPhase) string {
-	// Priority 1: Phase-level probe_urls
-	if len(phase.ProbeURLs) > 0 {
-		return phase.ProbeURLs[0]
+	// Priority 1: Node-level probe_url (check extract_links and extract nodes)
+	for _, node := range phase.Nodes {
+		if node.ProbeURL != "" {
+			return node.ProbeURL
+		}
 	}
 
 	// Priority 2: Start URLs for depth 0 phases

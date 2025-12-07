@@ -184,7 +184,7 @@ func (a *Agent) parseToolCall(tc llm.ToolCall) (*RecoveryPlan, string, error) {
 
 	// Parse arguments
 	var args map[string]interface{}
-	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+	if err := json.Unmarshal([]byte(tc.Function.ArgumentsString()), &args); err != nil {
 		return nil, "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 

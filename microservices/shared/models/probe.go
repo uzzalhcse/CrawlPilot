@@ -36,6 +36,10 @@ type NodeProbeResult struct {
 	LinksFound   int    `json:"links_found,omitempty"`
 	Error        string `json:"error,omitempty"`
 
+	// Field-level results for extract nodes
+	Fields                []FieldProbeResult `json:"fields,omitempty"`
+	MissingRequiredFields []string           `json:"missing_required_fields,omitempty"` // Required fields that failed to extract
+
 	// Baseline comparison (from last successful probe)
 	ExpectedElementCount int    `json:"expected_element_count,omitempty"`
 	ExpectedLinksFound   int    `json:"expected_links_found,omitempty"`
@@ -44,6 +48,16 @@ type NodeProbeResult struct {
 	// Failed node diagnostics
 	SelectorContext string         `json:"selector_context,omitempty"` // HTML around the selector
 	Snapshot        *ProbeSnapshot `json:"snapshot,omitempty"`         // Page state when node failed
+}
+
+// FieldProbeResult holds extraction result for each field in an extract node
+type FieldProbeResult struct {
+	Name     string `json:"name"`               // Field name
+	Selector string `json:"selector,omitempty"` // CSS selector used
+	Status   string `json:"status"`             // "ok", "empty", "error"
+	Required bool   `json:"required,omitempty"` // Whether this field was marked as required
+	Value    string `json:"value,omitempty"`    // Extracted value (truncated for large values)
+	Error    string `json:"error,omitempty"`    // Error message if failed
 }
 
 // ProbeSnapshot captures full page state for AI analysis

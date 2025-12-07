@@ -208,7 +208,8 @@ func (h *ProbeHandler) GetBaseline(c *fiber.Ctx) error {
 type WorkflowFixRequest struct {
 	WorkflowID  string  `json:"workflow_id"`
 	NodeID      string  `json:"node_id"`
-	FixType     string  `json:"fix_type"` // "update_selector", "skip_node"
+	FieldName   string  `json:"field_name,omitempty"` // For update_field_selector
+	FixType     string  `json:"fix_type"`             // "update_selector", "update_field_selector", "skip_node"
 	OldSelector string  `json:"old_selector,omitempty"`
 	NewSelector string  `json:"new_selector,omitempty"`
 	Reasoning   string  `json:"reasoning"`
@@ -233,6 +234,19 @@ func (h *ProbeHandler) ApplyWorkflowFix(c *fiber.Ctx) error {
 		zap.Float64("confidence", req.Confidence),
 	)
 
+	// Create auto-fix record
+	autoFix := &repository.AutoFixRecord{
+		WorkflowID:  req.WorkflowID,
+		NodeID:      req.NodeID,
+		FixType:     req.FixType,
+		OldSelector: req.OldSelector,
+		NewSelector: req.NewSelector,
+		Reasoning:   req.Reasoning,
+		Confidence:  req.Confidence,
+		Status:      "applied",
+		AutoApplied: true,
+	}
+
 	switch req.FixType {
 	case "update_selector":
 		// Apply selector update to workflow node
@@ -242,6 +256,8 @@ func (h *ProbeHandler) ApplyWorkflowFix(c *fiber.Ctx) error {
 				zap.String("node_id", req.NodeID),
 				zap.Error(err),
 			)
+			autoFix.Status = "failed"
+			h.probeRepo.CreateAutoFix(c.Context(), autoFix) // Record failure
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "failed to apply selector update",
 			})
@@ -253,6 +269,29 @@ func (h *ProbeHandler) ApplyWorkflowFix(c *fiber.Ctx) error {
 			zap.String("new_selector", req.NewSelector),
 		)
 
+	case "update_field_selector":
+		// Apply field selector update within an extract node
+		if err := h.probeRepo.UpdateFieldSelector(c.Context(), req.WorkflowID, req.NodeID, req.FieldName, req.NewSelector, req.Reasoning); err != nil {
+			logger.Error("Failed to update field selector",
+				zap.String("workflow_id", req.WorkflowID),
+				zap.String("node_id", req.NodeID),
+				zap.String("field_name", req.FieldName),
+				zap.Error(err),
+			)
+			autoFix.Status = "failed"
+			h.probeRepo.CreateAutoFix(c.Context(), autoFix) // Record failure
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "failed to apply field selector update",
+			})
+		}
+
+		logger.Info("Field selector update applied",
+			zap.String("workflow_id", req.WorkflowID),
+			zap.String("node_id", req.NodeID),
+			zap.String("field_name", req.FieldName),
+			zap.String("new_selector", req.NewSelector),
+		)
+
 	case "skip_node":
 		// Mark node as skipped/disabled
 		if err := h.probeRepo.DisableNode(c.Context(), req.WorkflowID, req.NodeID, req.Reasoning); err != nil {
@@ -261,6 +300,8 @@ func (h *ProbeHandler) ApplyWorkflowFix(c *fiber.Ctx) error {
 				zap.String("node_id", req.NodeID),
 				zap.Error(err),
 			)
+			autoFix.Status = "failed"
+			h.probeRepo.CreateAutoFix(c.Context(), autoFix) // Record failure
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "failed to skip node",
 			})
@@ -277,9 +318,149 @@ func (h *ProbeHandler) ApplyWorkflowFix(c *fiber.Ctx) error {
 		})
 	}
 
+	// Record successful auto-fix
+	if err := h.probeRepo.CreateAutoFix(c.Context(), autoFix); err != nil {
+		logger.Warn("Failed to record auto-fix (fix was still applied)",
+			zap.String("workflow_id", req.WorkflowID),
+			zap.Error(err),
+		)
+	} else {
+		logger.Info("Auto-fix recorded",
+			zap.String("fix_id", autoFix.ID),
+			zap.String("workflow_id", req.WorkflowID),
+			zap.String("fix_type", req.FixType),
+		)
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"applied": req.FixType,
 		"node_id": req.NodeID,
+		"fix_id":  autoFix.ID,
+	})
+}
+
+// GetRecentProbes handles GET /api/v1/probes/recent
+// Returns recent probe results across all workflows
+func (h *ProbeHandler) GetRecentProbes(c *fiber.Ctx) error {
+	limit := c.QueryInt("limit", 20)
+
+	results, total, err := h.probeRepo.GetRecentProbes(c.Context(), limit)
+	if err != nil {
+		logger.Error("Failed to get recent probes", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get recent probes",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"probes": results,
+		"total":  total,
+	})
+}
+
+// ProbeStats holds aggregate probe statistics
+type ProbeStats struct {
+	Total      int            `json:"total"`
+	Healthy    int            `json:"healthy"`
+	Degraded   int            `json:"degraded"`
+	Broken     int            `json:"broken"`
+	ByWorkflow map[string]int `json:"by_workflow"`
+}
+
+// GetProbeStats handles GET /api/v1/probes/stats
+// Returns aggregate statistics across all probes
+func (h *ProbeHandler) GetProbeStats(c *fiber.Ctx) error {
+	stats, err := h.probeRepo.GetProbeStats(c.Context())
+	if err != nil {
+		logger.Error("Failed to get probe stats", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get probe stats",
+		})
+	}
+
+	return c.JSON(stats)
+}
+
+// AutoFix represents an AI-suggested workflow fix
+type AutoFix struct {
+	ID          string  `json:"id"`
+	WorkflowID  string  `json:"workflow_id"`
+	NodeID      string  `json:"node_id"`
+	FixType     string  `json:"fix_type"`
+	OldSelector string  `json:"old_selector,omitempty"`
+	NewSelector string  `json:"new_selector,omitempty"`
+	Reasoning   string  `json:"reasoning"`
+	Confidence  float64 `json:"confidence"`
+	Status      string  `json:"status"` // applied, pending, rejected
+	AutoApplied bool    `json:"auto_applied"`
+	CreatedAt   string  `json:"created_at"`
+}
+
+// GetAutoFixes handles GET /api/v1/probes/auto-fixes
+// Returns list of auto-fixes with optional status filter
+func (h *ProbeHandler) GetAutoFixes(c *fiber.Ctx) error {
+	status := c.Query("status", "")
+	limit := c.QueryInt("limit", 50)
+
+	fixes, total, err := h.probeRepo.GetAutoFixes(c.Context(), status, limit)
+	if err != nil {
+		logger.Error("Failed to get auto-fixes", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get auto-fixes",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"fixes": fixes,
+		"total": total,
+	})
+}
+
+// ApproveAutoFix handles POST /api/v1/probes/auto-fixes/:id/approve
+// Approves a pending auto-fix
+func (h *ProbeHandler) ApproveAutoFix(c *fiber.Ctx) error {
+	fixID := c.Params("id")
+
+	if err := h.probeRepo.UpdateAutoFixStatus(c.Context(), fixID, "applied"); err != nil {
+		logger.Error("Failed to approve auto-fix",
+			zap.String("fix_id", fixID),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to approve auto-fix",
+		})
+	}
+
+	logger.Info("Auto-fix approved", zap.String("fix_id", fixID))
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"id":      fixID,
+		"status":  "applied",
+	})
+}
+
+// RejectAutoFix handles POST /api/v1/probes/auto-fixes/:id/reject
+// Rejects a pending auto-fix
+func (h *ProbeHandler) RejectAutoFix(c *fiber.Ctx) error {
+	fixID := c.Params("id")
+
+	if err := h.probeRepo.UpdateAutoFixStatus(c.Context(), fixID, "rejected"); err != nil {
+		logger.Error("Failed to reject auto-fix",
+			zap.String("fix_id", fixID),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to reject auto-fix",
+		})
+	}
+
+	logger.Info("Auto-fix rejected", zap.String("fix_id", fixID))
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"id":      fixID,
+		"status":  "rejected",
 	})
 }

@@ -122,18 +122,45 @@ func (r *ProbeReporter) ReportSampleURLs(ctx context.Context, workflowID string,
 // DetermineProbeStatus determines overall probe status based on phase results
 func DetermineProbeStatus(phases []models.PhaseProbeResult) string {
 	failedCount := 0
+	degradedCount := 0
+
 	for _, phase := range phases {
 		if phase.Status == "failed" {
 			failedCount++
+			continue
+		}
+
+		// Check for degraded conditions: nodes that "passed" but found nothing or missing required fields
+		for _, node := range phase.Nodes {
+			if node.Status == "passed" {
+				// extract_links finding 0 links is a problem
+				if node.NodeType == "extract_links" && node.LinksFound == 0 {
+					degradedCount++
+				}
+				// extract finding 0 elements is a problem
+				if node.NodeType == "extract" && node.ElementCount == 0 {
+					degradedCount++
+				}
+				// extract missing required fields is a problem
+				if node.NodeType == "extract" && len(node.MissingRequiredFields) > 0 {
+					degradedCount++
+				}
+			}
 		}
 	}
 
-	if failedCount == 0 {
-		return "healthy"
-	} else if failedCount < len(phases) {
+	if failedCount > 0 {
+		if failedCount == len(phases) {
+			return "broken"
+		}
 		return "degraded"
 	}
-	return "broken"
+
+	if degradedCount > 0 {
+		return "degraded"
+	}
+
+	return "healthy"
 }
 
 // GetBaseline fetches the last successful probe result for comparison
@@ -177,7 +204,8 @@ func (r *ProbeReporter) GetBaseline(ctx context.Context, workflowID string) (*mo
 type WorkflowFixRequest struct {
 	WorkflowID  string  `json:"workflow_id"`
 	NodeID      string  `json:"node_id"`
-	FixType     string  `json:"fix_type"` // "update_selector", "skip_node"
+	FieldName   string  `json:"field_name,omitempty"` // For update_field_selector
+	FixType     string  `json:"fix_type"`             // "update_selector", "update_field_selector", "skip_node"
 	OldSelector string  `json:"old_selector,omitempty"`
 	NewSelector string  `json:"new_selector,omitempty"`
 	Reasoning   string  `json:"reasoning"`

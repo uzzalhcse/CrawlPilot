@@ -244,6 +244,14 @@ func main() {
 	workflows.Get("/:id/probe/latest", probeHandler.GetLatestProbeResult)
 	workflows.Get("/:id/probe/sample-urls", probeHandler.GetSampleURLs)
 
+	// Probe aggregate endpoints
+	probes := api.Group("/probes")
+	probes.Get("/recent", probeHandler.GetRecentProbes)
+	probes.Get("/stats", probeHandler.GetProbeStats)
+	probes.Get("/auto-fixes", probeHandler.GetAutoFixes)
+	probes.Post("/auto-fixes/:id/approve", probeHandler.ApproveAutoFix)
+	probes.Post("/auto-fixes/:id/reject", probeHandler.RejectAutoFix)
+
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	logger.Info("Orchestrator starting", zap.String("address", addr))

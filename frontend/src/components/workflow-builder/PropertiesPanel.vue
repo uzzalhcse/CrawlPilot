@@ -777,6 +777,31 @@ function closeVisualSelector() {
                   @update:params="updateParam"
                 />
               </div>
+
+              <!-- Probe Configuration (for extract_links and extract nodes) -->
+              <div v-if="['extract_links', 'extract'].includes(localNode.data.nodeType)" class="space-y-4">
+                <Separator />
+                <div class="space-y-2">
+                  <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    Probe Configuration
+                  </div>
+                  <p class="text-[10px] text-muted-foreground">
+                    Sample URL for testing this node during probe execution.
+                  </p>
+                </div>
+                <div class="space-y-2">
+                  <Label>Probe Sample URL</Label>
+                  <Input 
+                    :model-value="localNode.data.params.probe_url || ''"
+                    @update:model-value="updateParam('probe_url', $event)"
+                    placeholder="https://example.com/sample-page"
+                  />
+                  <p class="text-[10px] text-muted-foreground">
+                    When running probes, this URL will be used to test this node's selectors.
+                  </p>
+                </div>
+              </div>
             </div>
           </ScrollArea>
         </div>

@@ -22,6 +22,8 @@ import {
   Package,
   Shield,
   AlertTriangle,
+  Activity,
+  Sparkles,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -32,6 +34,8 @@ const menuItems = [
   { icon: Home, label: 'Home', route: '/' },
   { icon: Workflow, label: 'Workflows', route: '/workflows', badge: null },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
+  { icon: Activity, label: 'Probes', route: '/probes' },
+  { icon: Sparkles, label: 'Auto-Fixes', route: '/auto-fixes' },
   { icon: Calendar, label: 'Monitoring', route: '/monitoring' },
   { icon: Package, label: 'Plugins', route: '/plugins' },
   { icon: Calendar, label: 'Schedules', route: '/schedules' },

@@ -15,7 +15,6 @@
                 "id": "discover_categories",
                 "type": "discovery",
                 "name": "Discover Main Product Categories",
-                "probe_urls": [],
                 "nodes": [
                     {
                         "id": "navigate_to_homepage",
@@ -34,9 +33,7 @@
                             "marker": "category",
                             "limit": 2
                         },
-                        "probe_config": {
-                            "limit": 1
-                        }
+                        "probe_url": "https://aqua-has.com"
                     }
                 ],
                 "url_filter": {
@@ -51,9 +48,6 @@
                 "id": "discover_products",
                 "type": "discovery",
                 "name": "Discover Product Listing Pages",
-                "probe_urls": [
-                    "https://aqua-has.com/laundry/"
-                ],
                 "nodes": [
                     {
                         "id": "navigate_to_category",
@@ -73,9 +67,7 @@
                             "marker": "product",
                             "limit": 5
                         },
-                        "probe_config": {
-                            "limit": 1
-                        }
+                        "probe_url": "https://aqua-has.com/laundry/"
                     }
                 ],
                 "url_filter": {
@@ -92,9 +84,6 @@
                 "id": "extract_product_data",
                 "type": "extraction",
                 "name": "Extract Product Details",
-                "probe_urls": [
-                    "https://aqua-has.com/product/dxs12a/"
-                ],
                 "nodes": [
                     {
                         "id": "navigate_to_product",
@@ -118,9 +107,10 @@
                                     "transform": "trim"
                                 },
                                 "product_name": {
-                                    "selector": ".ProductInfo_Head_Main_ProductName",
+                                    "selector": ".ProductName",
                                     "type": "text",
-                                    "transform": "trim"
+                                    "transform": "trim",
+                                  "required": true
                                 },
                                 "images": {
                                     "selector": ".productImageList img",
@@ -172,20 +162,7 @@
                                 }
                             }
                         },
-                        "probe_config": {
-                            "fields": {
-                                "product_name": {
-                                    "selector": ".ProductInfo_Head_Main_ProductName",
-                                    "type": "text",
-                                    "transform": "trim"
-                                },
-                                "category": {
-                                    "selector": ".ProductDetail_Section_Headline_Sub",
-                                    "type": "text",
-                                    "transform": "trim"
-                                }
-                            }
-                        }
+                        "probe_url": "https://aqua-has.com/product/dxs12a/"
                     }
                 ],
                 "url_filter": {

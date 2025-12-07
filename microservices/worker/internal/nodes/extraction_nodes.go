@@ -61,8 +61,29 @@ func (n *ExtractNode) Execute(ctx context.Context, execCtx *ExecutionContext, no
 					extractedData[fieldName] = defaultVal
 					continue
 				}
+				// Track missing required fields for probe detection
+				if required, isRequired := configMap["required"].(bool); isRequired && required {
+					execCtx.MissingRequiredFields = append(execCtx.MissingRequiredFields, fieldName)
+					logger.Warn("Required field missing",
+						zap.String("field", fieldName),
+						zap.String("schema", schemaName),
+					)
+				}
 			}
 			continue
+		}
+
+		// Check if value is empty for required fields
+		if configMap, ok := fieldConfig.(map[string]interface{}); ok {
+			if required, isRequired := configMap["required"].(bool); isRequired && required {
+				if isValueEmpty(value) {
+					execCtx.MissingRequiredFields = append(execCtx.MissingRequiredFields, fieldName)
+					logger.Warn("Required field extracted but empty",
+						zap.String("field", fieldName),
+						zap.String("schema", schemaName),
+					)
+				}
+			}
 		}
 
 		if value != nil {
@@ -391,6 +412,24 @@ func (n *ExtractNode) applyTransformString(value string, transform string) strin
 	default:
 		return value
 	}
+}
+
+// isValueEmpty checks if an extracted value is empty (nil, empty string, or empty slice)
+func isValueEmpty(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []interface{}:
+		return len(v) == 0
+	case []string:
+		return len(v) == 0
+	case []map[string]interface{}:
+		return len(v) == 0
+	}
+	return false
 }
 
 // DiscoverLinksNode discovers URLs from the page

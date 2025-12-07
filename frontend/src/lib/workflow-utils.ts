@@ -180,14 +180,6 @@ function convertToBackendNode(node: WorkflowNode, edges: WorkflowEdge[], allNode
         .filter(e => e.target === node.id)
         .filter(e => {
             const sourceNode = allNodes.find(n => n.id === e.source)
-            // If source node not found, or has different phaseId, exclude it
-            // Note: phaseId might be in data or we might need to derive it again if not persisted.
-            // But we persisted it in data.phaseId in WorkflowBuilder.vue loadWorkflow.
-            // And in convertNodesToWorkflowConfig we rely on node.data.phaseId or heuristic.
-            // Let's use the same logic as convertNodesToWorkflowConfig loop if possible, 
-            // but since we don't have the phase map here easily, let's rely on data.phaseId 
-            // or re-derive.
-
             if (!sourceNode) return false
 
             const sourcePhaseId = sourceNode.data.phaseId || getPhaseIdByType(sourceNode.data.nodeType)
@@ -197,32 +189,17 @@ function convertToBackendNode(node: WorkflowNode, edges: WorkflowEdge[], allNode
         })
         .map(e => e.source)
 
+    // Extract probe_url from params (for extract_links and extract nodes)
+    const probeUrl = node.data.params?.probe_url
+    const paramsWithoutProbeUrl = { ...node.data.params }
+    delete paramsWithoutProbeUrl.probe_url  // Remove from params, will be top-level
+
     return {
         id: node.id,
         type: node.data.nodeType,
         name: node.data.label,
-        params: node.data.params,
+        params: paramsWithoutProbeUrl,
         dependencies: dependencies.length > 0 ? dependencies : undefined,
-        // output_key etc are not in the Node interface in types.ts but were in the Vue file?
-        // Let's check types.ts again. Node interface has params: Record<string, any>.
-        // The backend likely expects these in params or as separate fields. 
-        // The Vue file had them separate. Let's put them in params if they aren't standard.
-        // Wait, the Vue file `convertToBackendNode` put them as top level properties.
-        // Let's check the Node interface in types.ts again.
-        // export interface Node { id, type, name, params, dependencies }
-        // It does NOT have output_key, optional, retry.
-        // So they must be in params or the interface is incomplete.
-        // Looking at the Vue file again:
-        /*
-          return {
-            id: node.id,
-            ...
-            output_key: node.data.outputKey,
-            optional: node.data.optional,
-            retry: node.data.retry
-          }
-        */
-        // If I strictly follow the interface, I should put them in params or extend the interface.
-        // For now I will cast to any to match the Vue file's behavior.
+        probe_url: probeUrl || undefined,  // Top-level probe_url for backend
     } as any
 }

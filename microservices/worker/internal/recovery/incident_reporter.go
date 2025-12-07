@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
+	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"go.uber.org/zap"
 )
 
@@ -138,6 +141,23 @@ func (r *IncidentReporter) CreateIncident(ctx context.Context, incident *Inciden
 	// Generate suggested actions
 	incident.SuggestedActions = r.generateSuggestedActions(incident)
 
+	// Ensure slices are not nil to produce valid JSON arrays
+	if incident.RecoveryAttempts == nil {
+		incident.RecoveryAttempts = []RecoveryAttemptSummary{}
+	}
+	if incident.SuggestedActions == nil {
+		incident.SuggestedActions = []string{}
+	}
+	if incident.Cookies == nil {
+		incident.Cookies = make(map[string]interface{})
+	}
+	if incident.RequestHeaders == nil {
+		incident.RequestHeaders = make(map[string]string)
+	}
+	if incident.ResponseHeaders == nil {
+		incident.ResponseHeaders = make(map[string]string)
+	}
+
 	attemptsJSON, _ := json.Marshal(incident.RecoveryAttempts)
 	suggestedJSON, _ := json.Marshal(incident.SuggestedActions)
 	cookiesJSON, _ := json.Marshal(incident.Cookies)
@@ -157,22 +177,22 @@ func (r *IncidentReporter) CreateIncident(ctx context.Context, incident *Inciden
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9,
-			$10, $11,
+			$10::jsonb, $11,
 			$12, $13, $14, $15,
 			$16, $17, $18, $19,
-			$20, $21, $22, $23, $24,
-			$25, $26, $27,
+			$20, $21, $22::jsonb, $23::jsonb, $24::jsonb,
+			$25::jsonb, $26, $27,
 			$28, $29, $30, $31
 		)`
 
 	_, err := r.pool.Exec(ctx, query,
 		incident.ID, incident.ExecutionID, incident.TaskID, incident.WorkflowID, incident.URL, incident.Domain,
 		incident.ErrorPattern, incident.ErrorMessage, incident.StatusCode,
-		attemptsJSON, incident.TotalAttempts,
+		string(attemptsJSON), incident.TotalAttempts,
 		incident.AIEnabled, incident.AIProvider, incident.AIReasoning, incident.AIFailureReason,
 		incident.Screenshot, incident.DOMSnapshot, incident.PageTitle, incident.PageURL,
-		incident.BrowserProfile, incident.ProxyUsed, cookiesJSON, reqHeadersJSON, respHeadersJSON,
-		suggestedJSON, incident.Status, incident.Priority,
+		incident.BrowserProfile, incident.ProxyUsed, string(cookiesJSON), string(reqHeadersJSON), string(respHeadersJSON),
+		string(suggestedJSON), incident.Status, incident.Priority,
 		incident.FirstErrorAt, incident.LastErrorAt, incident.CreatedAt, incident.UpdatedAt,
 	)
 
@@ -532,11 +552,56 @@ func (r *IncidentReporter) CreateFromProbeFailure(
 	reason string, // "low_confidence", "ai_error", "escalated", "no_fix"
 ) (*IncidentReport, error) {
 
-	// Extract failed nodes and snapshots
+	// Extract failed nodes, snapshots, and URLs from probe result
 	failedNodes := make([]string, 0)
 	snapshotPaths := make([]string, 0)
+	var sampleURL, domain string
 	var aiConfidence float64
 	var aiReasoning string
+
+	// Type assert probe result to extract phase details
+	if pr, ok := probeResult.(*models.ProbeResult); ok && pr != nil {
+		for _, phase := range pr.Phases {
+			// Get sample URL from the phase
+			if sampleURL == "" && phase.SampleURL != "" {
+				sampleURL = phase.SampleURL
+				// Extract domain from URL
+				if u, err := url.Parse(phase.SampleURL); err == nil {
+					domain = u.Host
+				}
+			}
+
+			// Collect failed/degraded node details
+			for _, node := range phase.Nodes {
+				if node.Status == "failed" || (node.Status == "passed" && (node.LinksFound == 0 && node.NodeType == "extract_links") || (node.ElementCount == 0 && node.NodeType == "extract")) {
+					nodeInfo := fmt.Sprintf("[%s] %s (%s)", phase.PhaseName, node.NodeName, node.NodeType)
+					if node.Selector != "" {
+						nodeInfo += fmt.Sprintf(" - selector: %s", node.Selector)
+					}
+					if node.LinksFound == 0 && node.NodeType == "extract_links" {
+						nodeInfo += " - 0 links found"
+					}
+					if node.ElementCount == 0 && node.NodeType == "extract" {
+						nodeInfo += " - 0 elements found"
+					}
+					if node.Error != "" {
+						nodeInfo += fmt.Sprintf(" - error: %s", node.Error)
+					}
+					failedNodes = append(failedNodes, nodeInfo)
+
+					// Collect snapshot paths
+					if node.Snapshot != nil {
+						if node.Snapshot.ScreenshotPath != "" {
+							snapshotPaths = append(snapshotPaths, node.Snapshot.ScreenshotPath)
+						}
+						if node.Snapshot.DOMPath != "" {
+							snapshotPaths = append(snapshotPaths, node.Snapshot.DOMPath)
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// Type assert fix plan if provided
 	if plan, ok := fixPlan.(*ProbeFixPlan); ok && plan != nil {
@@ -544,12 +609,20 @@ func (r *IncidentReporter) CreateFromProbeFailure(
 		aiReasoning = plan.Reasoning
 	}
 
+	// Build detailed error message
+	errorMessage := fmt.Sprintf("Probe failure: %s", reason)
+	if len(failedNodes) > 0 {
+		errorMessage += "\n\nAffected nodes:\n• " + strings.Join(failedNodes, "\n• ")
+	}
+
 	// Build incident
 	incident := &IncidentReport{
 		ExecutionID:  executionID,
 		WorkflowID:   workflowID,
+		URL:          sampleURL,
+		Domain:       domain,
 		ErrorPattern: string(PatternLayoutChanged),
-		ErrorMessage: fmt.Sprintf("Probe failure: %s", reason),
+		ErrorMessage: errorMessage,
 		AIEnabled:    true,
 		AIReasoning:  aiReasoning,
 		FirstErrorAt: time.Now(),
@@ -569,6 +642,10 @@ func (r *IncidentReporter) CreateFromProbeFailure(
 		incident.Priority = PriorityHigh
 	case "no_fix":
 		incident.AIFailureReason = "No automated fix available"
+		incident.Priority = PriorityMedium
+	case "ai_disabled":
+		incident.AIEnabled = false
+		incident.AIFailureReason = "AI auto-fix is disabled in config"
 		incident.Priority = PriorityMedium
 	default:
 		incident.AIFailureReason = reason

@@ -38,8 +38,26 @@ type ProbeRepository interface {
 	// UpdateNodeSelector updates a workflow node's selector (for auto-fix)
 	UpdateNodeSelector(ctx context.Context, workflowID, nodeID, newSelector, reason string) error
 
+	// UpdateFieldSelector updates a field selector within an extract node (for auto-fix)
+	UpdateFieldSelector(ctx context.Context, workflowID, nodeID, fieldName, newSelector, reason string) error
+
 	// DisableNode marks a workflow node as disabled (for skip_node fix)
 	DisableNode(ctx context.Context, workflowID, nodeID, reason string) error
+
+	// GetRecentProbes gets recent probe results across all workflows
+	GetRecentProbes(ctx context.Context, limit int) ([]*models.ProbeResult, int, error)
+
+	// GetProbeStats returns aggregate probe statistics
+	GetProbeStats(ctx context.Context) (*ProbeStatsResult, error)
+
+	// GetAutoFixes retrieves auto-fix records with optional status filter
+	GetAutoFixes(ctx context.Context, status string, limit int) ([]*AutoFixRecord, int, error)
+
+	// UpdateAutoFixStatus updates the status of an auto-fix record
+	UpdateAutoFixStatus(ctx context.Context, fixID, status string) error
+
+	// CreateAutoFix records an AI-applied workflow fix
+	CreateAutoFix(ctx context.Context, fix *AutoFixRecord) error
 }
 
 // probeRepository implements ProbeRepository
@@ -52,7 +70,8 @@ func NewProbeRepository(db *database.DB) ProbeRepository {
 	return &probeRepository{db: db}
 }
 
-// SaveProbeResult stores a probe execution result
+// SaveProbeResult stores or updates a probe execution result
+// If a result for this execution already exists, merges the new phases into it
 func (r *probeRepository) SaveProbeResult(ctx context.Context, result *models.ProbeResult) error {
 	// Marshal phases to JSON string for JSONB column
 	phasesJSON, err := json.Marshal(result.Phases)
@@ -60,9 +79,26 @@ func (r *probeRepository) SaveProbeResult(ctx context.Context, result *models.Pr
 		return fmt.Errorf("failed to marshal phases: %w", err)
 	}
 
+	// Use UPSERT to merge phases when execution already exists
+	// This handles the case where each phase reports separately
 	query := `
 		INSERT INTO probe_results (execution_id, workflow_id, status, duration_ms, phases)
-		VALUES ($1, $2, $3, $4, $5)
+		VALUES ($1, $2, $3, $4, $5::jsonb)
+		ON CONFLICT (execution_id) DO UPDATE SET
+			phases = (
+				SELECT jsonb_agg(DISTINCT phase)
+				FROM (
+					SELECT jsonb_array_elements(probe_results.phases) AS phase
+					UNION ALL
+					SELECT jsonb_array_elements($5::jsonb) AS phase
+				) combined
+			),
+			duration_ms = probe_results.duration_ms + EXCLUDED.duration_ms,
+			status = CASE 
+				WHEN probe_results.status = 'broken' OR EXCLUDED.status = 'broken' THEN 'broken'
+				WHEN probe_results.status = 'degraded' OR EXCLUDED.status = 'degraded' THEN 'degraded'
+				ELSE 'healthy'
+			END
 		RETURNING id, created_at
 	`
 
@@ -273,8 +309,8 @@ func (r *probeRepository) GetBaselineProbeResult(ctx context.Context, workflowID
 
 // UpdateNodeSelector updates a workflow node's selector (for auto-fix)
 func (r *probeRepository) UpdateNodeSelector(ctx context.Context, workflowID, nodeID, newSelector, reason string) error {
-	// Update the node config in workflows table
-	// This uses jsonb_set to update the specific node's selector property
+	// Update the node params in workflows table
+	// The selector is stored at: phases[idx].nodes[idx].params.selector
 	query := `
 		WITH phase_update AS (
 			SELECT w.id as workflow_id, 
@@ -290,7 +326,7 @@ func (r *probeRepository) UpdateNodeSelector(ctx context.Context, workflowID, no
 		UPDATE workflows w
 		SET config = jsonb_set(
 			config,
-			ARRAY['phases', (pu.phase_idx - 1)::text, 'nodes', (pu.node_idx - 1)::text, 'config', 'selector'],
+			ARRAY['phases', (pu.phase_idx - 1)::text, 'nodes', (pu.node_idx - 1)::text, 'params', 'selector'],
 			to_jsonb($3::text)
 		),
 		updated_at = NOW()
@@ -305,6 +341,43 @@ func (r *probeRepository) UpdateNodeSelector(ctx context.Context, workflowID, no
 
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("node %s not found in workflow %s", nodeID, workflowID)
+	}
+
+	return nil
+}
+
+// UpdateFieldSelector updates a field selector within an extract node (for auto-fix)
+// Path: phases[idx].nodes[idx].params.fields.{fieldName}.selector
+func (r *probeRepository) UpdateFieldSelector(ctx context.Context, workflowID, nodeID, fieldName, newSelector, reason string) error {
+	query := `
+		WITH phase_update AS (
+			SELECT w.id as workflow_id, 
+				   p.ordinal as phase_idx,
+				   n.ordinal as node_idx
+			FROM workflows w,
+				 LATERAL jsonb_array_elements(w.config->'phases') WITH ORDINALITY p(element, ordinal),
+				 LATERAL jsonb_array_elements(p.element->'nodes') WITH ORDINALITY n(element, ordinal)
+			WHERE w.id = $1 AND n.element ->> 'id' = $2
+			LIMIT 1
+		)
+		UPDATE workflows w
+		SET config = jsonb_set(
+			config,
+			ARRAY['phases', (pu.phase_idx - 1)::text, 'nodes', (pu.node_idx - 1)::text, 'params', 'fields', $4, 'selector'],
+			to_jsonb($3::text)
+		),
+		updated_at = NOW()
+		FROM phase_update pu
+		WHERE w.id = pu.workflow_id
+	`
+
+	result, err := r.db.Pool.Exec(ctx, query, workflowID, nodeID, newSelector, fieldName)
+	if err != nil {
+		return fmt.Errorf("failed to update field selector: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("field %s in node %s not found in workflow %s", fieldName, nodeID, workflowID)
 	}
 
 	return nil
@@ -344,5 +417,197 @@ func (r *probeRepository) DisableNode(ctx context.Context, workflowID, nodeID, r
 		return fmt.Errorf("node %s not found in workflow %s", nodeID, workflowID)
 	}
 
+	return nil
+}
+
+// ProbeStatsResult holds aggregate probe statistics
+type ProbeStatsResult struct {
+	Total      int            `json:"total"`
+	Healthy    int            `json:"healthy"`
+	Degraded   int            `json:"degraded"`
+	Broken     int            `json:"broken"`
+	ByWorkflow map[string]int `json:"by_workflow"`
+}
+
+// AutoFixRecord represents an auto-fix record in the database
+type AutoFixRecord struct {
+	ID          string  `json:"id"`
+	WorkflowID  string  `json:"workflow_id"`
+	NodeID      string  `json:"node_id"`
+	FixType     string  `json:"fix_type"`
+	OldSelector string  `json:"old_selector,omitempty"`
+	NewSelector string  `json:"new_selector,omitempty"`
+	Reasoning   string  `json:"reasoning"`
+	Confidence  float64 `json:"confidence"`
+	Status      string  `json:"status"`
+	AutoApplied bool    `json:"auto_applied"`
+	CreatedAt   string  `json:"created_at"`
+}
+
+// GetRecentProbes gets all recent probe executions sorted by date
+func (r *probeRepository) GetRecentProbes(ctx context.Context, limit int) ([]*models.ProbeResult, int, error) {
+	// Get all probe executions sorted by most recent first
+	query := `
+		SELECT id, execution_id, workflow_id, status, duration_ms, phases, created_at
+		FROM probe_results
+		ORDER BY created_at DESC
+		LIMIT $1
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query recent probes: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*models.ProbeResult
+	for rows.Next() {
+		var result models.ProbeResult
+		var phasesJSON []byte
+		if err := rows.Scan(&result.ID, &result.ExecutionID, &result.WorkflowID, &result.Status, &result.Duration, &phasesJSON, &result.CreatedAt); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan probe result: %w", err)
+		}
+		if len(phasesJSON) > 0 {
+			json.Unmarshal(phasesJSON, &result.Phases)
+		}
+		results = append(results, &result)
+	}
+
+	// Get total count of all probe executions
+	var total int
+	r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM probe_results").Scan(&total)
+
+	return results, total, nil
+}
+
+// GetProbeStats returns aggregate probe statistics
+func (r *probeRepository) GetProbeStats(ctx context.Context) (*ProbeStatsResult, error) {
+	stats := &ProbeStatsResult{
+		ByWorkflow: make(map[string]int),
+	}
+
+	// Get counts by status (from latest probe per workflow)
+	query := `
+		WITH latest_probes AS (
+			SELECT DISTINCT ON (workflow_id) workflow_id, status
+			FROM probe_results
+			ORDER BY workflow_id, created_at DESC
+		)
+		SELECT 
+			COUNT(*) as total,
+			COUNT(*) FILTER (WHERE status = 'healthy') as healthy,
+			COUNT(*) FILTER (WHERE status = 'degraded') as degraded,
+			COUNT(*) FILTER (WHERE status = 'broken') as broken
+		FROM latest_probes
+	`
+
+	err := r.db.Pool.QueryRow(ctx, query).Scan(&stats.Total, &stats.Healthy, &stats.Degraded, &stats.Broken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get probe stats: %w", err)
+	}
+
+	// Get count per workflow
+	workflowQuery := `
+		SELECT workflow_id, COUNT(*) 
+		FROM probe_results 
+		GROUP BY workflow_id
+	`
+	rows, err := r.db.Pool.Query(ctx, workflowQuery)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var wid string
+			var count int
+			if rows.Scan(&wid, &count) == nil {
+				stats.ByWorkflow[wid] = count
+			}
+		}
+	}
+
+	return stats, nil
+}
+
+// GetAutoFixes retrieves auto-fix records with optional status filter
+func (r *probeRepository) GetAutoFixes(ctx context.Context, status string, limit int) ([]*AutoFixRecord, int, error) {
+	var query string
+	var rows interface{ Close() }
+	var err error
+
+	if status == "" {
+		query = `
+			SELECT id, workflow_id, node_id, fix_type, old_selector, new_selector, 
+			       reasoning, confidence, status, auto_applied, created_at
+			FROM workflow_auto_fixes
+			ORDER BY created_at DESC
+			LIMIT $1
+		`
+		rows, err = r.db.Pool.Query(ctx, query, limit)
+	} else {
+		query = `
+			SELECT id, workflow_id, node_id, fix_type, old_selector, new_selector, 
+			       reasoning, confidence, status, auto_applied, created_at
+			FROM workflow_auto_fixes
+			WHERE status = $1
+			ORDER BY created_at DESC
+			LIMIT $2
+		`
+		rows, err = r.db.Pool.Query(ctx, query, status, limit)
+	}
+
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query auto-fixes: %w", err)
+	}
+	defer rows.Close()
+
+	var fixes []*AutoFixRecord
+	pgRows := rows.(interface {
+		Next() bool
+		Scan(...interface{}) error
+	})
+	for pgRows.Next() {
+		var fix AutoFixRecord
+		if err := pgRows.Scan(&fix.ID, &fix.WorkflowID, &fix.NodeID, &fix.FixType,
+			&fix.OldSelector, &fix.NewSelector, &fix.Reasoning, &fix.Confidence,
+			&fix.Status, &fix.AutoApplied, &fix.CreatedAt); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan auto-fix: %w", err)
+		}
+		fixes = append(fixes, &fix)
+	}
+
+	// Get total count
+	var total int
+	r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM workflow_auto_fixes").Scan(&total)
+
+	return fixes, total, nil
+}
+
+// UpdateAutoFixStatus updates the status of an auto-fix record
+func (r *probeRepository) UpdateAutoFixStatus(ctx context.Context, fixID, status string) error {
+	query := `UPDATE workflow_auto_fixes SET status = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.db.Pool.Exec(ctx, query, status, fixID)
+	if err != nil {
+		return fmt.Errorf("failed to update auto-fix status: %w", err)
+	}
+	return nil
+}
+
+// CreateAutoFix records an AI-applied workflow fix
+func (r *probeRepository) CreateAutoFix(ctx context.Context, fix *AutoFixRecord) error {
+	query := `
+		INSERT INTO workflow_auto_fixes (
+			workflow_id, node_id, fix_type, old_selector, new_selector, 
+			reasoning, confidence, status, auto_applied
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, created_at
+	`
+
+	err := r.db.Pool.QueryRow(ctx, query,
+		fix.WorkflowID, fix.NodeID, fix.FixType, fix.OldSelector, fix.NewSelector,
+		fix.Reasoning, fix.Confidence, fix.Status, fix.AutoApplied,
+	).Scan(&fix.ID, &fix.CreatedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to create auto-fix record: %w", err)
+	}
 	return nil
 }

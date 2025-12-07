@@ -43,8 +43,19 @@ type ToolCall struct {
 
 // FunctionCall represents the function being called
 type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"` // JSON string
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"` // JSON - can be string or object depending on provider
+}
+
+// ArgumentsString returns the arguments as a JSON string
+func (f FunctionCall) ArgumentsString() string {
+	// If it's already a string (OpenAI style), unwrap it
+	var strArgs string
+	if err := json.Unmarshal(f.Arguments, &strArgs); err == nil {
+		return strArgs
+	}
+	// Otherwise, return the raw JSON (Ollama style)
+	return string(f.Arguments)
 }
 
 // Tool represents a function that can be called

@@ -42,6 +42,7 @@ type TaskExecutor struct {
 	completionTracker    *reporter.CompletionTracker    // Tracks outstanding tasks for completion
 	retryConfig          RetryConfig                    // Retry configuration for transient failures
 	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
+	recoveryCfg          *config.RecoveryConfig         // Recovery configuration (for feature toggles)
 	probeReporter        *reporter.ProbeReporter        // Reports probe results to orchestrator
 
 	// Probe auto-fix components
@@ -149,6 +150,7 @@ func NewTaskExecutor(
 				Model:    recoveryCfg.LLMModel,
 				Endpoint: recoveryCfg.LLMEndpoint,
 				Timeout:  recoveryCfg.LLMTimeout,
+				APIKey:   recoveryCfg.LLMAPIKey,
 			},
 		}
 		rm, err := recovery.NewRecoveryManager(db.Pool, redisCache, pubsubClient, recoveryConfig)
@@ -191,8 +193,19 @@ func NewTaskExecutor(
 	// ProbeAgent is initialized lazily when LLM provider is available from recoveryManager
 	var probeAgent *recovery.ProbeAgent
 	if recoveryManager != nil && recoveryManager.GetLLMProvider() != nil {
-		probeAgent = recovery.NewProbeAgent(recoveryManager.GetLLMProvider(), nil)
-		logger.Info("Probe auto-fix agent initialized")
+		probeAgentConfig := recovery.DefaultProbeAgentConfig()
+		// Override with config values if available
+		if recoveryCfg != nil {
+			probeAgentConfig.ChunkedDOM = recoveryCfg.ProbeChunkedDOM
+			if recoveryCfg.ProbeDOMChunkSize > 0 {
+				probeAgentConfig.DOMChunkSize = recoveryCfg.ProbeDOMChunkSize
+			}
+		}
+		probeAgent = recovery.NewProbeAgent(recoveryManager.GetLLMProvider(), probeAgentConfig)
+		logger.Info("Probe auto-fix agent initialized",
+			zap.Bool("chunked_dom", probeAgentConfig.ChunkedDOM),
+			zap.Int("chunk_size", probeAgentConfig.DOMChunkSize),
+		)
 	}
 
 	return &TaskExecutor{
@@ -212,6 +225,7 @@ func NewTaskExecutor(
 		completionTracker:    completionTracker,
 		retryConfig:          DefaultRetryConfig(),
 		recoveryManager:      recoveryManager,
+		recoveryCfg:          recoveryCfg,
 		probeReporter:        probeReporter,
 		probeAgent:           probeAgent,
 		probeBaseline:        probeBaseline,
@@ -231,7 +245,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	)
 
 	// Check if task passes URL filter for this phase
-	if !e.passesURLFilter(task) {
+	// Skip filter for probe mode - probe_urls are explicitly defined sample URLs
+	if !task.IsProbe && !e.passesURLFilter(task) {
 		logger.Info("Task filtered out by URL filter",
 			zap.String("url", task.URL),
 			zap.String("phase_id", task.PhaseID),
@@ -854,15 +869,6 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 
 	// Execute each node in sequence
 	for i, node := range phaseNodes {
-		// Apply probe_config if in probe mode
-		// probe_config overrides specific params for limited execution
-		if task.IsProbe && node.ProbeConfig != nil {
-			node = applyProbeConfig(node)
-			logger.Debug("Applied probe_config to node",
-				zap.String("node_id", node.ID),
-				zap.Any("probe_config", node.ProbeConfig),
-			)
-		}
 
 		logger.Debug("Executing node",
 			zap.String("node_id", node.ID),
@@ -951,6 +957,49 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 				// Track element count for extract nodes
 				if items, ok := execCtx.Variables["extracted_items"].([]map[string]interface{}); ok {
 					nodeResult.ElementCount = len(items)
+
+					// For probe mode: track field-level results
+					if task.IsProbe && node.Type == "extract" && len(items) > 0 {
+						nodeResult.Fields = analyzeExtractedFields(node.Params, items[0])
+					}
+				}
+
+				// Copy missing required fields to node result
+				if len(execCtx.MissingRequiredFields) > 0 {
+					nodeResult.MissingRequiredFields = execCtx.MissingRequiredFields
+				}
+
+				// For probe mode: capture snapshot when 0 elements/links found OR missing required fields (degraded state)
+				if task.IsProbe && execCtx.Page != nil {
+					shouldCaptureSnapshot := false
+					if node.Type == "extract_links" && nodeResult.LinksFound == 0 {
+						shouldCaptureSnapshot = true
+					} else if node.Type == "extract" && nodeResult.ElementCount == 0 {
+						shouldCaptureSnapshot = true
+					} else if node.Type == "extract" && len(nodeResult.MissingRequiredFields) > 0 {
+						shouldCaptureSnapshot = true
+					}
+
+					if shouldCaptureSnapshot {
+						logger.Debug("Capturing snapshot for degraded probe (0 results)",
+							zap.String("node_id", node.ID),
+							zap.String("node_type", node.Type),
+						)
+						snapshot, snapErr := e.captureNodeSnapshot(ctx, execCtx.Page, task, node.ID)
+						if snapErr != nil {
+							logger.Warn("Failed to capture degraded node snapshot",
+								zap.String("node_id", node.ID),
+								zap.Error(snapErr),
+							)
+						} else {
+							nodeResult.Snapshot = snapshot
+							if snapshot != nil && snapshot.DOMPath != "" {
+								if selector, ok := node.Params["selector"].(string); ok {
+									nodeResult.SelectorContext = e.extractSelectorContext(snapshot.DOMPath, selector)
+								}
+							}
+						}
+					}
 				}
 			}
 
@@ -1035,6 +1084,35 @@ func (e *TaskExecutor) requeueDiscoveredURLs(ctx context.Context, task *models.T
 				)
 				return nil
 			}
+		}
+	}
+
+	// PROBE MODE: Limit discovered URLs to minimize execution
+	// Only enqueue 1 URL per next phase for probing
+	if task.IsProbe && len(urls) > 0 {
+		// Check if next phase has a probe_url defined in any node
+		var probeURL string
+		if nextPhase.ID != "" {
+			for _, node := range nextPhase.Nodes {
+				if node.ProbeURL != "" {
+					probeURL = node.ProbeURL
+					break
+				}
+			}
+		}
+
+		if probeURL != "" {
+			// Use the defined probe_url instead of discovered URLs
+			urls = []URLWithMarker{{URL: probeURL, Marker: ""}}
+			logger.Debug("Probe mode: using defined probe_url",
+				zap.String("probe_url", probeURL),
+			)
+		} else {
+			// Limit to just 1 discovered URL for probe
+			urls = urls[:1]
+			logger.Debug("Probe mode: limiting to 1 discovered URL",
+				zap.String("url", urls[0].URL),
+			)
 		}
 	}
 
@@ -1359,26 +1437,53 @@ func (e *TaskExecutor) fetchBrowserProfile(profileID string) (*models.BrowserPro
 	return &profile, nil
 }
 
-// applyProbeConfig merges probe_config into node params for probe execution.
-// probe_config values override the corresponding params values.
-func applyProbeConfig(node models.Node) models.Node {
-	if node.ProbeConfig == nil {
-		return node
+// analyzeExtractedFields compares node extraction config with extracted values
+// Returns field-level results showing which fields extracted successfully
+func analyzeExtractedFields(nodeParams map[string]interface{}, extractedItem map[string]interface{}) []models.FieldProbeResult {
+	fields := []models.FieldProbeResult{}
+
+	// Get field definitions from node params
+	fieldsConfig, ok := nodeParams["fields"].(map[string]interface{})
+	if !ok {
+		return fields
 	}
 
-	// Clone params to avoid modifying original
-	newParams := make(map[string]interface{})
-	for k, v := range node.Params {
-		newParams[k] = v
+	for fieldName, fieldConfigRaw := range fieldsConfig {
+		fieldResult := models.FieldProbeResult{
+			Name: fieldName,
+		}
+
+		// Extract selector from field config
+		if fieldConfig, ok := fieldConfigRaw.(map[string]interface{}); ok {
+			if selector, ok := fieldConfig["selector"].(string); ok {
+				fieldResult.Selector = selector
+			}
+		}
+
+		// Check if field was extracted and has a value
+		value, exists := extractedItem[fieldName]
+		if !exists || value == nil {
+			fieldResult.Status = "empty"
+		} else {
+			// Convert value to string for display (truncate if long)
+			valueStr := fmt.Sprintf("%v", value)
+			if len(valueStr) > 100 {
+				valueStr = valueStr[:100] + "..."
+			}
+			fieldResult.Value = valueStr
+
+			// Check if the value is actually empty
+			if valueStr == "" || valueStr == "[]" || valueStr == "map[]" {
+				fieldResult.Status = "empty"
+			} else {
+				fieldResult.Status = "ok"
+			}
+		}
+
+		fields = append(fields, fieldResult)
 	}
 
-	// Override with probe_config values
-	for k, v := range node.ProbeConfig {
-		newParams[k] = v
-	}
-
-	node.Params = newParams
-	return node
+	return fields
 }
 
 // reportProbeResults aggregates and reports probe execution results to orchestrator
@@ -1394,14 +1499,23 @@ func (e *TaskExecutor) reportProbeResults(ctx context.Context, task *models.Task
 
 	// Determine phase status
 	hasFailure := false
+	hasDegraded := false
 	for _, node := range result.NodeResults {
 		if node.Status == "failed" {
 			hasFailure = true
 			break
 		}
+		// Check for degraded (0 results OR missing required fields)
+		if (node.NodeType == "extract_links" && node.LinksFound == 0) ||
+			(node.NodeType == "extract" && node.ElementCount == 0) ||
+			(node.NodeType == "extract" && len(node.MissingRequiredFields) > 0) {
+			hasDegraded = true
+		}
 	}
 	if hasFailure {
 		phaseResult.Status = "failed"
+	} else if hasDegraded {
+		phaseResult.Status = "degraded"
 	} else {
 		phaseResult.Status = "passed"
 	}
@@ -1449,10 +1563,38 @@ func (e *TaskExecutor) reportProbeResults(ctx context.Context, task *models.Task
 		zap.Int("phases", len(probeResult.Phases)),
 	)
 
-	// === PROBE AUTO-FIX FLOW ===
-	// If probe failed, run AI analysis and escalate to human if needed
-	if hasFailure && e.probeAgent != nil && e.incidentReporter != nil {
-		go e.handleProbeAutoFix(ctx, task, probeResult, result)
+	// === PROBE INCIDENT + AUTO-FIX FLOW ===
+	// If probe failed or degraded (0 elements found):
+	// 1. Always create incident (for tracking)
+	// 2. Only run AI analysis if probe_autofix_enabled is true
+	hasProblem := hasFailure || probeResult.Status == "degraded"
+	if hasProblem && e.incidentReporter != nil {
+		// Build probe result for incident creation
+		fullResult := &models.ProbeResult{
+			WorkflowID: task.WorkflowID,
+			Status:     probeResult.Status,
+			Duration:   int64(probeResult.DurationMs),
+			Phases:     probeResult.Phases,
+		}
+
+		// Check if AI auto-fix is enabled
+		aiEnabled := e.recoveryCfg != nil && e.recoveryCfg.ProbeAutoFixEnabled && e.probeAgent != nil
+		if aiEnabled {
+			// Run full AI analysis + incident creation
+			go e.handleProbeAutoFix(ctx, task, probeResult, result)
+		} else {
+			// Just create incident without AI (for tracking purposes)
+			logger.Info("Probe auto-fix disabled, creating incident without AI analysis",
+				zap.String("execution_id", task.ExecutionID),
+				zap.String("status", probeResult.Status),
+			)
+			go func() {
+				_, _ = e.incidentReporter.CreateFromProbeFailure(
+					ctx, task.WorkflowID, task.ExecutionID,
+					fullResult, nil, nil, "ai_disabled",
+				)
+			}()
+		}
 	}
 }
 
@@ -1551,6 +1693,7 @@ func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task
 		fixReq := &reporter.WorkflowFixRequest{
 			WorkflowID:  task.WorkflowID,
 			NodeID:      fixPlan.NodeID,
+			FieldName:   fixPlan.FieldName,
 			FixType:     fixPlan.FixType,
 			OldSelector: fixPlan.OldSelector,
 			NewSelector: fixPlan.NewSelector,

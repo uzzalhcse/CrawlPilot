@@ -5,6 +5,7 @@ export interface Incident {
     id: string
     execution_id: string
     task_id: string
+    workflow_id: string
     url: string
     domain: string
     error_pattern: string
@@ -12,10 +13,32 @@ export interface Incident {
     status_code: number
     page_content: string
     recovery_attempts: RecoveryAttempt[]
+    total_attempts: number
+
+    // AI Analysis fields
+    ai_enabled: boolean
+    ai_provider?: string
+    ai_reasoning?: string
+    ai_failure_reason?: string
+
+    // Snapshot data (JSON string with probe details)
+    dom_snapshot?: string
+    screenshot?: string
+    page_title?: string
+    page_url?: string
+
+    // Suggested actions
+    suggested_actions?: string[]
+
+    // Status and priority
     status: 'open' | 'in_progress' | 'resolved' | 'ignored'
     priority: 'low' | 'medium' | 'high' | 'critical'
     assigned_to: string | null
     resolution: string | null
+
+    // Timestamps
+    first_error_at: string
+    last_error_at: string
     created_at: string
     updated_at: string
     resolved_at: string | null

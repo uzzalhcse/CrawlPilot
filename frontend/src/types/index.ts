@@ -53,6 +53,7 @@ export interface Node {
   name: string
   params: Record<string, any>
   dependencies?: string[]
+  probe_url?: string  // Sample URL for probe execution (for extract_links, extract nodes)
 }
 
 export interface StorageConfig {

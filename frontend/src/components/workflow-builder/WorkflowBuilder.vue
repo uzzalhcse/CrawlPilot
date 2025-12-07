@@ -279,6 +279,11 @@ function loadWorkflow(workflow: Workflow) {
         phaseNodeIds.push([]) // Initialize array for this phase
         
         phase.nodes.forEach((node: any) => {
+          // Merge top-level probe_url into params for UI editing
+          if (node.probe_url) {
+            node.params = { ...node.params, probe_url: node.probe_url }
+          }
+          
           // Recursively expand nodes (handles sequence, conditional, etc.)
           const expanded = expandNode(node, phase.id, 0)
           

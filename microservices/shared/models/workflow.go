@@ -33,7 +33,6 @@ type WorkflowPhase struct {
 	Nodes      []Node           `json:"nodes"` // Nodes are inside the phase
 	URLFilter  *URLFilter       `json:"url_filter,omitempty"`
 	Transition *PhaseTransition `json:"transition,omitempty"`
-	ProbeURLs  []string         `json:"probe_urls,omitempty"` // Sample URLs for probe execution
 }
 
 // URLFilter defines URL filtering rules for a phase
@@ -50,11 +49,11 @@ type PhaseTransition struct {
 
 // Node represents a workflow node
 type Node struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Name        string                 `json:"name,omitempty"`
-	Params      map[string]interface{} `json:"params"`                 // Changed from config to params
-	ProbeConfig map[string]interface{} `json:"probe_config,omitempty"` // Override params for probe execution
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Name     string                 `json:"name,omitempty"`
+	Params   map[string]interface{} `json:"params"`
+	ProbeURL string                 `json:"probe_url,omitempty"` // Sample URL for probe execution (for extract_links, extract nodes)
 }
 
 // Execution represents a workflow execution

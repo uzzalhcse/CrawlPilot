@@ -14,6 +14,7 @@ type ExecutionContext struct {
 	Variables               map[string]interface{}
 	ExtractedItems          []map[string]interface{}                   // Items extracted during execution
 	DiscoveredURLs          []string                                   // URLs discovered during execution
+	MissingRequiredFields   []string                                   // Required fields that failed to extract (for probe detection)
 	BranchNodes             []models.Node                              // Nodes to execute from conditional branches
 	SwitchDriver            func(string) error                         // Callback to switch driver (legacy)
 	SwitchDriverWithProfile func(driverType, profileID string) error   // Switch driver with optional profile

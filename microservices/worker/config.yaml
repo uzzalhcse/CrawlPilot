@@ -65,10 +65,11 @@ recovery:
   
   # AI Agent Fallback (when rules don't match)
   ai_fallback_enabled: true
-  llm_provider: "ollama"         # ollama, openai
-  llm_model: "qwen2.5"           # qwen2.5, gpt-4o-mini
-  llm_endpoint: "http://localhost:11434"
-  llm_timeout: 30                # seconds
+  llm_provider: "openai"          # ollama, openai
+  llm_model: "gpt-4o-mini"        # gpt-4o-mini, gpt-4o (for OpenAI)
+  llm_endpoint: ""                # Leave empty for OpenAI default
+  llm_timeout: 120                # seconds
+  llm_api_key: "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"                 # Your OpenAI API key (or set OPENAI_API_KEY env var)
   
   # Proxy settings (used when switching proxies)
   proxy_source: "database"       # database (seeded from JSON)
@@ -76,3 +77,8 @@ recovery:
   
   # Slack notifications for human review
   slack_webhook_url: ""          # Set your Slack webhook URL
+  
+  # Probe System Settings
+  probe_autofix_enabled: true   # Enable probe AI auto-fix (requires Ollama/LLM running)
+  probe_chunked_dom: false       # Use multi-pass chunked DOM analysis (set false for full DOM single-pass)
+  probe_dom_chunk_size: 60000   # DOM chunk size in bytes (default 30KB)

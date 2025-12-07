@@ -284,10 +284,14 @@ func (e *TaskExecutor) enrichFailedNodesWithContext(result *TaskResult, domPath 
 	html := string(domContent)
 	config := DefaultProbeSnapshotConfig()
 
-	// Enrich failed nodes with selector context
+	// Enrich failed and degraded nodes with selector context
 	for i := range result.NodeResults {
 		node := &result.NodeResults[i]
-		if node.Status == "failed" && node.Selector != "" {
+		// Include failed nodes OR degraded nodes (0 results)
+		isProblematic := node.Status == "failed" ||
+			(node.NodeType == "extract_links" && node.LinksFound == 0) ||
+			(node.NodeType == "extract" && node.ElementCount == 0)
+		if isProblematic && node.Selector != "" {
 			node.SelectorContext = captureSelectorContext(html, node.Selector, config.MaxContextSize)
 		}
 	}

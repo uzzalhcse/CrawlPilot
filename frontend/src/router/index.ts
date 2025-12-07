@@ -49,6 +49,21 @@ const router = createRouter({
           component: () => import('@/views/HealthCheckView.vue')
         },
         {
+          path: 'probes',
+          name: 'probes',
+          component: () => import('@/views/ProbesView.vue')
+        },
+        {
+          path: 'probes/:workflowId/:probeId',
+          name: 'probe-detail',
+          component: () => import('@/views/ProbeDetailView.vue')
+        },
+        {
+          path: 'auto-fixes',
+          name: 'auto-fixes',
+          component: () => import('@/views/AutoFixesView.vue')
+        },
+        {
           path: 'analytics',
           name: 'analytics',
           component: () => import('@/views/AnalyticsView.vue')
