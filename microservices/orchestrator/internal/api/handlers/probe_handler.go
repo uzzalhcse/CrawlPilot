@@ -183,3 +183,103 @@ func (h *ProbeHandler) GetSampleURLs(c *fiber.Ctx) error {
 		"sample_urls": urls,
 	})
 }
+
+// GetBaseline handles GET /api/v1/internal/probes/baseline/:id
+// Returns the last successful probe result for baseline comparison
+func (h *ProbeHandler) GetBaseline(c *fiber.Ctx) error {
+	workflowID := c.Params("id")
+
+	// Get last healthy probe result
+	result, err := h.probeRepo.GetBaselineProbeResult(c.Context(), workflowID)
+	if err != nil {
+		logger.Warn("No baseline probe result found",
+			zap.String("workflow_id", workflowID),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "no baseline found",
+		})
+	}
+
+	return c.JSON(result)
+}
+
+// WorkflowFixRequest is the request body for applying workflow fixes
+type WorkflowFixRequest struct {
+	WorkflowID  string  `json:"workflow_id"`
+	NodeID      string  `json:"node_id"`
+	FixType     string  `json:"fix_type"` // "update_selector", "skip_node"
+	OldSelector string  `json:"old_selector,omitempty"`
+	NewSelector string  `json:"new_selector,omitempty"`
+	Reasoning   string  `json:"reasoning"`
+	Confidence  float64 `json:"confidence"`
+	AutoApplied bool    `json:"auto_applied"`
+}
+
+// ApplyWorkflowFix handles POST /api/v1/internal/probes/fix
+// Applies AI-suggested workflow fixes (selector updates, skip nodes)
+func (h *ProbeHandler) ApplyWorkflowFix(c *fiber.Ctx) error {
+	var req WorkflowFixRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	logger.Info("Received workflow fix request",
+		zap.String("workflow_id", req.WorkflowID),
+		zap.String("node_id", req.NodeID),
+		zap.String("fix_type", req.FixType),
+		zap.Float64("confidence", req.Confidence),
+	)
+
+	switch req.FixType {
+	case "update_selector":
+		// Apply selector update to workflow node
+		if err := h.probeRepo.UpdateNodeSelector(c.Context(), req.WorkflowID, req.NodeID, req.NewSelector, req.Reasoning); err != nil {
+			logger.Error("Failed to update node selector",
+				zap.String("workflow_id", req.WorkflowID),
+				zap.String("node_id", req.NodeID),
+				zap.Error(err),
+			)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "failed to apply selector update",
+			})
+		}
+
+		logger.Info("Selector update applied",
+			zap.String("workflow_id", req.WorkflowID),
+			zap.String("node_id", req.NodeID),
+			zap.String("new_selector", req.NewSelector),
+		)
+
+	case "skip_node":
+		// Mark node as skipped/disabled
+		if err := h.probeRepo.DisableNode(c.Context(), req.WorkflowID, req.NodeID, req.Reasoning); err != nil {
+			logger.Error("Failed to skip node",
+				zap.String("workflow_id", req.WorkflowID),
+				zap.String("node_id", req.NodeID),
+				zap.Error(err),
+			)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": "failed to skip node",
+			})
+		}
+
+		logger.Info("Node disabled",
+			zap.String("workflow_id", req.WorkflowID),
+			zap.String("node_id", req.NodeID),
+		)
+
+	default:
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "unknown fix type",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"applied": req.FixType,
+		"node_id": req.NodeID,
+	})
+}

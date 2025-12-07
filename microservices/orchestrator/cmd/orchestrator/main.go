@@ -236,6 +236,8 @@ func main() {
 	// Internal probe endpoints (for worker → orchestrator communication)
 	internal.Post("/probes/result", probeHandler.SaveProbeResult)
 	internal.Post("/probes/sample-urls", probeHandler.SaveSampleURLs)
+	internal.Get("/probes/baseline/:id", probeHandler.GetBaseline)
+	internal.Post("/probes/fix", probeHandler.ApplyWorkflowFix)
 
 	// Public probe endpoints (for API consumers)
 	workflows.Get("/:id/probe/results", probeHandler.GetProbeResults)

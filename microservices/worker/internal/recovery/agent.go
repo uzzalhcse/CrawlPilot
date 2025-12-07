@@ -244,6 +244,11 @@ func (a *Agent) parseContentAsAction(content string) (*RecoveryPlan, string, err
 	return plan, result.Reason, nil
 }
 
+// GetProvider returns the LLM provider for sharing with other agents
+func (a *Agent) GetProvider() llm.Provider {
+	return a.provider
+}
+
 // Close cleans up resources
 func (a *Agent) Close() error {
 	if a.provider != nil {

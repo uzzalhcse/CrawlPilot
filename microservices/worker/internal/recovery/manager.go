@@ -46,6 +46,9 @@ type ManagerConfig struct {
 	WindowSize           int     // Number of results to track (default: 100)
 	ErrorRateThreshold   float64 // Trigger if error rate exceeds this (default: 0.10)
 	ConsecutiveThreshold int     // Trigger after N consecutive errors (default: 3)
+
+	// Notifications
+	SlackWebhookURL string // Slack webhook URL for human notifications
 }
 
 // DefaultManagerConfig returns sensible defaults
@@ -125,7 +128,7 @@ func NewRecoveryManager(
 	errorTracker := NewErrorTracker(cache, trackerConfig)
 
 	// Initialize incident reporter for human escalation
-	incidentReporter := NewIncidentReporter(pool)
+	incidentReporter := NewIncidentReporter(pool, config.SlackWebhookURL)
 
 	// Initialize distributed proxy manager for Redis-based coordination
 	distributedProxy := NewDistributedProxyManager(cache, DefaultProxyRotationConfig())
@@ -579,6 +582,14 @@ func (m *RecoveryManager) Close() error {
 		m.agent.Close()
 	}
 	return nil
+}
+
+// GetLLMProvider returns the LLM provider for sharing with other agents (e.g., ProbeAgent)
+func (m *RecoveryManager) GetLLMProvider() llm.Provider {
+	if m.agent == nil {
+		return nil
+	}
+	return m.agent.GetProvider()
 }
 
 // historyKeyFor returns the Redis key for task recovery history

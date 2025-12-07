@@ -14,6 +14,7 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	GCP      GCPConfig      `mapstructure:"gcp"`
 	Browser  BrowserConfig  `mapstructure:"browser"`
+	Recovery RecoveryConfig `mapstructure:"recovery"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -108,6 +109,23 @@ type BrowserConfig struct {
 	ContextLifetime int    `mapstructure:"context_lifetime"`
 	Driver          string `mapstructure:"driver"`       // "playwright" (default) or "http"
 	LogWarnings     bool   `mapstructure:"log_warnings"` // Log extraction warnings to execution history (default: false)
+}
+
+// RecoveryConfig holds AI-powered recovery system configuration
+type RecoveryConfig struct {
+	Enabled              bool    `mapstructure:"enabled"`
+	WindowSize           int     `mapstructure:"window_size"`
+	ErrorRateThreshold   float64 `mapstructure:"error_rate_threshold"`
+	ConsecutiveThreshold int     `mapstructure:"consecutive_threshold"`
+	MaxRecoveryAttempts  int     `mapstructure:"max_recovery_attempts"`
+	AIFallbackEnabled    bool    `mapstructure:"ai_fallback_enabled"`
+	LLMProvider          string  `mapstructure:"llm_provider"`
+	LLMModel             string  `mapstructure:"llm_model"`
+	LLMEndpoint          string  `mapstructure:"llm_endpoint"`
+	LLMTimeout           int     `mapstructure:"llm_timeout"`
+	ProxySource          string  `mapstructure:"proxy_source"`
+	ProxyRotation        string  `mapstructure:"proxy_rotation"`
+	SlackWebhookURL      string  `mapstructure:"slack_webhook_url"`
 }
 
 // Load loads configuration from a file

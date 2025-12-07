@@ -135,3 +135,87 @@ func DetermineProbeStatus(phases []models.PhaseProbeResult) string {
 	}
 	return "broken"
 }
+
+// GetBaseline fetches the last successful probe result for comparison
+func (r *ProbeReporter) GetBaseline(ctx context.Context, workflowID string) (*models.ProbeResult, error) {
+	url := fmt.Sprintf("%s/api/v1/internal/probes/baseline/%s", r.orchestratorURL, workflowID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch baseline: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		// No baseline exists yet
+		return nil, nil
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("orchestrator returned error: %d", resp.StatusCode)
+	}
+
+	var result models.ProbeResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode baseline: %w", err)
+	}
+
+	logger.Info("Baseline fetched from orchestrator",
+		zap.String("workflow_id", workflowID),
+		zap.String("status", result.Status),
+	)
+
+	return &result, nil
+}
+
+// WorkflowFixRequest is the request body for applying workflow fixes
+type WorkflowFixRequest struct {
+	WorkflowID  string  `json:"workflow_id"`
+	NodeID      string  `json:"node_id"`
+	FixType     string  `json:"fix_type"` // "update_selector", "skip_node"
+	OldSelector string  `json:"old_selector,omitempty"`
+	NewSelector string  `json:"new_selector,omitempty"`
+	Reasoning   string  `json:"reasoning"`
+	Confidence  float64 `json:"confidence"`
+	AutoApplied bool    `json:"auto_applied"`
+}
+
+// ApplyWorkflowFix sends a workflow fix to orchestrator for application
+func (r *ProbeReporter) ApplyWorkflowFix(ctx context.Context, fix *WorkflowFixRequest) error {
+	url := fmt.Sprintf("%s/api/v1/internal/probes/fix", r.orchestratorURL)
+
+	body, err := json.Marshal(fix)
+	if err != nil {
+		return fmt.Errorf("failed to marshal fix request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to apply workflow fix: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("orchestrator returned error: %d", resp.StatusCode)
+	}
+
+	logger.Info("Workflow fix applied via orchestrator",
+		zap.String("workflow_id", fix.WorkflowID),
+		zap.String("node_id", fix.NodeID),
+		zap.String("fix_type", fix.FixType),
+		zap.Float64("confidence", fix.Confidence),
+	)
+
+	return nil
+}

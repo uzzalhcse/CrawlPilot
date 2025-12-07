@@ -1,9 +1,11 @@
 package recovery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,7 +17,9 @@ import (
 // IncidentReporter handles creating and storing incident reports
 // when automated recovery fails and human intervention is needed
 type IncidentReporter struct {
-	pool *pgxpool.Pool
+	pool            *pgxpool.Pool
+	slackWebhookURL string
+	httpClient      *http.Client
 }
 
 // IncidentReport contains all details for human investigation
@@ -107,8 +111,14 @@ const (
 )
 
 // NewIncidentReporter creates a new incident reporter
-func NewIncidentReporter(pool *pgxpool.Pool) *IncidentReporter {
-	return &IncidentReporter{pool: pool}
+func NewIncidentReporter(pool *pgxpool.Pool, slackWebhookURL string) *IncidentReporter {
+	return &IncidentReporter{
+		pool:            pool,
+		slackWebhookURL: slackWebhookURL,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
 }
 
 // CreateIncident creates a new incident report
@@ -499,4 +509,223 @@ func (r *IncidentReporter) generateSuggestedActions(incident *IncidentReport) []
 	}
 
 	return actions
+}
+
+// ProbeIncidentDetails contains context for probe failure incidents
+type ProbeIncidentDetails struct {
+	ProbeResult    interface{} `json:"probe_result"`
+	FixPlan        interface{} `json:"fix_plan,omitempty"`
+	Deviations     interface{} `json:"deviations,omitempty"`
+	FailedNodes    []string    `json:"failed_nodes"`
+	SnapshotPaths  []string    `json:"snapshot_paths"`
+	AIConfidence   float64     `json:"ai_confidence,omitempty"`
+	EscalateReason string      `json:"escalate_reason"`
+}
+
+// CreateFromProbeFailure creates an incident from probe failure
+func (r *IncidentReporter) CreateFromProbeFailure(
+	ctx context.Context,
+	workflowID, executionID string,
+	probeResult interface{},
+	fixPlan interface{}, // *ProbeFixPlan or nil
+	deviations interface{}, // *DeviationSummary or nil
+	reason string, // "low_confidence", "ai_error", "escalated", "no_fix"
+) (*IncidentReport, error) {
+
+	// Extract failed nodes and snapshots
+	failedNodes := make([]string, 0)
+	snapshotPaths := make([]string, 0)
+	var aiConfidence float64
+	var aiReasoning string
+
+	// Type assert fix plan if provided
+	if plan, ok := fixPlan.(*ProbeFixPlan); ok && plan != nil {
+		aiConfidence = plan.Confidence
+		aiReasoning = plan.Reasoning
+	}
+
+	// Build incident
+	incident := &IncidentReport{
+		ExecutionID:  executionID,
+		WorkflowID:   workflowID,
+		ErrorPattern: string(PatternLayoutChanged),
+		ErrorMessage: fmt.Sprintf("Probe failure: %s", reason),
+		AIEnabled:    true,
+		AIReasoning:  aiReasoning,
+		FirstErrorAt: time.Now(),
+		LastErrorAt:  time.Now(),
+	}
+
+	// Set failure reason
+	switch reason {
+	case "low_confidence":
+		incident.AIFailureReason = fmt.Sprintf("AI confidence (%.2f) below threshold", aiConfidence)
+		incident.Priority = PriorityMedium
+	case "ai_error":
+		incident.AIFailureReason = "AI agent encountered an error"
+		incident.Priority = PriorityHigh
+	case "escalated":
+		incident.AIFailureReason = "AI explicitly requested human review"
+		incident.Priority = PriorityHigh
+	case "no_fix":
+		incident.AIFailureReason = "No automated fix available"
+		incident.Priority = PriorityMedium
+	default:
+		incident.AIFailureReason = reason
+		incident.Priority = PriorityMedium
+	}
+
+	// Add probe-specific suggested actions
+	incident.SuggestedActions = []string{
+		"Review the probe result for failed nodes",
+		"Check the DOM snapshots for structure changes",
+		"Update CSS selectors if website layout changed",
+		"Consider if changes are temporary or permanent",
+		fmt.Sprintf("AI Analysis: %s", aiReasoning),
+	}
+
+	// Store full context as JSON in DOM snapshot field
+	details := ProbeIncidentDetails{
+		ProbeResult:    probeResult,
+		FixPlan:        fixPlan,
+		Deviations:     deviations,
+		FailedNodes:    failedNodes,
+		SnapshotPaths:  snapshotPaths,
+		AIConfidence:   aiConfidence,
+		EscalateReason: reason,
+	}
+	detailsJSON, _ := json.Marshal(details)
+	incident.DOMSnapshot = string(detailsJSON)
+
+	if err := r.CreateIncident(ctx, incident); err != nil {
+		return nil, err
+	}
+
+	// Send Slack notification for probe failures
+	go r.sendProbeSlackNotification(incident, aiConfidence, reason)
+
+	logger.Info("Probe failure incident created",
+		zap.String("incident_id", incident.ID),
+		zap.String("workflow_id", workflowID),
+		zap.String("reason", reason),
+		zap.Float64("ai_confidence", aiConfidence),
+	)
+
+	return incident, nil
+}
+
+// sendProbeSlackNotification sends a Slack notification for probe failures
+func (r *IncidentReporter) sendProbeSlackNotification(incident *IncidentReport, confidence float64, reason string) {
+	if r.slackWebhookURL == "" {
+		return
+	}
+
+	// Build priority emoji
+	priorityEmoji := "🟡"
+	switch incident.Priority {
+	case PriorityCritical:
+		priorityEmoji = "🔴"
+	case PriorityHigh:
+		priorityEmoji = "🟠"
+	case PriorityLow:
+		priorityEmoji = "🟢"
+	}
+
+	// Build Slack message with Block Kit
+	message := map[string]interface{}{
+		"blocks": []map[string]interface{}{
+			{
+				"type": "header",
+				"text": map[string]interface{}{
+					"type":  "plain_text",
+					"text":  fmt.Sprintf("%s Probe Failure - Human Review Needed", priorityEmoji),
+					"emoji": true,
+				},
+			},
+			{
+				"type": "section",
+				"fields": []map[string]interface{}{
+					{"type": "mrkdwn", "text": fmt.Sprintf("*Workflow:*\n%s", incident.WorkflowID)},
+					{"type": "mrkdwn", "text": fmt.Sprintf("*Priority:*\n%s", incident.Priority)},
+					{"type": "mrkdwn", "text": fmt.Sprintf("*AI Confidence:*\n%.0f%%", confidence*100)},
+					{"type": "mrkdwn", "text": fmt.Sprintf("*Reason:*\n%s", reason)},
+				},
+			},
+			{
+				"type": "section",
+				"text": map[string]interface{}{
+					"type": "mrkdwn",
+					"text": fmt.Sprintf("*AI Analysis:*\n```%s```", truncateForSlack(incident.AIReasoning, 200)),
+				},
+			},
+			{
+				"type": "divider",
+			},
+			{
+				"type": "actions",
+				"elements": []map[string]interface{}{
+					{
+						"type": "button",
+						"text": map[string]interface{}{
+							"type":  "plain_text",
+							"text":  "View Details",
+							"emoji": true,
+						},
+						"value":     incident.ID,
+						"action_id": "view_incident",
+					},
+					{
+						"type": "button",
+						"text": map[string]interface{}{
+							"type":  "plain_text",
+							"text":  "Acknowledge",
+							"emoji": true,
+						},
+						"style":     "primary",
+						"value":     incident.ID,
+						"action_id": "acknowledge_incident",
+					},
+				},
+			},
+		},
+	}
+
+	r.sendSlackMessage(message)
+}
+
+// sendSlackMessage sends a message to Slack webhook
+func (r *IncidentReporter) sendSlackMessage(message map[string]interface{}) {
+	if r.slackWebhookURL == "" || r.httpClient == nil {
+		return
+	}
+
+	body, err := json.Marshal(message)
+	if err != nil {
+		logger.Warn("Failed to marshal Slack message", zap.Error(err))
+		return
+	}
+
+	resp, err := r.httpClient.Post(r.slackWebhookURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		logger.Warn("Failed to send Slack notification", zap.Error(err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		logger.Warn("Slack webhook returned error",
+			zap.Int("status", resp.StatusCode),
+		)
+		return
+	}
+
+	logger.Info("Slack notification sent")
+}
+
+// truncateForSlack truncates text for Slack display
+func truncateForSlack(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }

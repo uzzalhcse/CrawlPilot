@@ -31,6 +31,15 @@ type ProbeRepository interface {
 
 	// UpdateProbeStatus updates the probe_status column on an execution
 	UpdateProbeStatus(ctx context.Context, executionID, status string) error
+
+	// GetBaselineProbeResult gets the last healthy probe result for baseline comparison
+	GetBaselineProbeResult(ctx context.Context, workflowID string) (*models.ProbeResult, error)
+
+	// UpdateNodeSelector updates a workflow node's selector (for auto-fix)
+	UpdateNodeSelector(ctx context.Context, workflowID, nodeID, newSelector, reason string) error
+
+	// DisableNode marks a workflow node as disabled (for skip_node fix)
+	DisableNode(ctx context.Context, workflowID, nodeID, reason string) error
 }
 
 // probeRepository implements ProbeRepository
@@ -221,6 +230,118 @@ func (r *probeRepository) UpdateProbeStatus(ctx context.Context, executionID, st
 	_, err := r.db.Pool.Exec(ctx, query, executionID, status)
 	if err != nil {
 		return fmt.Errorf("failed to update probe status: %w", err)
+	}
+
+	return nil
+}
+
+// GetBaselineProbeResult gets the last healthy probe result for baseline comparison
+func (r *probeRepository) GetBaselineProbeResult(ctx context.Context, workflowID string) (*models.ProbeResult, error) {
+	query := `
+		SELECT id, execution_id, workflow_id, status, duration_ms, phases, created_at
+		FROM probe_results
+		WHERE workflow_id = $1 AND status = 'healthy'
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var result models.ProbeResult
+	var phasesJSON []byte
+	err := r.db.Pool.QueryRow(ctx, query, workflowID).Scan(
+		&result.ID,
+		&result.ExecutionID,
+		&result.WorkflowID,
+		&result.Status,
+		&result.Duration,
+		&phasesJSON,
+		&result.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get baseline probe result: %w", err)
+	}
+
+	// Unmarshal phases JSON
+	if len(phasesJSON) > 0 {
+		if err := json.Unmarshal(phasesJSON, &result.Phases); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal phases: %w", err)
+		}
+	}
+
+	return &result, nil
+}
+
+// UpdateNodeSelector updates a workflow node's selector (for auto-fix)
+func (r *probeRepository) UpdateNodeSelector(ctx context.Context, workflowID, nodeID, newSelector, reason string) error {
+	// Update the node config in workflows table
+	// This uses jsonb_set to update the specific node's selector property
+	query := `
+		WITH phase_update AS (
+			SELECT w.id as workflow_id, 
+				   p.ordinal as phase_idx,
+				   n.ordinal as node_idx,
+				   p.element ->> 'id' as phase_id
+			FROM workflows w,
+				 LATERAL jsonb_array_elements(w.config->'phases') WITH ORDINALITY p(element, ordinal),
+				 LATERAL jsonb_array_elements(p.element->'nodes') WITH ORDINALITY n(element, ordinal)
+			WHERE w.id = $1 AND n.element ->> 'id' = $2
+			LIMIT 1
+		)
+		UPDATE workflows w
+		SET config = jsonb_set(
+			config,
+			ARRAY['phases', (pu.phase_idx - 1)::text, 'nodes', (pu.node_idx - 1)::text, 'config', 'selector'],
+			to_jsonb($3::text)
+		),
+		updated_at = NOW()
+		FROM phase_update pu
+		WHERE w.id = pu.workflow_id
+	`
+
+	result, err := r.db.Pool.Exec(ctx, query, workflowID, nodeID, newSelector)
+	if err != nil {
+		return fmt.Errorf("failed to update node selector: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("node %s not found in workflow %s", nodeID, workflowID)
+	}
+
+	return nil
+}
+
+// DisableNode marks a workflow node as disabled (for skip_node fix)
+func (r *probeRepository) DisableNode(ctx context.Context, workflowID, nodeID, reason string) error {
+	// Update the node config to add disabled=true
+	query := `
+		WITH phase_update AS (
+			SELECT w.id as workflow_id, 
+				   p.ordinal as phase_idx,
+				   n.ordinal as node_idx
+			FROM workflows w,
+				 LATERAL jsonb_array_elements(w.config->'phases') WITH ORDINALITY p(element, ordinal),
+				 LATERAL jsonb_array_elements(p.element->'nodes') WITH ORDINALITY n(element, ordinal)
+			WHERE w.id = $1 AND n.element ->> 'id' = $2
+			LIMIT 1
+		)
+		UPDATE workflows w
+		SET config = jsonb_set(
+			config,
+			ARRAY['phases', (pu.phase_idx - 1)::text, 'nodes', (pu.node_idx - 1)::text, 'disabled'],
+			'true'
+		),
+		updated_at = NOW()
+		FROM phase_update pu
+		WHERE w.id = pu.workflow_id
+	`
+
+	result, err := r.db.Pool.Exec(ctx, query, workflowID, nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to disable node: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("node %s not found in workflow %s", nodeID, workflowID)
 	}
 
 	return nil

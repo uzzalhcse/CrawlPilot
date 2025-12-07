@@ -42,12 +42,18 @@ type TaskExecutor struct {
 	retryConfig          RetryConfig                    // Retry configuration for transient failures
 	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
 	probeReporter        *reporter.ProbeReporter        // Reports probe results to orchestrator
+
+	// Probe auto-fix components
+	probeAgent       *recovery.ProbeAgent       // AI agent for probe fix analysis
+	probeBaseline    *recovery.ProbeBaseline    // Baseline comparison for probes
+	incidentReporter *recovery.IncidentReporter // Creates incidents for human review
 }
 
 // NewTaskExecutor creates a new task executor
 func NewTaskExecutor(
 	cfg *config.BrowserConfig,
 	gcpCfg *config.GCPConfig,
+	recoveryCfg *config.RecoveryConfig,
 	pubsubClient *queue.PubSubClient,
 	redisCache *cache.Cache,
 	orchestratorURL string,
@@ -156,6 +162,24 @@ func NewTaskExecutor(
 	// Create probe reporter for probe result reporting
 	probeReporter := reporter.NewProbeReporter(orchestratorURL)
 
+	// Initialize probe auto-fix components
+	probeBaseline := recovery.NewProbeBaseline()
+	var incidentReporter *recovery.IncidentReporter
+	var slackWebhookURL string
+	if recoveryCfg != nil {
+		slackWebhookURL = recoveryCfg.SlackWebhookURL
+	}
+	if db != nil {
+		incidentReporter = recovery.NewIncidentReporter(db.Pool, slackWebhookURL)
+	}
+
+	// ProbeAgent is initialized lazily when LLM provider is available from recoveryManager
+	var probeAgent *recovery.ProbeAgent
+	if recoveryManager != nil && recoveryManager.GetLLMProvider() != nil {
+		probeAgent = recovery.NewProbeAgent(recoveryManager.GetLLMProvider(), nil)
+		logger.Info("Probe auto-fix agent initialized")
+	}
+
 	return &TaskExecutor{
 		drivers:              drivers,
 		defaultDriver:        defaultDriver,
@@ -174,6 +198,9 @@ func NewTaskExecutor(
 		retryConfig:          DefaultRetryConfig(),
 		recoveryManager:      recoveryManager,
 		probeReporter:        probeReporter,
+		probeAgent:           probeAgent,
+		probeBaseline:        probeBaseline,
+		incidentReporter:     incidentReporter,
 	}, nil
 }
 
@@ -1406,4 +1433,135 @@ func (e *TaskExecutor) reportProbeResults(ctx context.Context, task *models.Task
 		zap.String("status", probeResult.Status),
 		zap.Int("phases", len(probeResult.Phases)),
 	)
+
+	// === PROBE AUTO-FIX FLOW ===
+	// If probe failed, run AI analysis and escalate to human if needed
+	if hasFailure && e.probeAgent != nil && e.incidentReporter != nil {
+		go e.handleProbeAutoFix(ctx, task, probeResult, result)
+	}
+}
+
+// handleProbeAutoFix runs AI analysis on failed probe and creates incident if needed
+func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task, probeResult *reporter.ProbeResultRequest, result *TaskResult) {
+	logger.Info("Starting probe auto-fix analysis",
+		zap.String("workflow_id", task.WorkflowID),
+		zap.String("execution_id", task.ExecutionID),
+	)
+
+	// Build full probe result for AI analysis
+	fullResult := &models.ProbeResult{
+		WorkflowID: task.WorkflowID,
+		Status:     probeResult.Status,
+		Duration:   int64(probeResult.DurationMs),
+		Phases:     probeResult.Phases,
+	}
+
+	// Fetch baseline from orchestrator for comparison
+	var baseline *models.ProbeResult
+	if e.probeReporter != nil {
+		var err error
+		baseline, err = e.probeReporter.GetBaseline(ctx, task.WorkflowID)
+		if err != nil {
+			logger.Warn("Failed to fetch baseline",
+				zap.String("workflow_id", task.WorkflowID),
+				zap.Error(err),
+			)
+			// Continue without baseline
+		}
+	}
+
+	// Compare with baseline
+	var deviations *recovery.DeviationSummary
+	if e.probeBaseline != nil {
+		deviations = e.probeBaseline.Compare(fullResult, baseline)
+	}
+
+	// Run AI analysis
+	fixPlan, err := e.probeAgent.AnalyzeProbeFailure(ctx, fullResult, baseline, deviations)
+	if err != nil {
+		logger.Warn("Probe AI analysis failed",
+			zap.String("workflow_id", task.WorkflowID),
+			zap.Error(err),
+		)
+		// Create incident for AI error
+		if e.incidentReporter != nil {
+			_, _ = e.incidentReporter.CreateFromProbeFailure(
+				ctx, task.WorkflowID, task.ExecutionID,
+				fullResult, nil, deviations, "ai_error",
+			)
+		}
+		return
+	}
+
+	// Check if AI suggested escalation or has low confidence
+	if fixPlan.FixType == "escalate" || !fixPlan.ShouldApply {
+		reason := "low_confidence"
+		if fixPlan.FixType == "escalate" {
+			reason = "escalated"
+		}
+
+		logger.Info("Probe auto-fix requires human review",
+			zap.String("workflow_id", task.WorkflowID),
+			zap.String("reason", reason),
+			zap.Float64("confidence", fixPlan.Confidence),
+		)
+
+		// Create incident for human review (Slack notification is sent automatically)
+		if e.incidentReporter != nil {
+			incident, err := e.incidentReporter.CreateFromProbeFailure(
+				ctx, task.WorkflowID, task.ExecutionID,
+				fullResult, fixPlan, deviations, reason,
+			)
+			if err != nil {
+				logger.Warn("Failed to create probe incident", zap.Error(err))
+			} else {
+				logger.Info("Probe incident created for human review",
+					zap.String("incident_id", incident.ID),
+					zap.String("workflow_id", task.WorkflowID),
+				)
+			}
+		}
+		return
+	}
+
+	// AI is confident - apply fix via orchestrator
+	logger.Info("Probe auto-fix: Applying AI fix",
+		zap.String("workflow_id", task.WorkflowID),
+		zap.String("fix_type", fixPlan.FixType),
+		zap.String("node_id", fixPlan.NodeID),
+		zap.Float64("confidence", fixPlan.Confidence),
+	)
+
+	if e.probeReporter != nil {
+		fixReq := &reporter.WorkflowFixRequest{
+			WorkflowID:  task.WorkflowID,
+			NodeID:      fixPlan.NodeID,
+			FixType:     fixPlan.FixType,
+			OldSelector: fixPlan.OldSelector,
+			NewSelector: fixPlan.NewSelector,
+			Reasoning:   fixPlan.Reasoning,
+			Confidence:  fixPlan.Confidence,
+			AutoApplied: true,
+		}
+
+		if err := e.probeReporter.ApplyWorkflowFix(ctx, fixReq); err != nil {
+			logger.Warn("Failed to apply workflow fix",
+				zap.String("workflow_id", task.WorkflowID),
+				zap.Error(err),
+			)
+			// Create incident for failed fix application
+			if e.incidentReporter != nil {
+				_, _ = e.incidentReporter.CreateFromProbeFailure(
+					ctx, task.WorkflowID, task.ExecutionID,
+					fullResult, fixPlan, deviations, "fix_failed",
+				)
+			}
+		} else {
+			logger.Info("Workflow fix applied successfully",
+				zap.String("workflow_id", task.WorkflowID),
+				zap.String("node_id", fixPlan.NodeID),
+				zap.String("new_selector", fixPlan.NewSelector),
+			)
+		}
+	}
 }
