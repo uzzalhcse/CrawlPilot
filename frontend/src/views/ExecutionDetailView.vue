@@ -51,7 +51,7 @@ const route = useRoute()
 const executionsStore = useExecutionsStore()
 const executionId = route.params.id as string
 
-const activeTab = ref('data')
+const activeTab = ref('errors')
 
 // Pagination State
 const currentPage = ref(1)
@@ -430,108 +430,14 @@ onMounted(async () => {
       <!-- Main Content -->
       <Tabs v-model="activeTab" class="space-y-3 w-full max-w-full">
         <TabsList class="h-8">
-          <TabsTrigger value="data" class="text-xs">Extracted Data</TabsTrigger>
           <TabsTrigger value="errors" class="text-xs">
             Errors
             <span v-if="errorCount > 0" class="ml-1.5 px-1.5 py-0.5 bg-destructive/10 text-destructive rounded text-[10px] font-medium">
               {{ errorCount }}
             </span>
           </TabsTrigger>
+          <TabsTrigger value="data" class="text-xs">Extracted Data</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="data" class="min-w-0 w-full max-w-full">
-          <Card class="p-4 w-full max-w-full">
-            <div class="mb-3 flex items-center justify-between">
-              <h3 class="text-sm font-semibold">Extracted Data ({{ totalItems }} items)</h3>
-              <div class="flex items-center gap-2">
-                 <Select :model-value="String(pageSize)" @update:model-value="handlePageSizeChange">
-                  <SelectTrigger class="w-[90px] h-8 text-xs">
-                    <SelectValue placeholder="Page Size" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10" class="text-xs">10 / page</SelectItem>
-                    <SelectItem value="50" class="text-xs">50 / page</SelectItem>
-                    <SelectItem value="100" class="text-xs">100 / page</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button @click="handleDownloadData" size="sm" variant="outline" class="h-8 text-xs">
-                  <Download class="mr-1.5 h-3 w-3" />
-                  Download JSON
-                </Button>
-              </div>
-            </div>
-            
-            <div v-if="parsedExtractedData.length === 0" class="py-8 text-center text-muted-foreground text-xs">
-              No data extracted yet.
-            </div>
-            
-            <div v-else class="space-y-3">
-              <div class="rounded-md border overflow-x-auto w-full max-w-full">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead class="w-[160px] text-xs h-9">Timestamp</TableHead>
-                      <TableHead v-for="col in dataColumns" :key="col" class="text-xs h-9">{{ col }}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow v-for="item in parsedExtractedData" :key="item.id">
-                      <TableCell class="whitespace-nowrap text-muted-foreground text-[11px] py-2">
-                        {{ formatDate(item.extracted_at) }}
-                      </TableCell>
-                      <TableCell v-for="col in dataColumns" :key="col" class="max-w-[300px] truncate text-xs py-2">
-                        <template v-if="isComplexValue(item.parsedData[col])">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            class="h-6 text-[11px] px-2"
-                            @click="openDetailDialog(col, item.parsedData[col])"
-                          >
-                            <Maximize2 class="mr-1 h-3 w-3" />
-                            View Details
-                          </Button>
-                        </template>
-                        <template v-else>
-                          {{ renderCell(item.parsedData[col]) }}
-                        </template>
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-
-              <!-- Pagination Controls -->
-              <div class="flex items-center justify-between">
-                <div class="text-xs text-muted-foreground">
-                  Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ Math.min(currentPage * pageSize, totalItems) }} of {{ totalItems }} entries
-                </div>
-                <div class="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    :disabled="currentPage === 1"
-                    @click="handlePageChange(currentPage - 1)"
-                    class="h-8 text-xs"
-                  >
-                    <ChevronLeft class="h-3 w-3" />
-                    Previous
-                  </Button>
-                  <div class="text-xs font-medium">Page {{ currentPage }}</div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    :disabled="currentPage * pageSize >= totalItems"
-                    @click="handlePageChange(currentPage + 1)"
-                    class="h-8 text-xs"
-                  >
-                    Next
-                    <ChevronRight class="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="errors" class="min-w-0 w-full max-w-full">
           <Card class="p-4 w-full max-w-full">
@@ -607,7 +513,99 @@ onMounted(async () => {
           </Card>
         </TabsContent>
 
+        <TabsContent value="data" class="min-w-0 w-full max-w-full">
+          <Card class="p-4 w-full max-w-full">
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-sm font-semibold">Extracted Data ({{ totalItems }} items)</h3>
+              <div class="flex items-center gap-2">
+                <Select :model-value="String(pageSize)" @update:model-value="handlePageSizeChange">
+                  <SelectTrigger class="w-[90px] h-8 text-xs">
+                    <SelectValue placeholder="Page Size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10" class="text-xs">10 / page</SelectItem>
+                    <SelectItem value="50" class="text-xs">50 / page</SelectItem>
+                    <SelectItem value="100" class="text-xs">100 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button @click="handleDownloadData" size="sm" variant="outline" class="h-8 text-xs">
+                  <Download class="mr-1.5 h-3 w-3" />
+                  Download JSON
+                </Button>
+              </div>
+            </div>
 
+            <div v-if="parsedExtractedData.length === 0" class="py-8 text-center text-muted-foreground text-xs">
+              No data extracted yet.
+            </div>
+
+            <div v-else class="space-y-3">
+              <div class="rounded-md border overflow-x-auto w-full max-w-full">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead class="w-[160px] text-xs h-9">Timestamp</TableHead>
+                      <TableHead v-for="col in dataColumns" :key="col" class="text-xs h-9">{{ col }}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow v-for="item in parsedExtractedData" :key="item.id">
+                      <TableCell class="whitespace-nowrap text-muted-foreground text-[11px] py-2">
+                        {{ formatDate(item.extracted_at) }}
+                      </TableCell>
+                      <TableCell v-for="col in dataColumns" :key="col" class="max-w-[300px] truncate text-xs py-2">
+                        <template v-if="isComplexValue(item.parsedData[col])">
+                          <Button
+                              variant="ghost"
+                              size="sm"
+                              class="h-6 text-[11px] px-2"
+                              @click="openDetailDialog(col, item.parsedData[col])"
+                          >
+                            <Maximize2 class="mr-1 h-3 w-3" />
+                            View Details
+                          </Button>
+                        </template>
+                        <template v-else>
+                          {{ renderCell(item.parsedData[col]) }}
+                        </template>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              <!-- Pagination Controls -->
+              <div class="flex items-center justify-between">
+                <div class="text-xs text-muted-foreground">
+                  Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ Math.min(currentPage * pageSize, totalItems) }} of {{ totalItems }} entries
+                </div>
+                <div class="flex items-center gap-2">
+                  <Button
+                      variant="outline"
+                      size="sm"
+                      :disabled="currentPage === 1"
+                      @click="handlePageChange(currentPage - 1)"
+                      class="h-8 text-xs"
+                  >
+                    <ChevronLeft class="h-3 w-3" />
+                    Previous
+                  </Button>
+                  <div class="text-xs font-medium">Page {{ currentPage }}</div>
+                  <Button
+                      variant="outline"
+                      size="sm"
+                      :disabled="currentPage * pageSize >= totalItems"
+                      @click="handlePageChange(currentPage + 1)"
+                      class="h-8 text-xs"
+                  >
+                    Next
+                    <ChevronRight class="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
 
       </Tabs>
     </div>
