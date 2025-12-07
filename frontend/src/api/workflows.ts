@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { Workflow, WorkflowConfig, HealthCheckSchedule, NotificationConfig, HealthCheckReport, ComparisonResponse, HealthCheckSnapshot } from '@/types'
+import type { Workflow, WorkflowConfig } from '@/types'
 
 export interface CreateWorkflowRequest {
   name: string
@@ -59,60 +59,9 @@ export const workflowsApi = {
     return apiClient.post<{ execution_id: string }>(`/workflows/${id}/execute`)
   },
 
-  // Run health check
-  runHealthCheck(id: string, config?: any) {
-    return apiClient.post<{ message: string; workflow_id: string }>(`/workflows/${id}/monitoring/run`, config || {})
-  },
-
-  // Get health check reports for a workflow
-  getHealthChecks(id: string, limit?: number) {
-    return apiClient.get<{ workflow_id: string; reports: any[]; total: number }>(`/workflows/${id}/monitoring`, {
-      params: { limit: limit || 10 }
-    })
-  },
-
-  // Get specific health check report
-  getHealthCheckReport(reportId: string) {
-    return apiClient.get<any>(`/monitoring/${reportId}`)
-  },
-
-  // Phase 2: Schedule Management
-  getSchedule(workflowId: string) {
-    return apiClient.get<HealthCheckSchedule>(`/workflows/${workflowId}/schedule`)
-  },
-
-  createSchedule(workflowId: string, data: Partial<HealthCheckSchedule>) {
-    return apiClient.post<HealthCheckSchedule>(`/workflows/${workflowId}/schedule`, data)
-  },
-
-  deleteSchedule(workflowId: string) {
-    return apiClient.delete(`/workflows/${workflowId}/schedule`)
-  },
-
-  testNotification(workflowId: string, config: NotificationConfig) {
-    return apiClient.post(`/workflows/${workflowId}/monitoring/run`, config)
-  },
-
-  // Baseline Management
-  setBaseline(reportId: string) {
-    return apiClient.post(`/monitoring/${reportId}/set-baseline`)
-  },
-
-  getBaseline(workflowId: string) {
-    return apiClient.get<HealthCheckReport>(`/workflows/${workflowId}/baseline`)
-  },
-
-  compareWithBaseline(reportId: string) {
-    return apiClient.get<ComparisonResponse>(`/monitoring/${reportId}/compare`)
-  },
-
-  // Snapshot API methods
-  getSnapshotsByReport(reportId: string) {
-    return apiClient.get<{ report_id: string; snapshots: HealthCheckSnapshot[]; total: number }>(`/monitoring/${reportId}/snapshots`)
-  },
-
+  // Snapshot API methods (used by Probes)
   getSnapshot(snapshotId: string) {
-    return apiClient.get<HealthCheckSnapshot>(`/snapshots/${snapshotId}`)
+    return apiClient.get<any>(`/snapshots/${snapshotId}`)
   },
 
   getScreenshotUrl(snapshotId: string) {

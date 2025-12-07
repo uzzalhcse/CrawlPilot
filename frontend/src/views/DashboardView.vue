@@ -44,7 +44,7 @@ const quickActions = [
   { label: 'New Workflow', icon: Plus, route: '/workflows/create', color: 'text-blue-500' },
   { label: 'Browse Plugins', icon: Search, route: '/plugins', color: 'text-purple-500' },
   { label: 'View Executions', icon: PlayCircle, route: '/executions', color: 'text-green-500' },
-  { label: 'System Status', icon: Activity, route: '/monitoring', color: 'text-orange-500' }
+  { label: 'View Probes', icon: Activity, route: '/probes', color: 'text-orange-500' }
 ]
 
 const navigateTo = (route: string) => {

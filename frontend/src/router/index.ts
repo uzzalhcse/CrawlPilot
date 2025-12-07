@@ -39,16 +39,6 @@ const router = createRouter({
           component: () => import('@/views/ExecutionDetailView.vue')
         },
         {
-          path: 'monitoring',
-          name: 'monitoring-overview',
-          component: () => import('@/views/HealthChecksOverview.vue')
-        },
-        {
-          path: 'monitoring/:id',
-          name: 'monitoring-detail',
-          component: () => import('@/views/HealthCheckView.vue')
-        },
-        {
           path: 'probes',
           name: 'probes',
           component: () => import('@/views/ProbesView.vue')

@@ -12,11 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
-  Store,
-  FileText,
   Calendar,
   Server,
-  HardDrive,
   HelpCircle,
   GlobeIcon,
   Package,
@@ -36,10 +33,8 @@ const menuItems = [
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
   { icon: Activity, label: 'Probes', route: '/probes' },
   { icon: Sparkles, label: 'Auto-Fixes', route: '/auto-fixes' },
-  { icon: Calendar, label: 'Monitoring', route: '/monitoring' },
   { icon: Package, label: 'Plugins', route: '/plugins' },
   { icon: Calendar, label: 'Schedules', route: '/schedules' },
-  { icon: FileText, label: 'Logs', route: '/logs' },
 ]
 
 const antiBotItems = [
@@ -50,7 +45,6 @@ const antiBotItems = [
 
 const bottomItems = [
   { icon: Server, label: 'Proxy', route: '/proxies' },
-  { icon: HardDrive, label: 'Storage', route: '/storage' },
   { icon: Settings, label: 'Settings', route: '/settings' },
   { icon: HelpCircle, label: 'Help', route: '/help' },
 ]
