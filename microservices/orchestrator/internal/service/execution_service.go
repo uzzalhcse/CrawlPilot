@@ -259,3 +259,133 @@ func (s *ExecutionService) GetExecutionErrors(ctx context.Context, executionID s
 func (s *ExecutionService) BatchInsertErrors(ctx context.Context, errors []models.ExecutionError) error {
 	return s.executionRepo.BatchInsertErrors(ctx, errors)
 }
+
+// StartProbeExecution starts a probe execution for validating workflow configuration
+// Probe executions run with limited data using sample URLs and probe_config overrides
+func (s *ExecutionService) StartProbeExecution(ctx context.Context, workflowID string) (*models.Execution, error) {
+	// Get workflow
+	workflow, err := s.workflowSvc.GetWorkflow(ctx, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workflow: %w", err)
+	}
+
+	// Create probe execution record
+	execution := &models.Execution{
+		WorkflowID:  workflowID,
+		Metadata:    make(map[string]interface{}),
+		IsProbe:     true,
+		TriggeredBy: "probe",
+	}
+
+	if err := s.executionRepo.Create(ctx, execution); err != nil {
+		return nil, fmt.Errorf("failed to create probe execution: %w", err)
+	}
+
+	logger.Info("Probe execution created",
+		zap.String("execution_id", execution.ID),
+		zap.String("workflow_id", workflowID),
+	)
+
+	// Enqueue probe tasks
+	if err := s.enqueueProbeURLs(ctx, workflow, execution); err != nil {
+		s.executionRepo.Complete(ctx, execution.ID, "failed")
+		return nil, fmt.Errorf("failed to enqueue probe URLs: %w", err)
+	}
+
+	return execution, nil
+}
+
+// enqueueProbeURLs creates probe tasks using sample URLs for each phase
+func (s *ExecutionService) enqueueProbeURLs(ctx context.Context, workflow *models.Workflow, execution *models.Execution) error {
+	if len(workflow.Config.Phases) == 0 {
+		return fmt.Errorf("no phases defined in workflow")
+	}
+
+	firstPhase := workflow.Config.Phases[0]
+
+	// Resolve node profiles
+	nodeProfiles := s.resolveNodeProfiles(ctx, workflow.Config.Phases)
+
+	// Prepare metadata
+	metadata := map[string]interface{}{
+		"max_depth":        workflow.Config.MaxDepth,
+		"rate_limit_delay": workflow.Config.RateLimitDelay,
+		"phases":           workflow.Config.Phases,
+	}
+
+	if len(nodeProfiles) > 0 {
+		metadata["node_profiles"] = nodeProfiles
+	}
+
+	// Get sample URL for first phase
+	sampleURL := s.getSampleURLForPhase(workflow, firstPhase)
+	if sampleURL == "" {
+		return fmt.Errorf("no sample URL available for first phase")
+	}
+
+	// Create single task for probe (start with first phase only)
+	task := &models.Task{
+		TaskID:           uuid.New().String(),
+		ExecutionID:      execution.ID,
+		WorkflowID:       workflow.ID,
+		URL:              sampleURL,
+		Depth:            0,
+		PhaseID:          firstPhase.ID,
+		PhaseConfig:      firstPhase,
+		WorkflowConfig:   &workflow.Config,
+		Metadata:         metadata,
+		BrowserProfileID: workflow.BrowserProfileID,
+		IsProbe:          true,
+	}
+
+	// Publish single probe task
+	if err := s.pubsubClient.PublishTask(ctx, task); err != nil {
+		return fmt.Errorf("failed to publish probe task: %w", err)
+	}
+
+	// Initialize outstanding count
+	if s.redisCache != nil {
+		key := outstandingKeyPrefix + execution.ID
+		s.redisCache.IncrBy(ctx, key, 1)
+		s.redisCache.Expire(ctx, key, completionTTL)
+	}
+
+	logger.Info("Probe task enqueued",
+		zap.String("execution_id", execution.ID),
+		zap.String("sample_url", sampleURL),
+	)
+
+	return nil
+}
+
+// getSampleURLForPhase determines the sample URL for a phase
+func (s *ExecutionService) getSampleURLForPhase(workflow *models.Workflow, phase models.WorkflowPhase) string {
+	// Priority 1: Phase-level probe_urls
+	if len(phase.ProbeURLs) > 0 {
+		return phase.ProbeURLs[0]
+	}
+
+	// Priority 2: Start URLs for depth 0 phases
+	if phase.URLFilter == nil || phase.URLFilter.Depth == 0 {
+		if len(workflow.Config.StartURLs) > 0 {
+			return workflow.Config.StartURLs[0]
+		}
+	}
+
+	// Priority 3: Would query probe_sample_urls table (future enhancement)
+	// For now, fall back to start URL
+	if len(workflow.Config.StartURLs) > 0 {
+		return workflow.Config.StartURLs[0]
+	}
+
+	return ""
+}
+
+// GetProbeHistory retrieves probe execution history for a workflow
+func (s *ExecutionService) GetProbeHistory(ctx context.Context, workflowID string, limit int) ([]*models.Execution, error) {
+	filters := repository.ListFilters{
+		Limit:   limit,
+		IsProbe: true,
+	}
+	return s.executionRepo.List(ctx, workflowID, filters)
+}

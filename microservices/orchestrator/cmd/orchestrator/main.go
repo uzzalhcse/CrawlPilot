@@ -151,6 +151,10 @@ func main() {
 	workflows.Post("/:id/execute", executionHandler.StartExecution)
 	workflows.Get("/:id/executions", executionHandler.ListExecutions)
 
+	// Probe routes (workflow configuration validation)
+	workflows.Post("/:id/probe", executionHandler.StartProbe)
+	workflows.Get("/:id/probe/history", executionHandler.GetProbeHistory)
+
 	executions := api.Group("/executions")
 	executions.Get("/", executionHandler.ListAllExecutions) // List all executions
 	executions.Get("/:id", executionHandler.GetExecution)
@@ -224,6 +228,19 @@ func main() {
 	internal.Post("/errors/batch", statsHandler.BatchInsertErrors)
 	// Execution completion signal from workers
 	internal.Post("/executions/:id/complete", statsHandler.CompleteExecution)
+
+	// Initialize probe repository and handler
+	probeRepo := repository.NewProbeRepository(db)
+	probeHandler := handlers.NewProbeHandler(probeRepo, executionRepo)
+
+	// Internal probe endpoints (for worker → orchestrator communication)
+	internal.Post("/probes/result", probeHandler.SaveProbeResult)
+	internal.Post("/probes/sample-urls", probeHandler.SaveSampleURLs)
+
+	// Public probe endpoints (for API consumers)
+	workflows.Get("/:id/probe/results", probeHandler.GetProbeResults)
+	workflows.Get("/:id/probe/latest", probeHandler.GetLatestProbeResult)
+	workflows.Get("/:id/probe/sample-urls", probeHandler.GetSampleURLs)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

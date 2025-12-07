@@ -33,6 +33,7 @@ type WorkflowPhase struct {
 	Nodes      []Node           `json:"nodes"` // Nodes are inside the phase
 	URLFilter  *URLFilter       `json:"url_filter,omitempty"`
 	Transition *PhaseTransition `json:"transition,omitempty"`
+	ProbeURLs  []string         `json:"probe_urls,omitempty"` // Sample URLs for probe execution
 }
 
 // URLFilter defines URL filtering rules for a phase
@@ -49,10 +50,11 @@ type PhaseTransition struct {
 
 // Node represents a workflow node
 type Node struct {
-	ID     string                 `json:"id"`
-	Type   string                 `json:"type"`
-	Name   string                 `json:"name,omitempty"`
-	Params map[string]interface{} `json:"params"` // Changed from config to params
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Name        string                 `json:"name,omitempty"`
+	Params      map[string]interface{} `json:"params"`                 // Changed from config to params
+	ProbeConfig map[string]interface{} `json:"probe_config,omitempty"` // Override params for probe execution
 }
 
 // Execution represents a workflow execution
@@ -79,6 +81,10 @@ type Execution struct {
 
 	// Phase breakdown stats
 	PhaseStats map[string]PhaseStatEntry `json:"phase_stats,omitempty"`
+
+	// Probe execution fields
+	IsProbe     bool   `json:"is_probe"`
+	ProbeStatus string `json:"probe_status,omitempty"` // healthy, degraded, broken
 }
 
 // ExecutionStats holds execution statistics for the execution list view
@@ -129,6 +135,9 @@ type Task struct {
 	// Proxy settings (populated by recovery system)
 	ProxyURL string `json:"proxy_url,omitempty"` // Full proxy URL with auth
 	ProxyID  string `json:"proxy_id,omitempty"`  // Proxy ID for tracking
+
+	// Probe execution flag
+	IsProbe bool `json:"is_probe"`
 }
 
 // ExtractedItem represents extracted data

@@ -41,6 +41,7 @@ type TaskExecutor struct {
 	completionTracker    *reporter.CompletionTracker    // Tracks outstanding tasks for completion
 	retryConfig          RetryConfig                    // Retry configuration for transient failures
 	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
+	probeReporter        *reporter.ProbeReporter        // Reports probe results to orchestrator
 }
 
 // NewTaskExecutor creates a new task executor
@@ -152,6 +153,9 @@ func NewTaskExecutor(
 	// Create driver factory for profile-based driver creation
 	driverFactory := driver.NewFactory(cfg)
 
+	// Create probe reporter for probe result reporting
+	probeReporter := reporter.NewProbeReporter(orchestratorURL)
+
 	return &TaskExecutor{
 		drivers:              drivers,
 		defaultDriver:        defaultDriver,
@@ -169,6 +173,7 @@ func NewTaskExecutor(
 		completionTracker:    completionTracker,
 		retryConfig:          DefaultRetryConfig(),
 		recoveryManager:      recoveryManager,
+		probeReporter:        probeReporter,
 	}, nil
 }
 
@@ -516,6 +521,16 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		}
 	}
 
+	// Report probe results for this phase (each task = one phase)
+	// Report immediately, don't wait for execution completion
+	if task.IsProbe && e.probeReporter != nil {
+		logger.Debug("Reporting probe result for phase",
+			zap.String("phase_id", task.PhaseID),
+			zap.Int("node_results", len(result.NodeResults)),
+		)
+		e.reportProbeResults(ctx, task, result, duration)
+	}
+
 	return nil
 }
 
@@ -524,6 +539,7 @@ type TaskResult struct {
 	ExtractedItems []map[string]interface{}
 	DiscoveredURLs interface{} // Can be []string or []map[string]interface{}
 	Errors         []error
+	NodeResults    []models.NodeProbeResult // Probe mode: per-node execution results (snapshots attached to failed nodes)
 }
 
 // executePhase executes all nodes in a phase
@@ -532,6 +548,7 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		ExtractedItems: make([]map[string]interface{}, 0),
 		DiscoveredURLs: make([]string, 0),
 		Errors:         make([]error, 0),
+		NodeResults:    make([]models.NodeProbeResult, 0), // Initialize for probe mode
 	}
 
 	// Get nodes for this phase
@@ -795,11 +812,24 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 
 	// Execute each node in sequence
 	for i, node := range phaseNodes {
+		// Apply probe_config if in probe mode
+		// probe_config overrides specific params for limited execution
+		if task.IsProbe && node.ProbeConfig != nil {
+			node = applyProbeConfig(node)
+			logger.Debug("Applied probe_config to node",
+				zap.String("node_id", node.ID),
+				zap.Any("probe_config", node.ProbeConfig),
+			)
+		}
+
 		logger.Debug("Executing node",
 			zap.String("node_id", node.ID),
 			zap.String("node_type", node.Type),
 			zap.Int("node_index", i),
 		)
+
+		// Track node execution for probe mode
+		nodeStartTime := time.Now()
 
 		// Get executor for this node type
 		executor, err := e.nodeRegistry.Get(node.Type)
@@ -809,6 +839,18 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 				zap.Error(err),
 			)
 			result.Errors = append(result.Errors, err)
+
+			// Track failed node for probe
+			if task.IsProbe {
+				result.NodeResults = append(result.NodeResults, models.NodeProbeResult{
+					NodeID:   node.ID,
+					NodeName: node.Name,
+					NodeType: node.Type,
+					Status:   "failed",
+					Duration: time.Since(nodeStartTime).Milliseconds(),
+					Error:    err.Error(),
+				})
+			}
 			continue
 		}
 
@@ -816,6 +858,62 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		err = WithRetry(func() error {
 			return executor.Execute(ctx, execCtx, node)
 		}, e.retryConfig)
+
+		// Track node result for probe mode
+		if task.IsProbe {
+			nodeResult := models.NodeProbeResult{
+				NodeID:   node.ID,
+				NodeName: node.Name,
+				NodeType: node.Type,
+				Duration: time.Since(nodeStartTime).Milliseconds(),
+			}
+
+			if err != nil {
+				nodeResult.Status = "failed"
+				nodeResult.Error = err.Error()
+
+				// Capture snapshot immediately when node fails
+				if execCtx.Page != nil {
+					snapshot, snapErr := e.captureNodeSnapshot(ctx, execCtx.Page, task, node.ID)
+					if snapErr != nil {
+						logger.Warn("Failed to capture node snapshot",
+							zap.String("node_id", node.ID),
+							zap.Error(snapErr),
+						)
+					} else {
+						nodeResult.Snapshot = snapshot
+						// Add selector context from DOM
+						if snapshot != nil && snapshot.DOMPath != "" {
+							if selector, ok := node.Params["selector"].(string); ok {
+								nodeResult.Selector = selector
+								nodeResult.SelectorContext = e.extractSelectorContext(snapshot.DOMPath, selector)
+							}
+						}
+					}
+				}
+			} else {
+				nodeResult.Status = "passed"
+				// Track additional metrics based on node type
+				if selector, ok := node.Params["selector"].(string); ok {
+					nodeResult.Selector = selector
+				}
+				// Track links found for extract_links nodes
+				if discoveredURLs, ok := execCtx.Variables["discovered_urls"]; ok {
+					switch v := discoveredURLs.(type) {
+					case []string:
+						nodeResult.LinksFound = len(v)
+					case []map[string]interface{}:
+						nodeResult.LinksFound = len(v)
+					}
+				}
+				// Track element count for extract nodes
+				if items, ok := execCtx.Variables["extracted_items"].([]map[string]interface{}); ok {
+					nodeResult.ElementCount = len(items)
+				}
+			}
+
+			result.NodeResults = append(result.NodeResults, nodeResult)
+		}
 
 		if err != nil {
 			logger.Error("Node execution failed after retries",
@@ -861,6 +959,9 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 		// Fallback to ExecutionContext.DiscoveredURLs (plain []string) only if Variables not set
 		result.DiscoveredURLs = execCtx.DiscoveredURLs
 	}
+
+	// Note: Probe snapshots are now captured per-node when each node fails
+	// See node execution loop above
 
 	return execCtx.Page, result, nil
 }
@@ -913,6 +1014,7 @@ func (e *TaskExecutor) requeueDiscoveredURLs(ctx context.Context, task *models.T
 			Metadata:         task.Metadata,
 			RetryCount:       0,
 			BrowserProfileID: task.BrowserProfileID, // Propagate browser profile to child tasks
+			IsProbe:          task.IsProbe,          // Propagate probe flag to child tasks
 		}
 
 		tasks = append(tasks, newTask)
@@ -1213,4 +1315,95 @@ func (e *TaskExecutor) fetchBrowserProfile(profileID string) (*models.BrowserPro
 	e.profileCache[profileID] = &profile
 
 	return &profile, nil
+}
+
+// applyProbeConfig merges probe_config into node params for probe execution.
+// probe_config values override the corresponding params values.
+func applyProbeConfig(node models.Node) models.Node {
+	if node.ProbeConfig == nil {
+		return node
+	}
+
+	// Clone params to avoid modifying original
+	newParams := make(map[string]interface{})
+	for k, v := range node.Params {
+		newParams[k] = v
+	}
+
+	// Override with probe_config values
+	for k, v := range node.ProbeConfig {
+		newParams[k] = v
+	}
+
+	node.Params = newParams
+	return node
+}
+
+// reportProbeResults aggregates and reports probe execution results to orchestrator
+func (e *TaskExecutor) reportProbeResults(ctx context.Context, task *models.Task, result *TaskResult, duration time.Duration) {
+	// Build phase result from task result
+	phaseResult := models.PhaseProbeResult{
+		PhaseID:   task.PhaseID,
+		PhaseName: task.PhaseConfig.Name,
+		SampleURL: task.URL,
+		Duration:  duration.Milliseconds(),
+		Nodes:     result.NodeResults, // Snapshots are attached to individual failed nodes
+	}
+
+	// Determine phase status
+	hasFailure := false
+	for _, node := range result.NodeResults {
+		if node.Status == "failed" {
+			hasFailure = true
+			break
+		}
+	}
+	if hasFailure {
+		phaseResult.Status = "failed"
+	} else {
+		phaseResult.Status = "passed"
+	}
+
+	// Collect all phase errors
+	if len(result.Errors) > 0 {
+		errMsgs := make([]string, 0, len(result.Errors))
+		for _, err := range result.Errors {
+			errMsgs = append(errMsgs, err.Error())
+		}
+		phaseResult.Error = fmt.Sprintf("%d errors: %v", len(errMsgs), errMsgs[:min(3, len(errMsgs))])
+	}
+
+	// Create probe result request
+	probeResult := &reporter.ProbeResultRequest{
+		ExecutionID: task.ExecutionID,
+		WorkflowID:  task.WorkflowID,
+		Status:      reporter.DetermineProbeStatus([]models.PhaseProbeResult{phaseResult}),
+		DurationMs:  int(duration.Milliseconds()),
+		Phases:      []models.PhaseProbeResult{phaseResult},
+	}
+
+	// Send to orchestrator
+	if err := e.probeReporter.ReportProbeResult(ctx, probeResult); err != nil {
+		logger.Warn("Failed to report probe result",
+			zap.String("execution_id", task.ExecutionID),
+			zap.Error(err),
+		)
+	}
+
+	// Also save sample URL for this phase (for future probes)
+	sampleURLs := map[string]string{
+		task.PhaseID: task.URL,
+	}
+	if err := e.probeReporter.ReportSampleURLs(ctx, task.WorkflowID, sampleURLs); err != nil {
+		logger.Warn("Failed to save sample URL",
+			zap.String("workflow_id", task.WorkflowID),
+			zap.Error(err),
+		)
+	}
+
+	logger.Info("Probe result reported",
+		zap.String("execution_id", task.ExecutionID),
+		zap.String("status", probeResult.Status),
+		zap.Int("phases", len(probeResult.Phases)),
+	)
 }

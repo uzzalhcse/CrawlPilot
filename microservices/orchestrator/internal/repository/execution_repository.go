@@ -43,9 +43,14 @@ func (r *postgresExecutionRepo) Create(ctx context.Context, execution *models.Ex
 		metadataJSON = "{}"
 	}
 
+	// Default triggered_by to "manual" if not set
+	if execution.TriggeredBy == "" {
+		execution.TriggeredBy = "manual"
+	}
+
 	query := `
-		INSERT INTO workflow_executions (id, workflow_id, status, started_at, metadata)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO workflow_executions (id, workflow_id, status, started_at, metadata, is_probe, triggered_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
 	_, err := r.db.Pool.Exec(ctx, query,
@@ -54,6 +59,8 @@ func (r *postgresExecutionRepo) Create(ctx context.Context, execution *models.Ex
 		execution.Status,
 		execution.StartedAt,
 		metadataJSON,
+		execution.IsProbe,
+		execution.TriggeredBy,
 	)
 
 	if err != nil {

@@ -184,3 +184,51 @@ func (h *ExecutionHandler) GetStats(c *fiber.Ctx) error {
 
 	return c.JSON(stats)
 }
+
+// StartProbe handles POST /api/v1/workflows/:id/probe
+// Starts a probe execution to validate workflow configuration
+func (h *ExecutionHandler) StartProbe(c *fiber.Ctx) error {
+	workflowID := c.Params("id")
+
+	execution, err := h.executionSvc.StartProbeExecution(c.Context(), workflowID)
+	if err != nil {
+		logger.Error("Failed to start probe execution",
+			zap.String("workflow_id", workflowID),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+		"execution_id": execution.ID,
+		"workflow_id":  execution.WorkflowID,
+		"status":       execution.Status,
+		"is_probe":     execution.IsProbe,
+		"started_at":   execution.StartedAt,
+	})
+}
+
+// GetProbeHistory handles GET /api/v1/workflows/:id/probe/history
+// Returns probe execution history for a workflow
+func (h *ExecutionHandler) GetProbeHistory(c *fiber.Ctx) error {
+	workflowID := c.Params("id")
+	limit := c.QueryInt("limit", 10)
+
+	executions, err := h.executionSvc.GetProbeHistory(c.Context(), workflowID, limit)
+	if err != nil {
+		logger.Error("Failed to get probe history",
+			zap.String("workflow_id", workflowID),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get probe history",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"executions": executions,
+		"count":      len(executions),
+	})
+}

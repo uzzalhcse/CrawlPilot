@@ -77,6 +77,7 @@ type ListFilters struct {
 	Offset     int
 	Status     string
 	WorkflowID string // Optional: filter by workflow
+	IsProbe    bool   // Filter for probe executions only
 }
 
 // ExecutionStats holds execution statistics
