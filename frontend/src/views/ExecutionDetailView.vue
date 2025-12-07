@@ -39,7 +39,8 @@ import {
   Pause,
   ChevronLeft,
   ChevronRight,
-  Maximize2
+  Maximize2,
+  RefreshCw
 } from 'lucide-vue-next'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -72,6 +73,32 @@ const errorPageSize = ref(50)
 const execution = computed(() => executionsStore.currentExecution)
 const extractedData = computed(() => executionsStore.extractedData)
 const totalItems = computed(() => executionsStore.extractedDataTotal)
+
+// Phase Stats Configuration
+const hasPhaseStats = computed(() => {
+  return execution.value?.phase_stats && Object.keys(execution.value.phase_stats).length > 0
+})
+
+// Phase stats with duration for display
+const phaseStatsList = computed(() => {
+  if (!execution.value?.phase_stats) return []
+  
+  const phaseStats = execution.value.phase_stats
+  return Object.entries(phaseStats).map(([phaseId, stats]: [string, any]) => ({
+    id: phaseId,
+    processed: stats?.processed || 0,
+    errors: stats?.errors || 0,
+    durationMs: stats?.duration_ms || 0,
+    successRate: stats?.processed ? 
+      Math.round((stats.processed / (stats.processed + (stats?.errors || 0))) * 100) : 0
+  }))
+})
+
+const formatDurationMs = (ms: number) => {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+}
 
 // Parse the JSON string data into objects
 const parsedExtractedData = computed(() => {
@@ -292,6 +319,15 @@ onMounted(async () => {
       </template>
       <template #actions>
         <Button 
+          variant="outline"
+          @click="loadExecutionData"
+          size="sm"
+          :disabled="executionsStore.loading"
+        >
+          <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': executionsStore.loading }" />
+          Refresh
+        </Button>
+        <Button 
           v-if="execution?.status === 'paused'" 
           variant="default" 
           @click="handleResume"
@@ -365,6 +401,32 @@ onMounted(async () => {
         </div>
       </Card>
 
+      <!-- Phase Stats Cards - Single Row -->
+      <div v-if="hasPhaseStats" class="flex gap-2 w-full">
+        <div
+          v-for="phase in phaseStatsList"
+          :key="phase.id"
+          class="flex-1 min-w-0 flex flex-col p-3 rounded-lg bg-card border"
+        >
+          <span class="text-xs font-medium truncate">{{ phase.id }}</span>
+          <div class="flex items-baseline gap-1.5 mt-1">
+            <span class="text-lg font-semibold">{{ formatDurationMs(phase.durationMs) }}</span>
+            <span class="text-[10px] text-muted-foreground">duration</span>
+          </div>
+          <div class="flex items-center gap-2 mt-1.5 text-[10px]">
+            <span class="text-green-500">{{ phase.processed }} processed</span>
+            <span class="text-muted-foreground">•</span>
+            <span :class="phase.errors > 0 ? 'text-red-500' : 'text-muted-foreground'">{{ phase.errors }} errors</span>
+          </div>
+          <div class="mt-1.5 h-1 bg-muted rounded-full overflow-hidden">
+            <div 
+              class="h-full bg-green-500 rounded-full" 
+              :style="{ width: `${phase.successRate}%` }"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- Main Content -->
       <Tabs v-model="activeTab" class="space-y-3 w-full max-w-full">
         <TabsList class="h-8">
@@ -373,12 +435,6 @@ onMounted(async () => {
             Errors
             <span v-if="errorCount > 0" class="ml-1.5 px-1.5 py-0.5 bg-destructive/10 text-destructive rounded text-[10px] font-medium">
               {{ errorCount }}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="phases" class="text-xs">
-            Phase Stats
-            <span v-if="execution.phase_stats && Object.keys(execution.phase_stats).length > 0" class="ml-1.5 px-1.5 py-0.5 bg-blue-500/10 text-blue-500 rounded text-[10px] font-medium">
-              {{ Object.keys(execution.phase_stats).length }}
             </span>
           </TabsTrigger>
         </TabsList>
@@ -479,15 +535,9 @@ onMounted(async () => {
 
         <TabsContent value="errors" class="min-w-0 w-full max-w-full">
           <Card class="p-4 w-full max-w-full">
-            <div class="mb-3 flex items-center justify-between">
-              <div>
-                <h3 class="text-sm font-semibold mb-1">Error Log ({{ errorCount }} errors)</h3>
-                <p class="text-xs text-muted-foreground">Errors encountered during execution</p>
-              </div>
-              <Button variant="outline" size="sm" @click="loadExecutionErrors" :disabled="loadingErrors" class="h-8 text-xs">
-                <Loader2 v-if="loadingErrors" class="mr-1.5 h-3 w-3 animate-spin" />
-                Refresh
-              </Button>
+            <div class="mb-3">
+              <h3 class="text-sm font-semibold mb-1">Error Log ({{ errorCount }} errors)</h3>
+              <p class="text-xs text-muted-foreground">Errors encountered during execution</p>
             </div>
 
             <div v-if="loadingErrors" class="flex items-center justify-center py-12">
@@ -557,52 +607,7 @@ onMounted(async () => {
           </Card>
         </TabsContent>
 
-        <TabsContent value="phases" class="min-w-0 w-full max-w-full">
-          <Card class="p-4 w-full max-w-full">
-            <div class="mb-4">
-              <h3 class="text-sm font-semibold mb-1">Phase Breakdown</h3>
-              <p class="text-xs text-muted-foreground">Per-phase execution statistics</p>
-            </div>
 
-            <div v-if="!execution.phase_stats || Object.keys(execution.phase_stats).length === 0" class="py-12 text-center">
-              <div class="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                <Clock class="h-6 w-6 text-muted-foreground" />
-              </div>
-              <p class="text-sm text-muted-foreground mb-1">No phase data yet</p>
-              <p class="text-xs text-muted-foreground">Phase stats will appear as the execution progresses</p>
-            </div>
-
-            <div v-else class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              <div 
-                v-for="(stats, phaseId) in execution.phase_stats" 
-                :key="phaseId"
-                class="border rounded-lg p-4 space-y-3"
-              >
-                <div class="flex items-center justify-between">
-                  <span class="text-sm font-medium truncate">{{ phaseId }}</span>
-                  <Badge variant="outline" class="text-[10px]">
-                    {{ ((stats.processed / (stats.processed + stats.errors)) * 100 || 0).toFixed(0) }}% success
-                  </Badge>
-                </div>
-                
-                <div class="grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <div class="text-lg font-semibold text-green-500">{{ stats.processed }}</div>
-                    <div class="text-[10px] text-muted-foreground">Processed</div>
-                  </div>
-                  <div>
-                    <div class="text-lg font-semibold text-red-500">{{ stats.errors }}</div>
-                    <div class="text-[10px] text-muted-foreground">Errors</div>
-                  </div>
-                  <div>
-                    <div class="text-lg font-semibold">{{ (stats.duration_ms / 1000).toFixed(1) }}s</div>
-                    <div class="text-[10px] text-muted-foreground">Duration</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </TabsContent>
 
       </Tabs>
     </div>
