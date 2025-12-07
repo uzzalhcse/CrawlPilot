@@ -18,6 +18,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/nodes"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/recovery"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/recovery/llm"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/reporter"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/storage"
 	"go.uber.org/zap"
@@ -134,8 +135,22 @@ func NewTaskExecutor(
 
 	// Initialize recovery manager for smart error recovery
 	var recoveryManager *recovery.RecoveryManager
-	if db != nil && redisCache != nil {
-		recoveryConfig := recovery.DefaultManagerConfig()
+	if db != nil && redisCache != nil && recoveryCfg != nil && recoveryCfg.Enabled {
+		recoveryConfig := &recovery.ManagerConfig{
+			Enabled:              recoveryCfg.Enabled,
+			MaxRecoveryAttempts:  recoveryCfg.MaxRecoveryAttempts,
+			AIFallbackEnabled:    recoveryCfg.AIFallbackEnabled,
+			WindowSize:           recoveryCfg.WindowSize,
+			ErrorRateThreshold:   recoveryCfg.ErrorRateThreshold,
+			ConsecutiveThreshold: recoveryCfg.ConsecutiveThreshold,
+			SlackWebhookURL:      recoveryCfg.SlackWebhookURL,
+			LLMConfig: llm.Config{
+				Provider: recoveryCfg.LLMProvider,
+				Model:    recoveryCfg.LLMModel,
+				Endpoint: recoveryCfg.LLMEndpoint,
+				Timeout:  recoveryCfg.LLMTimeout,
+			},
+		}
 		rm, err := recovery.NewRecoveryManager(db.Pool, redisCache, pubsubClient, recoveryConfig)
 		if err != nil {
 			logger.Warn("Failed to initialize recovery manager", zap.Error(err))
