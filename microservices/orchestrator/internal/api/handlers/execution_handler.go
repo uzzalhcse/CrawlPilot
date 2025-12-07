@@ -141,3 +141,46 @@ func (h *ExecutionHandler) GetExecutionErrors(c *fiber.Ctx) error {
 		"count":  len(errors),
 	})
 }
+
+// GetExtractedData handles GET /api/v1/executions/:id/data
+func (h *ExecutionHandler) GetExtractedData(c *fiber.Ctx) error {
+	id := c.Params("id")
+	limit := c.QueryInt("limit", 50)
+	offset := c.QueryInt("offset", 0)
+
+	items, total, err := h.executionSvc.GetExtractedData(c.Context(), id, limit, offset)
+	if err != nil {
+		logger.Error("Failed to get extracted data",
+			zap.String("execution_id", id),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get extracted data",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"items":  items,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+// GetStats handles GET /api/v1/executions/:id/stats
+func (h *ExecutionHandler) GetStats(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	stats, err := h.executionSvc.GetStats(c.Context(), id)
+	if err != nil {
+		logger.Error("Failed to get execution stats",
+			zap.String("execution_id", id),
+			zap.Error(err),
+		)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to get stats",
+		})
+	}
+
+	return c.JSON(stats)
+}

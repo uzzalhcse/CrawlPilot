@@ -126,6 +126,16 @@ func (s *ExecutionService) StopExecution(ctx context.Context, id string) error {
 	return nil
 }
 
+// GetExtractedData retrieves extracted items for an execution with pagination
+func (s *ExecutionService) GetExtractedData(ctx context.Context, id string, limit int, offset int) ([]*models.ExtractedItem, int, error) {
+	return s.executionRepo.GetExtractedData(ctx, id, limit, offset)
+}
+
+// GetStats retrieves aggregated statistics for an execution
+func (s *ExecutionService) GetStats(ctx context.Context, id string) (*models.ExecutionStats, error) {
+	return s.executionRepo.GetStats(ctx, id)
+}
+
 // enqueueStartURLs creates tasks for all start URLs
 func (s *ExecutionService) enqueueStartURLs(ctx context.Context, workflow *models.Workflow, execution *models.Execution) error {
 	if len(workflow.Config.Phases) == 0 {

@@ -468,3 +468,105 @@ func (r *postgresExecutionRepo) UpdatePhaseStats(ctx context.Context, id string,
 
 	return nil
 }
+
+// GetExtractedData retrieves extracted items for an execution with pagination
+func (r *postgresExecutionRepo) GetExtractedData(ctx context.Context, executionID string, limit int, offset int) ([]*models.ExtractedItem, int, error) {
+	// Default limits
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	// Get total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM extracted_items WHERE execution_id = $1`
+	err := r.db.Pool.QueryRow(ctx, countQuery, executionID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get item count: %w", err)
+	}
+
+	// Get items with pagination
+	query := `
+		SELECT id, execution_id, workflow_id, task_id, url, data, extracted_at
+		FROM extracted_items
+		WHERE execution_id = $1
+		ORDER BY extracted_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, executionID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get extracted items: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.ExtractedItem, 0)
+	for rows.Next() {
+		var item models.ExtractedItem
+		var workflowID, taskID string
+		var dataBytes []byte
+
+		if err := rows.Scan(
+			&item.ID,
+			&item.ExecutionID,
+			&workflowID,
+			&taskID,
+			&item.URL,
+			&dataBytes,
+			&item.ExtractedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan item: %w", err)
+		}
+
+		// Parse JSON data
+		if len(dataBytes) > 0 {
+			if err := json.Unmarshal(dataBytes, &item.Data); err != nil {
+				return nil, 0, fmt.Errorf("failed to parse item data: %w", err)
+			}
+		}
+
+		items = append(items, &item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return items, total, nil
+}
+
+// GetStats retrieves aggregated statistics for an execution
+func (r *postgresExecutionRepo) GetStats(ctx context.Context, executionID string) (*models.ExecutionStats, error) {
+	query := `
+		SELECT 
+			urls_processed,
+			urls_discovered,
+			items_extracted,
+			errors
+		FROM workflow_executions
+		WHERE id = $1
+	`
+
+	var stats models.ExecutionStats
+	err := r.db.Pool.QueryRow(ctx, query, executionID).Scan(
+		&stats.Completed,
+		&stats.TotalURLs,
+		&stats.ItemsExtracted,
+		&stats.Failed,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("execution not found: %s", executionID)
+		}
+		return nil, fmt.Errorf("failed to get stats: %w", err)
+	}
+
+	// Adjust TotalURLs like in ListAll
+	if stats.Completed > stats.TotalURLs {
+		stats.TotalURLs = stats.Completed
+	}
+
+	return &stats, nil
+}

@@ -63,6 +63,12 @@ type ExecutionRepository interface {
 
 	// UpdatePhaseStats updates phase-level statistics
 	UpdatePhaseStats(ctx context.Context, id string, phaseStats map[string]models.PhaseStatEntry) error
+
+	// GetExtractedData retrieves extracted items for an execution with pagination
+	GetExtractedData(ctx context.Context, executionID string, limit int, offset int) ([]*models.ExtractedItem, int, error)
+
+	// GetStats retrieves aggregated statistics for an execution
+	GetStats(ctx context.Context, executionID string) (*models.ExecutionStats, error)
 }
 
 // ListFilters defines common list query filters

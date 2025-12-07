@@ -81,13 +81,12 @@ export const useExecutionsStore = defineStore('executions', () => {
     error.value = null
     try {
       const response = await executionsApi.getStats(id)
-      // Backend returns { execution_id, stats, pending_count }
-      const stats = response.data.stats || {}
-      const pending = response.data.pending_count || 0
+      // Backend returns stats directly: { total_urls, completed, failed, items_extracted }
+      const stats = response.data || {}
 
       executionStats.value = {
-        total_urls: (stats.completed || 0) + (stats.processing || 0) + pending,
-        pending: pending,
+        total_urls: stats.total_urls || 0,
+        pending: stats.pending || 0,
         processing: stats.processing || 0,
         completed: stats.completed || 0,
         failed: stats.failed || 0,

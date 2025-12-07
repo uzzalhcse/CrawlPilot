@@ -156,6 +156,8 @@ func main() {
 	executions.Get("/:id", executionHandler.GetExecution)
 	executions.Delete("/:id", executionHandler.StopExecution)
 	executions.Get("/:id/errors", executionHandler.GetExecutionErrors)
+	executions.Get("/:id/data", executionHandler.GetExtractedData)
+	executions.Get("/:id/stats", executionHandler.GetStats)
 
 	// Recovery system routes (frontend-manageable)
 	recovery := api.Group("/recovery")
