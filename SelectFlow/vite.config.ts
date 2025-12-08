@@ -3,6 +3,9 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js'
 
+// Output to orchestrator's assets folder for direct deployment
+const orchestratorAssetsPath = path.resolve(__dirname, '../microservices/orchestrator/assets')
+
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [vue(), cssInjectedByJsPlugin()],
@@ -13,6 +16,9 @@ export default defineConfig({
     },
     build: {
         cssCodeSplit: false,
+        // Output to orchestrator assets folder
+        outDir: orchestratorAssetsPath,
+        emptyOutDir: false, // Don't clear other files in assets
         lib: {
             entry: path.resolve(__dirname, './src/main.ts'),
             name: 'SelectFlow',

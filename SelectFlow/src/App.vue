@@ -64,6 +64,11 @@ const allFields = computed<Field[]>(() => {
   return [...fields.value, ...groupFields]
 })
 
+// Check if running in visual selector mode (callback configured)
+const isVisualSelectorMode = computed(() => {
+  return typeof (window as any).__selectFlowCallback === 'function'
+})
+
 const pairCount = computed(() => {
   const group = keyValueGroups.value.find(g => g.name === pairState.value.currentGroup)
   return group ? group.pairs.length : 0
@@ -275,6 +280,21 @@ function handlePreview() {
   showPreview.value = true
 }
 
+// Handle Done button - send fields back to parent application via callback
+function handleDone() {
+  const json = exportToJSON()
+  const fields = JSON.parse(json)
+  
+  // Call the callback if available
+  if ((window as any).__selectFlowCallback) {
+    (window as any).__selectFlowCallback(fields)
+    toast.success('Fields sent to workflow builder!')
+  } else {
+    toast.warning('No callback configured. Fields copied to clipboard instead.')
+    navigator.clipboard.writeText(json)
+  }
+}
+
 // Pair Mode Handlers
 function toggleSelectionMode() {
   if (selectionMode.value === 'single') {
@@ -446,10 +466,12 @@ function handleBackdropClick(event: MouseEvent) {
 <template>
   <div class="selector-app">
     <Toolbar 
-      :field-count="allFields.length" 
+      :field-count="allFields.length"
+      :show-done-button="isVisualSelectorMode"
       @copy="handleCopyJSON" 
       @clear="handleClearAll"
-      @preview="handlePreview" 
+      @preview="handlePreview"
+      @done="handleDone"
     />
     
     <!-- Mode Toggle -->

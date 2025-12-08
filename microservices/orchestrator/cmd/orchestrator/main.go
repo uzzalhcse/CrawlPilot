@@ -227,6 +227,26 @@ func main() {
 	profiles.Delete("/:id", browserProfileHandler.DeleteProfile)
 	profiles.Post("/:id/duplicate", browserProfileHandler.DuplicateProfile)
 
+	// Initialize visual selector service and handler
+	selectFlowScript := os.Getenv("SELECTFLOW_SCRIPT_PATH")
+	if selectFlowScript == "" {
+		// Default: look in assets folder next to executable or in current working directory
+		selectFlowScript = "assets/selectflow.js"
+	}
+	callbackBaseURL := fmt.Sprintf("http://%s:%d/api/v1", cfg.Server.Host, cfg.Server.Port)
+	visualSelectorSvc, err := service.NewVisualSelectorService(selectFlowScript, callbackBaseURL)
+	if err != nil {
+		logger.Warn("Visual selector service not available", zap.Error(err))
+	}
+	visualSelectorHandler := handlers.NewVisualSelectorHandler(visualSelectorSvc)
+
+	// Visual selector routes (for workflow builder CSS selector tool)
+	visualSelector := api.Group("/visual-selector")
+	visualSelector.Post("/start", visualSelectorHandler.StartSession)
+	visualSelector.Get("/:id/result", visualSelectorHandler.GetResult)
+	visualSelector.Post("/:id/fields", visualSelectorHandler.SaveFields)
+	visualSelector.Delete("/:id", visualSelectorHandler.CloseSession)
+
 	// Internal API (for worker → orchestrator communication)
 	internal := api.Group("/internal")
 	internal.Post("/executions/:id/stats", statsHandler.UpdateExecutionStats)

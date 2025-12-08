@@ -5,10 +5,11 @@ import type { WorkflowNode, WorkflowEdge, NodeTemplate, Workflow, WorkflowConfig
 import NodePalette from './NodePalette.vue'
 import WorkflowCanvas from './WorkflowCanvas.vue'
 import PropertiesPanel from './PropertiesPanel.vue'
+import VisualSelectorDialog from './VisualSelectorDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import MonacoEditor from '@/components/ui/MonacoEditor.vue'
-import { Save, Play, Layout, Code } from 'lucide-vue-next'
+import { Save, Play, Layout, Code, Target } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { convertNodesToWorkflowConfig } from '@/lib/workflow-utils'
 
@@ -46,6 +47,9 @@ const preservedWorkflowProps = ref<Record<string, any>>({})
 
 // Canvas ref for auto-scrolling
 const canvasRef = ref<any>(null)
+
+// Visual Selector Dialog
+const showVisualSelector = ref(false)
 
 
 // Generate unique node ID
@@ -1125,6 +1129,60 @@ function duplicateSelectedNode() {
   toast.success('Node duplicated', { description: `Created "${newNode.data.label}"` })
 }
 
+// Handle fields from Visual Selector
+function handleVisualSelectorFields(fields: Record<string, any>) {
+  // Find or create an extract node to add these fields to
+  let extractNode = nodes.value.find(n => n.data.nodeType === 'extract')
+  
+  if (!extractNode) {
+    // No extract node exists, create one
+    const id = generateNodeId()
+    extractNode = {
+      id,
+      type: 'custom',
+      position: { x: 400, y: 200 },
+      data: {
+        label: 'Extract Data',
+        nodeType: 'extract',
+        params: {
+          fields: {}
+        }
+      }
+    }
+    nodes.value.push(extractNode)
+    toast.success('Created new Extract node for visual selector fields')
+  }
+  
+  // Merge the new fields with existing fields
+  const existingFields = extractNode.data.params?.fields || {}
+  const mergedFields = { ...existingFields, ...fields }
+  
+  // Update the extract node
+  const updatedNode = {
+    ...extractNode,
+    data: {
+      ...extractNode.data,
+      params: {
+        ...extractNode.data.params,
+        fields: mergedFields
+      }
+    }
+  }
+  
+  // Trigger node update to regenerate extractField nodes
+  handleNodeUpdate(updatedNode)
+  
+  toast.success(`Added ${Object.keys(fields).length} fields from visual selector`, {
+    description: `Total fields: ${Object.keys(mergedFields).length}`
+  })
+}
+
+// Get existing extract fields for pre-population in visual selector
+function getExistingExtractFields(): Record<string, any> {
+  const extractNode = nodes.value.find(n => n.data.nodeType === 'extract')
+  return extractNode?.data.params?.fields || {}
+}
+
 // Setup keyboard listeners
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
@@ -1197,6 +1255,12 @@ defineExpose({
             <Play class="w-4 h-4 mr-2" />
             Execute
           </Button>
+          
+          <!-- Visual Selector Button -->
+          <Button @click="showVisualSelector = true" variant="outline" size="default">
+            <Target class="w-4 h-4 mr-2" />
+            Visual Selector
+          </Button>
         </div>
       </div>
     </div>
@@ -1250,5 +1314,13 @@ defineExpose({
       </template>
 
     </div>
+
+    <!-- Visual Selector Dialog -->
+    <VisualSelectorDialog
+      v-model:open="showVisualSelector"
+      :workflow-id="workflow?.id"
+      :existing-fields="getExistingExtractFields()"
+      @fields-selected="handleVisualSelectorFields"
+    />
   </div>
 </template>

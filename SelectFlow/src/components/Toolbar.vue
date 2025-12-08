@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Clipboard, Trash2, Eye } from 'lucide-vue-next'
+import { Clipboard, Trash2, Eye, Check } from 'lucide-vue-next'
 
 defineProps<{
   fieldCount: number
+  showDoneButton?: boolean // Show Done button when used in visual selector mode
 }>()
 
 const emit = defineEmits<{
   (e: 'copy'): void
   (e: 'clear'): void
   (e: 'preview'): void
+  (e: 'done'): void
 }>()
 </script>
 
@@ -31,6 +33,17 @@ const emit = defineEmits<{
     <Button variant="destructive" size="sm" @click="emit('clear')" class="h-8">
       <Trash2 class="w-3.5 h-3.5 mr-2" />
       Clear
+    </Button>
+    <!-- Done button - shown when SelectFlow is used in visual selector mode -->
+    <Button 
+      v-if="showDoneButton" 
+      variant="default" 
+      size="sm" 
+      @click="emit('done')" 
+      class="h-8 bg-green-600 hover:bg-green-700"
+    >
+      <Check class="w-3.5 h-3.5 mr-2" />
+      Done
     </Button>
   </Card>
 </template>
