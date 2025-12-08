@@ -188,6 +188,14 @@ func main() {
 	recovery.Delete("/proxies/:id", recoveryHandler.DeleteProxy)
 	recovery.Patch("/proxies/:id/toggle", recoveryHandler.ToggleProxy)
 
+	// Initialize recovery attempt repository and handler
+	recoveryAttemptRepo := repository.NewRecoveryAttemptRepository(db)
+	recoveryAttemptHandler := handlers.NewRecoveryAttemptHandler(recoveryAttemptRepo)
+
+	// Recovery attempts (public - for frontend dashboard)
+	recovery.Get("/attempts", recoveryAttemptHandler.GetAttempts)
+	recovery.Get("/attempts/stats", recoveryAttemptHandler.GetAttemptStats)
+
 	// Initialize incident repository and handler
 	incidentRepo := repository.NewIncidentRepository(db)
 	incidentHandler := handlers.NewIncidentHandler(incidentRepo)
@@ -238,6 +246,11 @@ func main() {
 	internal.Post("/probes/sample-urls", probeHandler.SaveSampleURLs)
 	internal.Get("/probes/baseline/:id", probeHandler.GetBaseline)
 	internal.Post("/probes/fix", probeHandler.ApplyWorkflowFix)
+
+	// Recovery attempt tracking (worker → orchestrator)
+	internal.Post("/recovery/attempt", recoveryAttemptHandler.CreateAttempt)
+	internal.Post("/recovery/attempts/batch", recoveryAttemptHandler.CreateAttemptsBatch) // High-throughput batch insert
+	internal.Patch("/recovery/attempt/:id", recoveryAttemptHandler.UpdateAttempt)
 
 	// Public probe endpoints (for API consumers)
 	workflows.Get("/:id/probe/results", probeHandler.GetProbeResults)

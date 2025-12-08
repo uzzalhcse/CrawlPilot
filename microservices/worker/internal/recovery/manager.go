@@ -11,6 +11,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/queue"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/recovery/llm"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/reporter"
 	"go.uber.org/zap"
 )
 
@@ -22,12 +23,13 @@ type RecoveryManager struct {
 	agent            *Agent
 	learning         *LearningSystem
 	domainHealth     *DomainHealth
-	proxyManager     *ProxyManager            // Local proxy manager (deprecated, use distributed)
-	distributedProxy *DistributedProxyManager // Redis-based distributed proxy rotation
-	errorTracker     *ErrorTracker            // Smart triggering with sliding window
-	configManager    *ConfigManager           // Dynamic config from database (frontend-manageable)
-	incidentReporter *IncidentReporter        // Creates reports for human investigation
-	coordinator      *RecoveryCoordinator     // Distributed coordination to prevent redundant work
+	proxyManager     *ProxyManager                     // Local proxy manager (deprecated, use distributed)
+	distributedProxy *DistributedProxyManager          // Redis-based distributed proxy rotation
+	errorTracker     *ErrorTracker                     // Smart triggering with sliding window
+	configManager    *ConfigManager                    // Dynamic config from database (frontend-manageable)
+	incidentReporter *IncidentReporter                 // Creates reports for human investigation
+	coordinator      *RecoveryCoordinator              // Distributed coordination to prevent redundant work
+	recoveryReporter *reporter.BatchedRecoveryReporter // Async batched reporter for high-throughput
 	pubsubClient     *queue.PubSubClient
 	cache            *cache.Cache // Redis cache for distributed state
 	workerID         string       // Unique ID for this worker instance
@@ -46,6 +48,9 @@ type ManagerConfig struct {
 	WindowSize           int     // Number of results to track (default: 100)
 	ErrorRateThreshold   float64 // Trigger if error rate exceeds this (default: 0.10)
 	ConsecutiveThreshold int     // Trigger after N consecutive errors (default: 3)
+
+	// Orchestrator URL for reporting recovery attempts
+	OrchestratorURL string
 
 	// Notifications
 	SlackWebhookURL string // Slack webhook URL for human notifications
@@ -139,6 +144,13 @@ func NewRecoveryManager(
 	// Initialize recovery coordinator to prevent redundant work across workers
 	coordinator := NewRecoveryCoordinator(cache, workerID, DefaultCoordinatorConfig())
 
+	// Initialize recovery reporter for tracking attempts in orchestrator (batched async for high-throughput)
+	var recoveryReporter *reporter.BatchedRecoveryReporter
+	if config.OrchestratorURL != "" {
+		recoveryReporter = reporter.NewBatchedRecoveryReporter(config.OrchestratorURL)
+		logger.Info("Batched recovery reporter initialized", zap.String("orchestrator_url", config.OrchestratorURL))
+	}
+
 	// Sync proxies from database to Redis for distributed coordination
 	if distributedProxy != nil && pool != nil {
 		go func() {
@@ -222,6 +234,7 @@ func NewRecoveryManager(
 		configManager:    configManager,
 		incidentReporter: incidentReporter,
 		coordinator:      coordinator,
+		recoveryReporter: recoveryReporter,
 		pubsubClient:     pubsubClient,
 		cache:            cache,
 		workerID:         workerID,
@@ -232,7 +245,7 @@ func NewRecoveryManager(
 // TryRecover attempts to recover from an error
 // Uses smart triggering: only activates when error rate exceeds threshold OR consecutive errors occur
 // Uses distributed coordination to prevent multiple workers from doing redundant recovery
-func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, url string, err error, pageContent string) (*RecoveryPlan, error) {
+func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, workflowID, url string, err error, pageContent string) (*RecoveryPlan, error) {
 	if !m.config.Enabled {
 		return nil, nil
 	}
@@ -266,6 +279,28 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, u
 		)
 	}
 
+	// =====================================================
+	// Note: This is async fire-and-forget for high throughput
+	// We won't have an attemptID since we don't wait for response
+	// =====================================================
+	if m.recoveryReporter != nil {
+		createReq := &reporter.CreateAttemptRequest{
+			ExecutionID:  executionID,
+			TaskID:       taskID,
+			WorkflowID:   workflowID,
+			URL:          url,
+			Domain:       detected.Domain,
+			ErrorPattern: string(detected.Pattern),
+			ErrorMessage: detected.RawError,
+			StatusCode:   detected.StatusCode,
+		}
+		m.recoveryReporter.CreateAttemptAsync(ctx, createReq)
+	}
+
+	// For high-throughput, we skip individual attempt tracking via attemptID
+	// The orchestrator aggregates stats from the async batched inserts
+	var attemptID string // Empty - we don't track individual attempts at this scale
+
 	// Check recovery attempt limit for this specific task
 	history := m.getHistory(taskID)
 	if len(history) >= m.config.MaxRecoveryAttempts {
@@ -273,22 +308,26 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, u
 			zap.String("task_id", taskID),
 			zap.Int("attempts", len(history)),
 		)
-		return &RecoveryPlan{
+		plan := &RecoveryPlan{
 			Action:      ActionSendToDLQ,
 			Reason:      "Max recovery attempts exceeded",
 			ShouldRetry: false,
 			Source:      "system",
-		}, nil
+			AttemptID:   attemptID,
+		}
+		return plan, nil
 	}
 
 	// Check domain health
 	if healthy, _ := m.domainHealth.IsHealthy(ctx, detected.Domain); !healthy {
-		return &RecoveryPlan{
+		plan := &RecoveryPlan{
 			Action:      ActionSkipDomain,
 			Reason:      "Domain is currently blocked",
 			ShouldRetry: false,
 			Source:      "domain_health",
-		}, nil
+			AttemptID:   attemptID,
+		}
+		return plan, nil
 	}
 
 	// =====================================================
@@ -350,6 +389,7 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, u
 	if err != nil {
 		return nil, err
 	}
+	plan.AttemptID = attemptID
 	m.recordAttempt(taskID, executionID, detected, plan)
 	return plan, nil
 }
@@ -423,7 +463,41 @@ func (m *RecoveryManager) RecordOutcome(ctx context.Context, attempt *RecoveryAt
 		m.domainHealth.RecordFailure(ctx, domain, attempt.DetectedError.Pattern)
 	}
 
+	// Update orchestrator with outcome (async fire-and-forget if attemptID exists)
+	if m.recoveryReporter != nil && attempt.Plan.AttemptID != "" {
+		status := "failed"
+		if attempt.Success {
+			status = "success"
+		}
+		updateReq := &reporter.UpdateAttemptRequest{
+			Action:       string(attempt.Plan.Action),
+			Source:       attempt.Plan.Source,
+			Status:       status,
+			RuleID:       attempt.Plan.RuleID,
+			RetryDelayMs: int(attempt.Plan.RetryDelay.Milliseconds()),
+			DurationMs:   int(attempt.Duration.Milliseconds()),
+		}
+		if reasoning, ok := attempt.Plan.Params["ai_reasoning"].(string); ok {
+			updateReq.AIReasoning = reasoning
+		}
+		m.recoveryReporter.UpdateAttemptAsync(ctx, attempt.Plan.AttemptID, updateReq)
+	}
+
 	return nil
+}
+
+// UpdateRecoveryAttempt updates a recovery attempt in the orchestrator directly (async, for early returns)
+func (m *RecoveryManager) UpdateRecoveryAttempt(ctx context.Context, attemptID string, action ActionType, source, status string, durationMs int) {
+	if m.recoveryReporter == nil || attemptID == "" {
+		return
+	}
+	updateReq := &reporter.UpdateAttemptRequest{
+		Action:     string(action),
+		Source:     source,
+		Status:     status,
+		DurationMs: durationMs,
+	}
+	m.recoveryReporter.UpdateAttemptAsync(ctx, attemptID, updateReq)
 }
 
 // ExecutePlan executes a recovery plan

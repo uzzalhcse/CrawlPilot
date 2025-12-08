@@ -95,3 +95,64 @@ export async function updateRecoveryConfig(key: string, value: any): Promise<Rec
 export async function updateMultipleConfigs(updates: Record<string, any>): Promise<void> {
     await apiClient.put('/recovery/config', { updates })
 }
+
+// Recovery Attempts Types
+export interface RecoveryAttempt {
+    id: string
+    execution_id: string
+    task_id: string
+    workflow_id: string
+    url: string
+    domain: string
+    error_pattern: string
+    error_message: string
+    status_code: number
+    action: string
+    source: string // rule, ai, default, none, pending
+    rule_id: string
+    ai_reasoning: string
+    status: 'pending' | 'success' | 'failed'
+    retry_delay_ms: number
+    duration_ms: number
+    created_at: string
+    updated_at: string
+}
+
+export interface RecoveryAttemptStats {
+    total: number
+    pending: number
+    success: number
+    failed: number
+    success_rate: number
+    from_rules: number
+    from_ai: number
+    from_default: number
+    last_hour: number
+    last_24h: number
+    by_pattern: PatternStats[]
+}
+
+export interface PatternStats {
+    pattern: string
+    total: number
+    success: number
+    failed: number
+    success_rate: number
+}
+
+// Recovery Attempts API Functions
+export async function getRecoveryAttempts(params?: {
+    execution_id?: string
+    status?: string
+    pattern?: string
+    limit?: number
+    offset?: number
+}): Promise<{ attempts: RecoveryAttempt[]; total: number; limit: number; offset: number }> {
+    const response = await apiClient.get('/recovery/attempts', { params })
+    return response.data
+}
+
+export async function getRecoveryAttemptStats(): Promise<RecoveryAttemptStats> {
+    const response = await apiClient.get('/recovery/attempts/stats')
+    return response.data
+}

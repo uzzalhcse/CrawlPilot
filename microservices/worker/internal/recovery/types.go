@@ -62,6 +62,7 @@ type RecoveryPlan struct {
 	RetryDelay  time.Duration          `json:"retry_delay"`
 	Source      string                 `json:"source"` // "rule", "ai", "learned"
 	RuleID      string                 `json:"rule_id,omitempty"`
+	AttemptID   string                 `json:"attempt_id,omitempty"` // ID from orchestrator for tracking
 }
 
 // RecoveryRule represents a configured recovery rule (from DB/frontend)
@@ -223,7 +224,7 @@ type RecoveryAttempt struct {
 type Manager interface {
 	// TryRecover attempts to recover from an error
 	// Returns a recovery plan if recovery is possible, nil otherwise
-	TryRecover(ctx context.Context, taskID, executionID, url string, err error, pageContent string) (*RecoveryPlan, error)
+	TryRecover(ctx context.Context, taskID, executionID, workflowID, url string, err error, pageContent string) (*RecoveryPlan, error)
 
 	// RecordOutcome records whether a recovery attempt succeeded
 	RecordOutcome(ctx context.Context, attempt *RecoveryAttempt) error

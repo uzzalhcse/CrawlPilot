@@ -145,6 +145,7 @@ func NewTaskExecutor(
 			ErrorRateThreshold:   recoveryCfg.ErrorRateThreshold,
 			ConsecutiveThreshold: recoveryCfg.ConsecutiveThreshold,
 			SlackWebhookURL:      recoveryCfg.SlackWebhookURL,
+			OrchestratorURL:      orchestratorURL, // For recovery attempt tracking
 			LLMConfig: llm.Config{
 				Provider: recoveryCfg.LLMProvider,
 				Model:    recoveryCfg.LLMModel,
@@ -357,7 +358,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 
 		// Try smart recovery (if enabled and thresholds met)
 		if e.recoveryManager != nil {
-			plan, recoverErr := e.recoveryManager.TryRecover(ctx, task.TaskID, task.ExecutionID, task.URL, err, "")
+			plan, recoverErr := e.recoveryManager.TryRecover(ctx, task.TaskID, task.ExecutionID, task.WorkflowID, task.URL, err, "")
 			if recoverErr != nil {
 				logger.Warn("Recovery attempt failed", zap.Error(recoverErr))
 			} else if plan != nil {

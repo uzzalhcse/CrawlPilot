@@ -109,6 +109,11 @@ const router = createRouter({
           component: () => import('@/views/IncidentDetailView.vue')
         },
         {
+          path: 'recovery-history',
+          name: 'recovery-history',
+          component: () => import('@/views/RecoveryHistoryView.vue')
+        },
+        {
           path: '/:pathMatch(.*)*',
           name: 'not-found',
           component: () => import('@/views/NotFoundView.vue')
