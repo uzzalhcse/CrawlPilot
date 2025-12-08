@@ -143,7 +143,7 @@ func (r *SystemConfigRepository) UpdateConfig(ctx context.Context, key string, v
 		return err
 	}
 	query := `UPDATE system_config SET value = $1, updated_at = NOW() WHERE key = $2`
-	_, err = r.db.Pool.Exec(ctx, query, valueJSON, key)
+	_, err = r.db.Pool.Exec(ctx, query, string(valueJSON), key)
 	return err
 }
 
