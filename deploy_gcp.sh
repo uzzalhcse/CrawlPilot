@@ -51,6 +51,11 @@ echo "⚙️  Building Microservices..."
 cd ../microservices
 make build-all
 
+# 5.1 Install Playwright Driver
+echo "🎭 Installing Playwright Driver..."
+# Install driver and dependencies
+go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5200.1 install --with-deps
+
 # 6. Setup PM2
 echo "🚀 Starting services with PM2..."
 
