@@ -46,7 +46,7 @@ gcp:
 
 browser:
   pool_size: 5         # Increased from 2 for parallel scraping
-  headless: false        # Always headless in production
+  headless: true        # Always headless in production
   timeout: 30000        # 30s (reduced from 60s for faster failures)
   max_concurrency: 5   # Realistic limit per worker instance
   context_lifetime: 120 # Recycle contexts every 2 min to prevent memory leaks
