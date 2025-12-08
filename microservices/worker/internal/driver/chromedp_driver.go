@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/dom"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
@@ -279,11 +283,68 @@ func (p *ChromedpPage) Fill(selector, text string, options ...ElementOption) err
 }
 
 func (p *ChromedpPage) Hover(selector string, options ...ElementOption) error {
-	// Chromedp doesn't have a direct Hover action exposed easily in high level API
-	// But we can use MouseMove
-	// Or execute JS
-	// Actually chromedp has MouseMoveNode
-	return fmt.Errorf("hover not fully implemented for chromedp yet")
+	opts := &ElementOptions{
+		Timeout: 30 * time.Second,
+	}
+	for _, opt := range options {
+		opt(opts)
+	}
+
+	ctx, cancel := context.WithTimeout(p.ctx, opts.Timeout)
+	defer cancel()
+
+	// Find the element
+	var nodes []*cdp.Node
+	err := chromedp.Run(ctx,
+		chromedp.Nodes(selector, &nodes, chromedp.NodeVisible),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to find element for hover: %w", err)
+	}
+	if len(nodes) == 0 {
+		return fmt.Errorf("no element found for hover selector: %s", selector)
+	}
+
+	// Scroll element into view and hover
+	return chromedp.Run(ctx, chromedp.ActionFunc(func(actx context.Context) error {
+		// Resolve node for JS calls
+		obj, err := dom.ResolveNode().WithNodeID(nodes[0].NodeID).Do(actx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve node for hover: %w", err)
+		}
+
+		// Scroll into view
+		_, _, err = runtime.CallFunctionOn(`function() { 
+			this.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'}); 
+		}`).WithObjectID(obj.ObjectID).Do(actx)
+		if err != nil {
+			return fmt.Errorf("failed to scroll into view: %w", err)
+		}
+
+		// Wait for scroll to complete
+		time.Sleep(50 * time.Millisecond)
+
+		// Get element's bounding box
+		boxes, err := dom.GetContentQuads().WithNodeID(nodes[0].NodeID).Do(actx)
+		if err != nil {
+			return fmt.Errorf("failed to get element quads for hover: %w", err)
+		}
+
+		// If we have bounds, move mouse to center
+		if len(boxes) > 0 && len(boxes[0]) >= 8 {
+			quad := boxes[0]
+			x := (quad[0] + quad[2] + quad[4] + quad[6]) / 4
+			y := (quad[1] + quad[3] + quad[5] + quad[7]) / 4
+			_ = input.DispatchMouseEvent(input.MouseMoved, x, y).Do(actx)
+		}
+
+		// Always dispatch JS events to trigger CSS :hover
+		_, _, err = runtime.CallFunctionOn(`function() {
+			this.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+			this.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));
+		}`).WithObjectID(obj.ObjectID).Do(actx)
+		return err
+	}))
 }
 
 func (p *ChromedpPage) WaitForSelector(selector string, options ...WaitOption) error {
@@ -303,11 +364,36 @@ func (p *ChromedpPage) WaitForSelector(selector string, options ...WaitOption) e
 	return chromedp.Run(ctx, chromedp.WaitVisible(selector))
 }
 
-func (p *ChromedpPage) WaitForURL(url string, options ...WaitOption) error {
-	// Simple wait for URL to contain string
-	// Chromedp doesn't have a direct WaitForURL like Playwright
-	// We can poll Location
-	return fmt.Errorf("WaitForURL not implemented for chromedp yet")
+func (p *ChromedpPage) WaitForURL(urlPattern string, options ...WaitOption) error {
+	opts := &WaitOptions{
+		Timeout: 30 * time.Second,
+	}
+	for _, opt := range options {
+		opt(opts)
+	}
+
+	ctx, cancel := context.WithTimeout(p.ctx, opts.Timeout)
+	defer cancel()
+
+	// Poll for URL match
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for URL to match: %s", urlPattern)
+		case <-ticker.C:
+			var currentURL string
+			if err := chromedp.Run(p.ctx, chromedp.Location(&currentURL)); err != nil {
+				return err
+			}
+			// Simple substring match (can be enhanced for regex)
+			if strings.Contains(currentURL, urlPattern) || currentURL == urlPattern {
+				return nil
+			}
+		}
+	}
 }
 
 func (p *ChromedpPage) WaitForState(state string, options ...WaitOption) error {
@@ -319,9 +405,27 @@ func (p *ChromedpPage) WaitForState(state string, options ...WaitOption) error {
 }
 
 func (p *ChromedpPage) WaitForFunction(expression string, args ...interface{}) error {
-	// Evaluate expression until true
-	// chromedp.WaitFunc?
-	return fmt.Errorf("WaitForFunction not implemented for chromedp yet")
+	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
+	defer cancel()
+
+	// Poll until expression returns truthy value
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for function: %s", expression)
+		case <-ticker.C:
+			var result bool
+			if err := chromedp.Run(p.ctx, chromedp.Evaluate(expression, &result)); err != nil {
+				continue // Ignore evaluation errors, keep polling
+			}
+			if result {
+				return nil
+			}
+		}
+	}
 }
 
 func (p *ChromedpPage) Evaluate(expression string, args ...interface{}) (interface{}, error) {
@@ -350,6 +454,11 @@ func (p *ChromedpPage) QuerySelector(selector string) (Element, error) {
 }
 
 func (p *ChromedpPage) QuerySelectorAll(selector string) ([]Element, error) {
+	// Check if selector contains jQuery-style :visible pseudo-class (not standard CSS)
+	if strings.Contains(selector, ":visible") {
+		return p.querySelectorAllWithVisibility(selector)
+	}
+
 	var nodes []*cdp.Node
 	err := chromedp.Run(p.ctx, chromedp.Nodes(selector, &nodes, chromedp.AtLeast(0)))
 	if err != nil {
@@ -360,6 +469,148 @@ func (p *ChromedpPage) QuerySelectorAll(selector string) ([]Element, error) {
 	for i, node := range nodes {
 		elements[i] = &ChromedpElement{ctx: p.ctx, node: node}
 	}
+	return elements, nil
+}
+
+// querySelectorAllWithVisibility handles jQuery-style :visible pseudo-selector
+// by using JavaScript to find and tag visible elements atomically
+func (p *ChromedpPage) querySelectorAllWithVisibility(selector string) ([]Element, error) {
+	// Use pure JavaScript to handle :visible atomically
+	// This avoids losing hover state between finding and filtering
+	timestamp := time.Now().UnixNano()
+	tagAttr := fmt.Sprintf("data-cdp-visible-%d", timestamp)
+
+	jsCode := fmt.Sprintf(`
+		(function() {
+			// Helper to check element visibility
+			function isVisible(el) {
+				if (!el) return false;
+				
+				// Use modern checkVisibility if available
+				if (typeof el.checkVisibility === 'function') {
+					return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+				}
+				
+				// Fallback visibility check
+				const style = window.getComputedStyle(el);
+				if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) {
+					return false;
+				}
+				
+				// Check parent chain
+				let current = el.parentElement;
+				while (current) {
+					const s = window.getComputedStyle(current);
+					if (s.display === 'none' || s.visibility === 'hidden') {
+						return false;
+					}
+					current = current.parentElement;
+				}
+				
+				// Check has dimensions
+				const rect = el.getBoundingClientRect();
+				return rect.width > 0 && rect.height > 0;
+			}
+			
+			const selector = %q;
+			const tagAttr = %q;
+			
+			// Handle comma-separated selectors
+			const selectorParts = selector.split(',').map(s => s.trim());
+			let count = 0;
+			
+			for (const part of selectorParts) {
+				// Check if this part has :visible
+				if (part.includes(':visible')) {
+					// Remove :visible and find the ancestor that should be visible
+					const tokens = part.split(/\s+/);
+					let cleanTokens = [];
+					let visibleAncestorSelector = null;
+					
+					for (let i = 0; i < tokens.length; i++) {
+						if (tokens[i].includes(':visible')) {
+							const cleanToken = tokens[i].replace(/:visible/g, '');
+							cleanTokens.push(cleanToken);
+							// Build selector for the visible ancestor
+							visibleAncestorSelector = cleanTokens.slice(0, i + 1).join(' ');
+						} else {
+							cleanTokens.push(tokens[i]);
+						}
+					}
+					
+					const cleanSelector = cleanTokens.join(' ');
+					
+					try {
+						const elements = document.querySelectorAll(cleanSelector);
+						
+						elements.forEach(el => {
+							// Find the ancestor that should be visible
+							let ancestor = null;
+							if (visibleAncestorSelector) {
+								// Try to find the visible ancestor
+								ancestor = el.closest(visibleAncestorSelector.split(' ').pop());
+							}
+							
+							// Check if ancestor (or element itself) is visible
+							const targetToCheck = ancestor || el;
+							if (isVisible(targetToCheck)) {
+								el.setAttribute(tagAttr, count.toString());
+								count++;
+							}
+						});
+					} catch (e) {
+						console.error('Selector error:', e);
+					}
+				} else {
+					// No :visible, just select and tag all
+					try {
+						const elements = document.querySelectorAll(part);
+						elements.forEach(el => {
+							el.setAttribute(tagAttr, count.toString());
+							count++;
+						});
+					} catch (e) {
+						console.error('Selector error:', e);
+					}
+				}
+			}
+			
+			return count;
+		})()
+	`, selector, tagAttr)
+
+	// Execute JS to tag visible elements
+	var count int
+	err := chromedp.Run(p.ctx, chromedp.Evaluate(jsCode, &count))
+	if err != nil {
+		return nil, fmt.Errorf("visibility query failed: %w", err)
+	}
+
+	if count == 0 {
+		return []Element{}, nil
+	}
+
+	// Now query for the tagged elements using CDP
+	taggedSelector := fmt.Sprintf("[%s]", tagAttr)
+
+	var nodes []*cdp.Node
+	err = chromedp.Run(p.ctx, chromedp.Nodes(taggedSelector, &nodes, chromedp.AtLeast(0)))
+	if err != nil {
+		return nil, err
+	}
+
+	// Clean up the temporary attributes
+	cleanupJS := fmt.Sprintf(`
+		document.querySelectorAll('[%s]').forEach(el => el.removeAttribute('%s'));
+	`, tagAttr, tagAttr)
+	_ = chromedp.Run(p.ctx, chromedp.Evaluate(cleanupJS, nil))
+
+	// Convert to elements
+	elements := make([]Element, len(nodes))
+	for i, node := range nodes {
+		elements[i] = &ChromedpElement{ctx: p.ctx, node: node}
+	}
+
 	return elements, nil
 }
 
@@ -435,14 +686,30 @@ type ChromedpElement struct {
 }
 
 func (e *ChromedpElement) Text() (string, error) {
-	// This might need a selector or node ID.
-	// chromedp.Text usually takes a selector.
-	// To get text of a specific node without selector is harder.
-	// We can use Javascript or specific CDP query.
-	// For now, let's try to use Javascript on the node.
-	// Actually, we need to resolve the node to a remote object ID to use with DOM.
-	// Or we can construct a unique selector (XPath) for this node.
-	return "", fmt.Errorf("Text() on element not fully implemented for chromedp")
+	// Use dom.GetOuterHTML and extract text content via JS
+	var text string
+	err := chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Get the text content using JavaScript on the node
+		obj, err := dom.ResolveNode().WithNodeID(e.node.NodeID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve node: %w", err)
+		}
+
+		result, _, err := runtime.CallFunctionOn(`function() { return this.textContent || this.innerText || ''; }`).WithObjectID(obj.ObjectID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get text content: %w", err)
+		}
+
+		if result.Value != nil {
+			// Remove quotes from JSON string
+			text = string(result.Value)
+			if len(text) >= 2 && text[0] == '"' && text[len(text)-1] == '"' {
+				text = text[1 : len(text)-1]
+			}
+		}
+		return nil
+	}))
+	return text, err
 }
 
 func (e *ChromedpElement) Attribute(name string) (string, error) {
@@ -458,36 +725,244 @@ func (e *ChromedpElement) Attribute(name string) (string, error) {
 }
 
 func (e *ChromedpElement) InnerHTML() (string, error) {
-	return "", fmt.Errorf("InnerHTML() on element not fully implemented for chromedp")
+	var html string
+	err := chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		html, err = dom.GetOuterHTML().WithNodeID(e.node.NodeID).Do(ctx)
+		return err
+	}))
+	return html, err
 }
 
 func (e *ChromedpElement) Screenshot(options ...ScreenshotOption) ([]byte, error) {
-	return nil, fmt.Errorf("Screenshot() on element not fully implemented for chromedp")
+	var buf []byte
+	err := chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Get element's bounding box
+		boxes, err := dom.GetContentQuads().WithNodeID(e.node.NodeID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get element quads: %w", err)
+		}
+
+		if len(boxes) == 0 || len(boxes[0]) < 8 {
+			return fmt.Errorf("element has no visible bounds")
+		}
+
+		// Calculate bounding box from quad
+		quad := boxes[0]
+		minX := quad[0]
+		maxX := quad[0]
+		minY := quad[1]
+		maxY := quad[1]
+		for i := 0; i < 8; i += 2 {
+			if quad[i] < minX {
+				minX = quad[i]
+			}
+			if quad[i] > maxX {
+				maxX = quad[i]
+			}
+			if quad[i+1] < minY {
+				minY = quad[i+1]
+			}
+			if quad[i+1] > maxY {
+				maxY = quad[i+1]
+			}
+		}
+
+		clip := &page.Viewport{
+			X:      minX,
+			Y:      minY,
+			Width:  maxX - minX,
+			Height: maxY - minY,
+			Scale:  1.0,
+		}
+
+		buf, err = page.CaptureScreenshot().
+			WithClip(clip).
+			WithFormat(page.CaptureScreenshotFormatPng).
+			Do(ctx)
+		return err
+	}))
+	return buf, err
 }
 
 func (e *ChromedpElement) Click() error {
-	// Need to resolve node to something clickable
-	return fmt.Errorf("Click() on element not fully implemented for chromedp")
+	return chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Get element's center coordinates
+		boxes, err := dom.GetContentQuads().WithNodeID(e.node.NodeID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get element quads: %w", err)
+		}
+
+		if len(boxes) == 0 || len(boxes[0]) < 8 {
+			return fmt.Errorf("element has no visible bounds")
+		}
+
+		// Calculate center from quad points (8 floats: x1,y1, x2,y2, x3,y3, x4,y4)
+		quad := boxes[0]
+		x := (quad[0] + quad[2] + quad[4] + quad[6]) / 4
+		y := (quad[1] + quad[3] + quad[5] + quad[7]) / 4
+
+		// Click requires MousePressed + MouseReleased
+		if err := input.DispatchMouseEvent(input.MousePressed, x, y).
+			WithButton(input.Left).
+			WithClickCount(1).
+			Do(ctx); err != nil {
+			return err
+		}
+		return input.DispatchMouseEvent(input.MouseReleased, x, y).
+			WithButton(input.Left).
+			WithClickCount(1).
+			Do(ctx)
+	}))
 }
 
 func (e *ChromedpElement) Type(text string) error {
-	_ = text
-	return fmt.Errorf("Type() on element not fully implemented for chromedp")
+	return chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Focus the element first
+		if err := dom.Focus().WithNodeID(e.node.NodeID).Do(ctx); err != nil {
+			return fmt.Errorf("failed to focus element: %w", err)
+		}
+
+		// Type the text using keyboard input
+		for _, char := range text {
+			if err := input.DispatchKeyEvent(input.KeyDown).WithText(string(char)).Do(ctx); err != nil {
+				return err
+			}
+			if err := input.DispatchKeyEvent(input.KeyUp).WithText(string(char)).Do(ctx); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
 }
 
 func (e *ChromedpElement) Fill(text string) error {
-	_ = text
-	return fmt.Errorf("Fill() on element not fully implemented for chromedp")
+	return chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Focus the element
+		if err := dom.Focus().WithNodeID(e.node.NodeID).Do(ctx); err != nil {
+			return fmt.Errorf("failed to focus element: %w", err)
+		}
+
+		// Resolve to remote object and set value via JS
+		obj, err := dom.ResolveNode().WithNodeID(e.node.NodeID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve node: %w", err)
+		}
+
+		// Clear and set value
+		_, _, err = runtime.CallFunctionOn(fmt.Sprintf(`function() { 
+			this.value = ''; 
+			this.value = %q;
+			this.dispatchEvent(new Event('input', { bubbles: true }));
+			this.dispatchEvent(new Event('change', { bubbles: true }));
+		}`, text)).WithObjectID(obj.ObjectID).Do(ctx)
+		return err
+	}))
 }
 
 func (e *ChromedpElement) Hover() error {
-	return fmt.Errorf("Hover() on element not fully implemented for chromedp")
+	return chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// First, scroll element into view
+		obj, err := dom.ResolveNode().WithNodeID(e.node.NodeID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve node for hover: %w", err)
+		}
+
+		// Scroll into view using JavaScript
+		_, _, err = runtime.CallFunctionOn(`function() { 
+			this.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'}); 
+		}`).WithObjectID(obj.ObjectID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to scroll into view: %w", err)
+		}
+
+		// Wait a moment for scroll to complete
+		time.Sleep(50 * time.Millisecond)
+
+		// Get element's center coordinates for mouse move
+		boxes, err := dom.GetContentQuads().WithNodeID(e.node.NodeID).Do(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get element quads: %w", err)
+		}
+
+		if len(boxes) == 0 || len(boxes[0]) < 8 {
+			// Fallback: use JS to trigger hover events directly
+			_, _, err = runtime.CallFunctionOn(`function() {
+				this.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+				this.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));
+			}`).WithObjectID(obj.ObjectID).Do(ctx)
+			return err
+		}
+
+		// Calculate center from quad points
+		quad := boxes[0]
+		x := (quad[0] + quad[2] + quad[4] + quad[6]) / 4
+		y := (quad[1] + quad[3] + quad[5] + quad[7]) / 4
+
+		// Move mouse to element center
+		if err := input.DispatchMouseEvent(input.MouseMoved, x, y).Do(ctx); err != nil {
+			return err
+		}
+
+		// Also dispatch JS events to ensure CSS :hover is triggered in all cases
+		_, _, err = runtime.CallFunctionOn(`function() {
+			this.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+			this.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }));
+		}`).WithObjectID(obj.ObjectID).Do(ctx)
+		return err
+	}))
 }
 
 func (e *ChromedpElement) QuerySelector(selector string) (Element, error) {
-	return nil, fmt.Errorf("QuerySelector() on element not fully implemented for chromedp")
+	var childNode *cdp.Node
+	err := chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Query for child nodes within this element
+		nodeID, err := dom.QuerySelector(e.node.NodeID, selector).Do(ctx)
+		if err != nil {
+			return err
+		}
+		if nodeID == 0 {
+			return nil // No match found
+		}
+
+		// Get the node details
+		node, err := dom.DescribeNode().WithNodeID(nodeID).Do(ctx)
+		if err != nil {
+			return err
+		}
+		childNode = node
+		childNode.NodeID = nodeID
+		return nil
+	}))
+
+	if err != nil {
+		return nil, err
+	}
+	if childNode == nil {
+		return nil, nil
+	}
+	return &ChromedpElement{ctx: e.ctx, node: childNode}, nil
 }
 
 func (e *ChromedpElement) QuerySelectorAll(selector string) ([]Element, error) {
-	return nil, fmt.Errorf("QuerySelectorAll() on element not fully implemented for chromedp")
+	var elements []Element
+	err := chromedp.Run(e.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		// Query for all matching child nodes
+		nodeIDs, err := dom.QuerySelectorAll(e.node.NodeID, selector).Do(ctx)
+		if err != nil {
+			return err
+		}
+
+		for _, nodeID := range nodeIDs {
+			node, err := dom.DescribeNode().WithNodeID(nodeID).Do(ctx)
+			if err != nil {
+				continue
+			}
+			node.NodeID = nodeID
+			elements = append(elements, &ChromedpElement{ctx: e.ctx, node: node})
+		}
+		return nil
+	}))
+
+	return elements, err
 }
