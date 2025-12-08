@@ -76,7 +76,7 @@ func main() {
 	// Initialize task executor
 	orchestratorURL := cfg.GCP.OrchestratorURL
 	if orchestratorURL == "" {
-		orchestratorURL = "http://localhost:8080"
+		orchestratorURL = "http://localhost:8181"
 		logger.Warn("ORCHESTRATOR_URL not set in config, using default", zap.String("url", orchestratorURL))
 	}
 
