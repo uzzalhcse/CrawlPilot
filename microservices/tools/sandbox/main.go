@@ -67,6 +67,7 @@ type RequestLogEntry struct {
 
 type Config struct {
 	mu                  sync.RWMutex
+	AntiBotEnabled      bool    `json:"anti_bot_enabled"`
 	RateLimitThreshold  int     `json:"rate_limit_threshold"`
 	BotScoreThreshold   float64 `json:"bot_score_threshold"`
 	BlockScoreThreshold float64 `json:"block_score_threshold"`
@@ -79,6 +80,7 @@ type Config struct {
 }
 
 var config = &Config{
+	AntiBotEnabled:      true, // Enabled by default
 	RateLimitThreshold:  60,
 	BotScoreThreshold:   50.0,
 	BlockScoreThreshold: 80.0,
@@ -203,6 +205,12 @@ func wafMiddleware(c *fiber.Ctx) error {
 	config.mu.Lock()
 	defer config.mu.Unlock()
 
+	// If anti-bot is disabled, allow all requests through
+	if !config.AntiBotEnabled {
+		logReq(c, 200, 0, "allowed_bypass")
+		return c.Next()
+	}
+
 	ip := c.IP()
 	stats, exists := config.IPStats[ip]
 	if !exists {
@@ -311,19 +319,19 @@ func navBar() string {
 	for _, cat := range categories {
 		var subItems strings.Builder
 		for _, sub := range cat.Subs {
-			subItems.WriteString(fmt.Sprintf(`<a href="/category/%s/%s" class="block px-4 py-2 text-gray-700 hover:bg-orange-50 hover:text-orange-600">%s</a>`, cat.Slug, sub.Slug, sub.Name))
+			subItems.WriteString(fmt.Sprintf(`<a href="/category/%s/%s" class="subcategory-link block px-4 py-2 text-gray-700 hover:bg-orange-50 hover:text-orange-600" data-category="%s" data-subcategory="%s">%s</a>`, cat.Slug, sub.Slug, cat.Slug, sub.Slug, sub.Name))
 		}
 		catItems.WriteString(fmt.Sprintf(`
             <div class="dropdown relative">
-                <a href="/category/%s" class="px-3 py-2 hover:text-orange-400 transition flex items-center gap-1">
-                    <span>%s</span>
-                    <span>%s</span>
+                <a href="/category/%s" class="category-link px-3 py-2 hover:text-orange-400 transition flex items-center gap-1" data-category="%s">
+                    <span class="category-icon">%s</span>
+                    <span class="category-name">%s</span>
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </a>
                 <div class="dropdown-menu absolute left-0 top-full bg-white shadow-xl rounded-lg py-2 min-w-[200px] z-50 border">
                     %s
                 </div>
-            </div>`, cat.Slug, cat.Icon, cat.Name, subItems.String()))
+            </div>`, cat.Slug, cat.Slug, cat.Icon, cat.Name, subItems.String()))
 	}
 
 	return fmt.Sprintf(`
@@ -383,37 +391,37 @@ func footer() string {
 }
 
 func productCard(p Product) string {
-	stockBadge := `<span class="text-green-600 text-sm">✓ In Stock</span>`
+	stockBadge := `<span class="product-stock text-green-600 text-sm">✓ In Stock</span>`
 	if !p.InStock {
-		stockBadge = `<span class="text-red-500 text-sm">Out of Stock</span>`
+		stockBadge = `<span class="product-stock text-red-500 text-sm">Out of Stock</span>`
 	}
 	discount := ""
 	if p.OldPrice > p.Price {
 		pct := int((1 - p.Price/p.OldPrice) * 100)
-		discount = fmt.Sprintf(`<span class="bg-red-600 text-white text-xs px-2 py-0.5 rounded">-%d%%</span>`, pct)
+		discount = fmt.Sprintf(`<span class="product-discount bg-red-600 text-white text-xs px-2 py-0.5 rounded">-%d%%</span>`, pct)
 	}
 	return fmt.Sprintf(`
-        <a href="/dp/%s" class="group bg-white rounded-xl shadow hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col">
+        <a href="/dp/%s" class="product-card group bg-white rounded-xl shadow hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col" data-product-id="%s">
             <div class="relative aspect-square overflow-hidden bg-gray-100">
-                <img src="%s" alt="%s" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                <img src="%s" alt="%s" class="product-image w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
                 <div class="absolute top-2 left-2">%s</div>
             </div>
             <div class="p-4 flex-1 flex flex-col">
-                <h3 class="font-medium text-gray-900 line-clamp-2 group-hover:text-orange-600 transition mb-2">%s</h3>
+                <h3 class="product-title font-medium text-gray-900 line-clamp-2 group-hover:text-orange-600 transition mb-2">%s</h3>
                 <div class="flex items-center gap-1 mb-2">
-                    <div class="flex text-orange-400 text-sm">%s</div>
-                    <span class="text-sm text-gray-500">(%d)</span>
+                    <div class="product-rating flex text-orange-400 text-sm">%s</div>
+                    <span class="product-reviews text-sm text-gray-500">(%d)</span>
                 </div>
                 <div class="mt-auto">
                     <div class="flex items-baseline gap-2">
-                        <span class="text-xl font-bold text-gray-900">$%.2f</span>
-                        <span class="text-sm text-gray-400 line-through">$%.2f</span>
+                        <span class="product-price text-xl font-bold text-gray-900">$%.2f</span>
+                        <span class="product-old-price text-sm text-gray-400 line-through">$%.2f</span>
                     </div>
                     <div class="mt-1">%s</div>
                 </div>
             </div>
         </a>
-    `, p.ID, p.Image, p.Name, discount, p.Name, renderStars(p.Rating), p.Reviews, p.Price, p.OldPrice, stockBadge)
+    `, p.ID, p.ID, p.Image, p.Name, discount, p.Name, renderStars(p.Rating), p.Reviews, p.Price, p.OldPrice, stockBadge)
 }
 
 func renderStars(rating float64) string {
@@ -443,12 +451,12 @@ func homePage(c *fiber.Ctx) error {
 	var catBoxes strings.Builder
 	for _, cat := range categories {
 		catBoxes.WriteString(fmt.Sprintf(`
-            <a href="/category/%s" class="bg-white rounded-xl p-6 shadow hover:shadow-lg transition group">
-                <div class="text-4xl mb-3">%s</div>
-                <h3 class="font-semibold text-gray-900 group-hover:text-orange-600">%s</h3>
+            <a href="/category/%s" class="category-box bg-white rounded-xl p-6 shadow hover:shadow-lg transition group" data-category="%s">
+                <div class="category-icon text-4xl mb-3">%s</div>
+                <h3 class="category-name font-semibold text-gray-900 group-hover:text-orange-600">%s</h3>
                 <p class="text-sm text-gray-500 mt-1">%d subcategories</p>
             </a>
-        `, cat.Slug, cat.Icon, cat.Name, len(cat.Subs)))
+        `, cat.Slug, cat.Slug, cat.Icon, cat.Name, len(cat.Subs)))
 	}
 
 	html := tailwindHead + `<title>Amazom - Shop Everything</title></head>
@@ -953,6 +961,14 @@ func dashboard(c *fiber.Ctx) error {
             const cfg = await cfgRes.json();
 
             document.getElementById('config-panel').innerHTML = ` + "`" + `
+                <div class="flex justify-between items-center mb-4 p-3 rounded-lg ${cfg.anti_bot_enabled ? 'bg-green-500/20 border border-green-500/50' : 'bg-red-500/20 border border-red-500/50'}">
+                    <span class="font-semibold">🛡️ Anti-Bot Detection</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" ${cfg.anti_bot_enabled ? 'checked' : ''} onchange="updateCfg('anti_bot_enabled', this.checked)" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                        <span class="ml-2 text-sm font-medium ${cfg.anti_bot_enabled ? 'text-green-400' : 'text-red-400'}">${cfg.anti_bot_enabled ? 'ENABLED' : 'DISABLED'}</span>
+                    </label>
+                </div>
                 <div class="flex justify-between items-center"><span>Rate Limit (req/min)</span><input type="number" value="${cfg.rate_limit_threshold}" onchange="updateCfg('rate_limit_threshold',+this.value)" class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right"></div>
                 <div class="flex justify-between items-center"><span>Captcha Threshold</span><input type="number" value="${cfg.bot_score_threshold}" onchange="updateCfg('bot_score_threshold',+this.value)" class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-yellow-400"></div>
                 <div class="flex justify-between items-center"><span>Block Threshold</span><input type="number" value="${cfg.block_score_threshold}" onchange="updateCfg('block_score_threshold',+this.value)" class="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-right text-red-400"></div>
@@ -984,6 +1000,7 @@ func getConfig(c *fiber.Ctx) error {
 	config.mu.RLock()
 	defer config.mu.RUnlock()
 	return c.JSON(fiber.Map{
+		"anti_bot_enabled":     config.AntiBotEnabled,
 		"rate_limit_threshold": config.RateLimitThreshold, "bot_score_threshold": config.BotScoreThreshold,
 		"block_score_threshold": config.BlockScoreThreshold, "no_cookie_penalty": config.NoCookiePenalty,
 		"bot_ua_penalty": config.BotUAPenalty, "ua_rotation_penalty": config.UARotationPenalty,
@@ -1000,6 +1017,8 @@ func updateConfig(c *fiber.Ctx) error {
 	}
 	for k, v := range updates {
 		switch k {
+		case "anti_bot_enabled":
+			config.AntiBotEnabled = v.(bool)
 		case "rate_limit_threshold":
 			config.RateLimitThreshold = int(v.(float64))
 		case "bot_score_threshold":

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -199,6 +200,13 @@ func (h *StatsHandler) CompleteExecution(c *fiber.Ctx) error {
 		})
 	}
 
+	// Check for phase-level zero data issues (only for completed executions)
+	// This detects when an entire phase extracted no data, which may indicate a selector issue
+	if req.Status == "completed" {
+		// Use context.Background() since Fiber's c.Context() becomes invalid after handler returns
+		go h.checkPhaseZeroData(context.Background(), executionID)
+	}
+
 	logger.Info("Execution completed",
 		zap.String("execution_id", executionID),
 		zap.String("status", req.Status),
@@ -276,4 +284,47 @@ func (h *StatsHandler) BatchInsertErrors(c *fiber.Ctx) error {
 		"message":   "errors inserted",
 		"processed": totalErrors,
 	})
+}
+
+// checkPhaseZeroData checks if any phase in the execution has zero extracted data
+// This indicates a potential selector issue at the phase level (not just individual task noise)
+func (h *StatsHandler) checkPhaseZeroData(ctx context.Context, executionID string) {
+	// Get execution to access phase stats
+	execution, err := h.executionRepo.Get(ctx, executionID)
+	if err != nil {
+		logger.Warn("Failed to get execution for phase zero data check",
+			zap.String("execution_id", executionID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	// Skip probe executions - they use sample URLs and may legitimately have zero data
+	if execution.IsProbe {
+		return
+	}
+
+	// Check phase_stats for any phase with zero processed AND zero errors
+	// (A phase with errors but zero processed is different from a healthy phase with zero data)
+	if execution.PhaseStats == nil {
+		return
+	}
+
+	zeroDataPhases := []string{}
+	for phaseID, stats := range execution.PhaseStats {
+		// Phase has zero processed items - potential issue
+		// Note: We check the extracted items count from the overall stats, not just phase processed
+		if stats.Processed == 0 && stats.Errors == 0 {
+			zeroDataPhases = append(zeroDataPhases, phaseID)
+		}
+	}
+
+	if len(zeroDataPhases) > 0 {
+		logger.Warn("Execution completed with phases having zero extracted data",
+			zap.String("execution_id", executionID),
+			zap.String("workflow_id", execution.WorkflowID),
+			zap.Strings("zero_data_phases", zeroDataPhases),
+			zap.String("recommendation", "Check selectors for these phases - may need adjustment"),
+		)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -259,8 +260,11 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 		return nil, nil
 	}
 
+	// Try to extract status code from error string (e.g., "unexpected status code: 403")
+	statusCode := extractStatusCodeFromError(err)
+
 	// Detect error pattern first
-	detected := m.detector.Detect(err, url, 0, pageContent)
+	detected := m.detector.Detect(err, url, statusCode, pageContent)
 	if detected == nil {
 		// Not an error or undetectable - record as success
 		if m.errorTracker != nil {
@@ -270,6 +274,8 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 	}
 
 	// Record failure and check if recovery should trigger (smart triggering)
+	// All errors go through threshold checking - single failures don't trigger recovery
+	// This prevents false positives from naturally empty pages (e.g., subcategories with no products)
 	if m.errorTracker != nil {
 		shouldTrigger, reason := m.errorTracker.RecordFailure(ctx, detected.Domain, detected.Pattern)
 		if !shouldTrigger {
@@ -277,6 +283,7 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 			logger.Debug("Error recorded but recovery not triggered",
 				zap.String("domain", detected.Domain),
 				zap.String("pattern", string(detected.Pattern)),
+				zap.String("error", detected.RawError),
 				zap.String("reason", "thresholds not met"),
 			)
 			return nil, nil
@@ -989,4 +996,56 @@ func (m *RecoveryManager) ResolveIncident(ctx context.Context, incidentID, resol
 		return nil
 	}
 	return m.incidentReporter.UpdateStatus(ctx, incidentID, IncidentStatusResolved, resolution)
+}
+
+// extractStatusCodeFromError parses HTTP status code from error strings like "unexpected status code: 403"
+func extractStatusCodeFromError(err error) int {
+	if err == nil {
+		return 0
+	}
+
+	errStr := err.Error()
+
+	// Common patterns to extract status codes
+	patterns := []string{
+		"status code: ", // "unexpected status code: 403"
+		"status: ",      // "status: 403"
+		"code:",         // "code:403"
+		"HTTP ",         // "HTTP 403"
+		"status ",       // "status 403"
+	}
+
+	for _, pattern := range patterns {
+		if idx := strings.Index(strings.ToLower(errStr), strings.ToLower(pattern)); idx != -1 {
+			// Extract the number after the pattern
+			start := idx + len(pattern)
+			if start >= len(errStr) {
+				continue
+			}
+
+			// Skip leading spaces
+			for start < len(errStr) && errStr[start] == ' ' {
+				start++
+			}
+
+			// Extract digits
+			end := start
+			for end < len(errStr) && errStr[end] >= '0' && errStr[end] <= '9' {
+				end++
+			}
+
+			if end > start {
+				code := 0
+				for i := start; i < end; i++ {
+					code = code*10 + int(errStr[i]-'0')
+				}
+				// Valid HTTP status codes are 100-599
+				if code >= 100 && code <= 599 {
+					return code
+				}
+			}
+		}
+	}
+
+	return 0
 }

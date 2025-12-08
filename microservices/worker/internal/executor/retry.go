@@ -135,6 +135,12 @@ func isRetryable(err error) bool {
 
 	errStr := strings.ToLower(err.Error())
 
+	// Zero results errors should NOT be retried - they need recovery (selector fix)
+	// Let them pass through to the error recovery system
+	if strings.Contains(errStr, "zero results") {
+		return false
+	}
+
 	// Timeout errors
 	if strings.Contains(errStr, "timeout") ||
 		strings.Contains(errStr, "timed out") ||

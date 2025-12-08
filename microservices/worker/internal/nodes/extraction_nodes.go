@@ -68,6 +68,10 @@ func (n *ExtractNode) Execute(ctx context.Context, execCtx *ExecutionContext, no
 						zap.String("field", fieldName),
 						zap.String("schema", schemaName),
 					)
+					// Report as warning/error for visibility in execution
+					if execCtx.OnWarning != nil {
+						execCtx.OnWarning("required_field", fmt.Sprintf("required field '%s' is missing (selector failed)", fieldName))
+					}
 				}
 			}
 			continue
@@ -82,6 +86,10 @@ func (n *ExtractNode) Execute(ctx context.Context, execCtx *ExecutionContext, no
 						zap.String("field", fieldName),
 						zap.String("schema", schemaName),
 					)
+					// Report as warning/error for visibility in execution
+					if execCtx.OnWarning != nil {
+						execCtx.OnWarning("required_field", fmt.Sprintf("required field '%s' is empty", fieldName))
+					}
 				}
 			}
 		}

@@ -189,7 +189,10 @@ func (n *LoopNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 		return nil
 	}
 
-	// Iterate over elements
+	// Get the node registry for inline execution
+	registry := GetRegistry()
+
+	// Iterate over elements and execute child nodes INLINE
 	for i := 0; i < count; i++ {
 		// Set current index in variables for child nodes
 		execCtx.Variables["loop_index"] = i
@@ -197,25 +200,67 @@ func (n *LoopNode) Execute(ctx context.Context, execCtx *ExecutionContext, node 
 		// Get nth element handle
 		element := elements[i]
 
-		// Store element for child nodes to use
+		// Store element for child nodes to use (now accessible during execution!)
 		execCtx.Variables["loop_element"] = element
 
-		// Parse and queue child nodes for execution
+		logger.Debug("Loop iteration",
+			zap.Int("index", i),
+			zap.Int("total", count),
+		)
+
+		// Execute each child node IMMEDIATELY (not queued)
 		for _, childNodeData := range childNodes {
 			childNodeMap, ok := childNodeData.(map[string]interface{})
 			if !ok {
 				continue
 			}
 
-			childNode := parseNodeFromMap(childNodeMap)
+			// Deep copy the child node map to avoid modifying the original
+			interpolatedNodeMap := deepCopyMap(childNodeMap)
+
+			// Interpolate params with current loop variables
+			if params, ok := interpolatedNodeMap["params"].(map[string]interface{}); ok {
+				interpolatedNodeMap["params"] = interpolateParams(params, execCtx.Variables)
+			}
+
+			childNode := parseNodeFromMap(interpolatedNodeMap)
 			if childNode.Type == "" {
 				continue
 			}
 
-			// Add to branch nodes for execution
-			execCtx.BranchNodes = append(execCtx.BranchNodes, childNode)
+			// Get executor for this node type
+			executor, err := registry.Get(childNode.Type)
+			if err != nil {
+				logger.Warn("No executor for child node in loop",
+					zap.String("type", childNode.Type),
+					zap.Int("loop_index", i),
+				)
+				continue
+			}
+
+			// Execute INLINE - loop_element is correct for this iteration!
+			if err := executor.Execute(ctx, execCtx, childNode); err != nil {
+				logger.Warn("Loop child node execution failed",
+					zap.String("node_id", childNode.ID),
+					zap.String("node_type", childNode.Type),
+					zap.Int("loop_index", i),
+					zap.Error(err),
+				)
+				if execCtx.OnWarning != nil {
+					execCtx.OnWarning(childNode.Type, fmt.Sprintf("loop[%d]: %s", i, err.Error()))
+				}
+				// Continue with next child node (non-fatal)
+			}
 		}
 	}
+
+	// Clean up loop variables
+	delete(execCtx.Variables, "loop_index")
+	delete(execCtx.Variables, "loop_element")
+
+	logger.Info("Loop completed",
+		zap.Int("iterations", count),
+	)
 
 	return nil
 }

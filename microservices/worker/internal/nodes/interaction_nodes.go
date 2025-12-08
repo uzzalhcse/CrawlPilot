@@ -79,9 +79,29 @@ func (n *HoverNode) Type() string {
 }
 
 func (n *HoverNode) Execute(ctx context.Context, execCtx *ExecutionContext, node models.Node) error {
+	// Check if we should use the loop_element directly
+	if useLoopElement := getBoolParam(node.Params, "use_loop_element", false); useLoopElement {
+		if element, ok := execCtx.Variables["loop_element"]; ok {
+			if el, isElement := element.(driver.Element); isElement {
+				logger.Info("Hovering over loop element directly")
+				if err := el.Hover(); err != nil {
+					return fmt.Errorf("hover on loop element failed: %w", err)
+				}
+
+				// Wait after hover if specified
+				if waitAfter := getIntParam(node.Params, "wait_after", 300); waitAfter > 0 {
+					time.Sleep(time.Duration(waitAfter) * time.Millisecond)
+				}
+				return nil
+			}
+		}
+		return fmt.Errorf("loop_element not available for hover")
+	}
+
+	// Standard selector-based hover
 	selector, ok := node.Params["selector"].(string)
 	if !ok || selector == "" {
-		return fmt.Errorf("selector is required for hover node")
+		return fmt.Errorf("selector is required for hover node (or set use_loop_element: true)")
 	}
 
 	logger.Info("Hovering over element", zap.String("selector", selector))

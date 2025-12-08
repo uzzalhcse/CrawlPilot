@@ -122,16 +122,36 @@ func (n *ExtractLinksNode) Execute(ctx context.Context, execCtx *ExecutionContex
 		discoveredURLs = append(discoveredURLs, urlData)
 	}
 
-	// Store discovered URLs in execution context
+	// Store discovered URLs in execution context (APPEND, don't overwrite!)
 	if execCtx.Variables == nil {
 		execCtx.Variables = make(map[string]interface{})
 	}
-	execCtx.Variables["discovered_urls"] = discoveredURLs
+
+	// Get existing discovered URLs and append new ones
+	existingURLs := []map[string]interface{}{}
+	if existing, ok := execCtx.Variables["discovered_urls"].([]map[string]interface{}); ok {
+		existingURLs = existing
+	}
+	existingURLs = append(existingURLs, discoveredURLs...)
+	execCtx.Variables["discovered_urls"] = existingURLs
 
 	logger.Info("Links extracted",
 		zap.Int("count", len(discoveredURLs)),
+		zap.Int("total_accumulated", len(existingURLs)),
 		zap.String("marker", marker),
 	)
+
+	// Report warning if no links found - this helps identify broken selectors
+	if len(discoveredURLs) == 0 {
+		warningMsg := fmt.Sprintf("no links found with selector '%s'", selector)
+		logger.Warn("Extract links found zero results",
+			zap.String("selector", selector),
+			zap.String("marker", marker),
+		)
+		if execCtx.OnWarning != nil {
+			execCtx.OnWarning("extract_links", warningMsg)
+		}
+	}
 
 	return nil
 }

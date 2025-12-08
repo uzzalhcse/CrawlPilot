@@ -94,4 +94,3 @@ recovery:
   probe_autofix_enabled: true   # Enable probe AI auto-fix (requires Ollama/LLM running)
   probe_chunked_dom: false       # Use multi-pass chunked DOM analysis (set false for full DOM single-pass)
   probe_dom_chunk_size: 60000   # DOM chunk size in bytes (default 30KB)
-

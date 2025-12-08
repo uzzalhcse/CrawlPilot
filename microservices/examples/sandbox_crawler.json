@@ -1,0 +1,174 @@
+{
+    "name": "Sandbox E-commerce Crawler - Full Site Crawl with Hover",
+    "description": "Full site crawler that hovers over all category dropdowns to collect subcategories",
+    "config": {
+        "start_urls": [
+            "http://localhost:9999"
+        ],
+        "max_depth": 3,
+        "rate_limit_delay": 500,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        "phases": [
+            {
+                "id": "discover_subcategories",
+                "type": "discovery",
+                "name": "Hover All Categories & Collect Subcategories",
+                "nodes": [
+                    {
+                        "id": "navigate_to_homepage",
+                        "type": "navigate",
+                        "name": "Navigate to Homepage",
+                        "params": {
+                            "url": "{{start_url}}"
+                        }
+                    },
+                    {
+                        "id": "loop_categories",
+                        "type": "loop",
+                        "name": "Loop through all category dropdowns",
+                        "params": {
+                            "selector": ".dropdown",
+                            "max_iterations": 10,
+                            "nodes": [
+                                {
+                                    "id": "hover_category",
+                                    "type": "hover",
+                                    "name": "Hover over current dropdown element",
+                                    "params": {
+                                        "use_loop_element": true,
+                                        "wait_after": 500
+                                    }
+                                },
+                                {
+                                    "id": "extract_subcategory_links",
+                                    "type": "extract_links",
+                                    "name": "Extract subcategory links from visible dropdown",
+                                    "params": {
+                                        "selector": ".dropdown-menu:visible .subcategory-link, .dropdown-menu[style*='block'] .subcategory-link",
+                                        "marker": "subcategory",
+                                        "limit": 0
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "url_filter": {
+                    "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "discover_products"
+                }
+            },
+            {
+                "id": "discover_products",
+                "type": "discovery",
+                "name": "Discover Products from Subcategories",
+                "nodes": [
+                    {
+                        "id": "navigate_to_subcategory",
+                        "type": "navigate",
+                        "name": "Navigate to Subcategory Page",
+                        "params": {
+                            "url": "{{current_url}}"
+                        }
+                    },
+                    {
+                        "id": "discover_product_listings",
+                        "type": "extract_links",
+                        "name": "Extract Product Links",
+                        "params": {
+                            "selector": ".product-card",
+                            "marker": "product",
+                            "limit": 0
+                        },
+                        "probe_url": "http://localhost:9999/category/electronics/phones"
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "subcategory"
+                    ]
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "extract_product_data"
+                }
+            },
+            {
+                "id": "extract_product_data",
+                "type": "extraction",
+                "name": "Extract Product Details",
+                "nodes": [
+                    {
+                        "id": "navigate_to_product",
+                        "type": "navigate",
+                        "name": "Navigate to Product Page",
+                        "params": {
+                            "url": "{{current_url}}",
+                            "driver": "http"
+                        }
+                    },
+                    {
+                        "id": "extract_product_data",
+                        "type": "extract",
+                        "name": "Extract Product Details",
+                        "params": {
+                            "schema": "sandbox_product",
+                            "fields": {
+                                "page_title": {
+                                    "selector": "title",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "product_name": {
+                                    "selector": "#productTitle",
+                                    "type": "text",
+                                    "transform": "trim",
+                                    "required": true
+                                },
+                                "price": {
+                                    "selector": "#priceValue",
+                                    "type": "text",
+                                    "transform": "trim",
+                                    "required": true
+                                },
+                                "description": {
+                                    "selector": "#product-description",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "stock_status": {
+                                    "selector": "#stockStatus",
+                                    "type": "text",
+                                    "transform": "trim"
+                                },
+                                "image": {
+                                    "selector": "#main-image",
+                                    "type": "attr",
+                                    "attribute": "src"
+                                },
+                                "features": {
+                                    "selector": "#feature-bullets li",
+                                    "type": "text",
+                                    "multiple": true,
+                                    "transform": "trim"
+                                }
+                            }
+                        },
+                        "probe_url": "http://localhost:9999/dp/ELEC001"
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "product"
+                    ]
+                }
+            }
+        ]
+    },
+    "status": "active"
+}

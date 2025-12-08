@@ -548,6 +548,11 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	// Record stats
 	taskStats.Record(len(result.ExtractedItems), len(uniqueURLs), len(result.Errors))
 
+	// Log any node-level errors to execution history (e.g., zero results, extraction failures)
+	for _, nodeErr := range result.Errors {
+		e.logError(task, "node_execution", nodeErr.Error())
+	}
+
 	// Set phase context for stats (enables per-phase breakdown)
 	duration := time.Since(startTime)
 	taskStats.SetPhase(task.PhaseID, duration)
@@ -1020,9 +1025,39 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 			logger.Error("Node execution failed after retries",
 				zap.String("node_id", node.ID),
 				zap.String("node_type", node.Type),
+				zap.String("task_id", task.TaskID),
+				zap.String("url", task.URL),
+				zap.String("phase_id", task.PhaseID),
 				zap.Error(err),
 			)
 			result.Errors = append(result.Errors, err)
+
+			// Try recovery for node-level errors (e.g., zero results, selector failures)
+			if e.recoveryManager != nil {
+				logger.Debug("Attempting recovery for node error",
+					zap.String("node_id", node.ID),
+					zap.String("error", err.Error()),
+				)
+				plan, recoverErr := e.recoveryManager.TryRecover(ctx, task.TaskID, task.ExecutionID, task.WorkflowID, task.URL, err, "")
+				if recoverErr != nil {
+					logger.Warn("Recovery attempt failed", zap.Error(recoverErr))
+				} else if plan != nil {
+					logger.Info("Recovery plan generated for node error",
+						zap.String("node_id", node.ID),
+						zap.String("action", string(plan.Action)),
+						zap.String("source", plan.Source),
+						zap.String("reason", plan.Reason),
+					)
+					// Execute the recovery plan
+					if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
+						logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
+					}
+				} else {
+					logger.Debug("No recovery plan generated (thresholds not met or not applicable)",
+						zap.String("node_id", node.ID),
+					)
+				}
+			}
 
 			// Continue with other nodes (non-fatal)
 			continue
