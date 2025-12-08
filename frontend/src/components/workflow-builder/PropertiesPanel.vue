@@ -26,8 +26,7 @@ import IndependentArrayManager from './config-forms/IndependentArrayManager.vue'
 import FieldActionsManager from './config-forms/FieldActionsManager.vue'
 // ExtractionBuilder removed - fields are now managed as canvas nodes
 
-// Visual Selector API
-import { selectorApi } from '@/api/selector'
+
 
 interface Props {
   node: WorkflowNode | null
@@ -218,10 +217,7 @@ const filteredProfiles = computed(() => {
   return profilesStore.profiles.filter(p => p.driver_type === driverType)
 })
 
-// Visual Selector state
-const visualSelectorSessionId = ref<string | null>(null)
-const isVisualSelectorOpen = ref(false)
-let stopPolling: (() => void) | null = null
+
 
 function updateWorkflowConfig(key: keyof WorkflowConfig, value: any) {
   let finalValue = value
@@ -232,141 +228,7 @@ function updateWorkflowConfig(key: keyof WorkflowConfig, value: any) {
   emit('update:workflowConfig', newConfig)
 }
 
-// Visual Selector for Extract Node
-async function openVisualSelector() {
-  let url = prompt('Enter the URL to open for element selection:')
-  if (!url) return
-  
-  // Add protocol if missing
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'https://' + url
-  }
-  
-  try {
-    // Convert existing fields to SelectedField format
-    const existingFields = convertToSelectedFields(localNode.value?.data.params.fields || {})
-    
-    // Create session
-    const session = await selectorApi.createSession(url, existingFields)
-    visualSelectorSessionId.value = session.session_id
-    isVisualSelectorOpen.value = true
-    
-    console.log('Visual Selector session created:', session.session_id)
-    
-    // Start polling for selected fields
-    stopPolling = await selectorApi.pollForFields(
-      session.session_id,
-      2000,
-      (selectedFields) => {
-        if (selectedFields.length > 0) {
-          importFromVisualSelector(selectedFields)
-        }
-      },
-      (error) => {
-        console.error('Visual selector polling error:', error)
-        closeVisualSelector()
-      }
-    )
-    
-  } catch (error: any) {
-    console.error('Visual selector error:', error)
-    const errorMsg = error.response?.data?.error || error.message || 'Unknown error'
-    alert(`Failed to open Visual Selector:\n${errorMsg}`)
-  }
-}
 
-function convertToSelectedFields(nodeFields: Record<string, any>): any[] {
-  const selected: any[] = []
-  
-  for (const [fieldName, fieldConfig] of Object.entries(nodeFields)) {
-    const config = fieldConfig as any
-    
-    // Handle key-value pairs
-    if (config.extractions && Array.isArray(config.extractions)) {
-      selected.push({
-        name: fieldName,
-        selector: config.selector || '',
-        type: config.type || 'text',
-        multiple: config.multiple || false,
-        mode: 'key-value-pairs',
-        attributes: {
-          extractions: config.extractions
-        }
-      })
-    }
-    // Handle regular fields
-    else {
-      selected.push({
-        name: fieldName,
-        selector: config.selector || '',
-        type: config.type || 'text',
-        attribute: config.attribute,
-        multiple: config.multiple || false,
-        mode: config.multiple ? 'list' : 'single'
-      })
-    }
-  }
-  
-  return selected
-}
-
-function importFromVisualSelector(selectedFields: any[]) {
-  if (!localNode.value) return
-  
-  const newFields: Record<string, any> = {}
-  
-  selectedFields.forEach(field => {
-    const fieldConfig: any = {
-      selector: field.selector,
-      type: field.type,
-      multiple: field.multiple || false
-    }
-    
-    if (field.attribute) {
-      fieldConfig.attribute = field.attribute
-    }
-    
-    // Handle key-value pairs
-    if (field.mode === 'key-value-pairs' && field.attributes?.extractions) {
-      fieldConfig.extractions = field.attributes.extractions
-      fieldConfig.multiple = false // Key-value pairs are not "multiple"
-    }
-    
-    newFields[field.name] = fieldConfig
-  })
-  
-  // Check if fields actually changed
-  const currentFields = localNode.value.data.params.fields || {}
-  if (JSON.stringify(currentFields) === JSON.stringify(newFields)) {
-    return // No changes, skip update
-  }
-
-  console.log('📥 [Visual Selector] Importing fields:', newFields)
-  console.log('📝 [Visual Selector] Current fields:', currentFields)
-  
-  // Update the node's fields
-  localNode.value.data.params.fields = newFields
-  
-  console.log('✅ [Visual Selector] Fields updated, emitting update event')
-  
-  // Watcher on localNode will handle the emit automatically
-}
-
-function closeVisualSelector() {
-  if (stopPolling) {
-    stopPolling()
-    stopPolling = null
-  }
-  
-  if (visualSelectorSessionId.value) {
-    selectorApi.closeSession(visualSelectorSessionId.value).catch(err => {
-      console.error('Error closing visual selector session:', err)
-    })
-    visualSelectorSessionId.value = null
-  }
-  
-  isVisualSelectorOpen.value = false
-}
 
 </script>
 
@@ -715,41 +577,7 @@ function closeVisualSelector() {
                  />
               </div>
 
-              <!-- Extract Node - Visual Selector Only (TOP) -->
-              <div v-if="localNode.data.nodeType === 'extract'" class="space-y-4 mb-6">
-                <!-- Visual Selector Button -->
-                <div class="space-y-2">
-                  <Label>Field Configuration</Label>
-                  <Button 
-                    variant="default" 
-                    class="w-full bg-blue-600 hover:bg-blue-700"
-                    @click="openVisualSelector"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
-                      <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
-                    </svg>
-                    Visual Selector
-                  </Button>
-                </div>
-                
-                <!-- Info Message -->
-                <div class="flex items-start gap-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
-                  <div class="flex-shrink-0 mt-0.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-                    </svg>
-                  </div>
-                  <div class="flex-1 text-sm">
-                    <div class="font-medium text-foreground mb-1">Fields managed on canvas</div>
-                    <div class="text-muted-foreground text-xs leading-relaxed">
-                      After using Visual Selector, individual field nodes will appear on the canvas for detailed configuration.
-                    </div>
-                  </div>
-                </div>
 
-                <Separator />
-              </div>
 
               <!-- Standard Parameters -->
               <div v-if="nodeTemplate?.paramSchema && nodeTemplate.paramSchema.length > 0">

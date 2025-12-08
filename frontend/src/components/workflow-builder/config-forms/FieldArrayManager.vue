@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Plus, ChevronDown, ChevronUp, MousePointerClick } from 'lucide-vue-next'
 import FieldCard from './FieldCard.vue'
-import { selectorApi, type SelectedField } from '@/api/selector'
+
 
 interface ParamField {
   key: string
@@ -32,12 +32,7 @@ const emit = defineEmits<{
 const collapsedFields = ref(new Set<string>())
 const searchQuery = ref('')
 
-// Visual selector state
-const isVisualSelectorOpen = ref(false)
-const visualSelectorSessionId = ref<string | null>(null)
-const visualSelectorLoading = ref(false)
-const visualSelectorError = ref<string | null>(null)
-let stopPolling: (() => void) | null = null
+
 
 const fields = computed(() => props.modelValue || {})
 
@@ -151,132 +146,7 @@ function collapseAll() {
   })
 }
 
-// Visual Selector Methods
-async function openVisualSelector() {
-  const url = prompt('Enter the URL to open for element selection:')
-  if (!url) return
-  
-  visualSelectorLoading.value = true
-  visualSelectorError.value = null
-  
-  try {
-    // Convert existing fields to SelectedField format
-    const existingFields = convertToSelectedFields(fields.value)
-    
-    const session = await selectorApi.createSession(url, existingFields)
-    visualSelectorSessionId.value = session.session_id
-    isVisualSelectorOpen.value = true
-    
-    // Start polling for selected fields
-    stopPolling = await selectorApi.pollForFields(
-      session.session_id,
-      2000,
-      (selectedFields: SelectedField[]) => {
-        if (selectedFields.length > 0) {
-          importFromVisualSelector(selectedFields)
-        }
-      },
-      (error) => {
-        console.error('Visual selector error:', error)
-        visualSelectorError.value = 'Session closed or connection lost'
-        closeVisualSelector()
-      }
-    )
-    
-    visualSelectorLoading.value = false
-  } catch (error: any) {
-    visualSelectorError.value = error.response?.data?.error || 'Failed to open visual selector'
-    visualSelectorLoading.value = false
-  }
-}
 
-function convertToSelectedFields(nodeFields: Record<string, any>): SelectedField[] {
-  const selected: SelectedField[] = []
-  
-  for (const [fieldName, fieldConfig] of Object.entries(nodeFields)) {
-    const config = fieldConfig as any
-    
-    // Handle key-value pairs
-    if (config.extractions && Array.isArray(config.extractions)) {
-      selected.push({
-        name: fieldName,
-        selector: '',
-        type: 'text',
-        mode: 'key-value-pairs',
-        multiple: false,
-        attributes: { extractions: config.extractions }
-      })
-      continue
-    }
-    
-    // Regular field
-    selected.push({
-      name: fieldName,
-      selector: config.selector || '',
-      type: config.type === 'attr' ? 'attribute' : config.type || 'text',
-      attribute: config.attribute || '',
-      multiple: config.multiple || false,
-      mode: config.multiple ? 'list' : 'single'
-    })
-  }
-  
-  return selected
-}
-
-function importFromVisualSelector(selectedFields: SelectedField[]) {
-  const newFields = { ...fields.value }
-  
-  selectedFields.forEach(field => {
-    if (field.mode === 'key-value-pairs' && field.attributes?.extractions) {
-      // Key-value pairs
-      newFields[field.name] = {
-        selector: '',
-        type: 'text',
-        attribute: '',
-        transform: 'none',
-        default_value: '',
-        multiple: false,
-        limit: 0,
-        fields: '',
-        extractions: [...field.attributes.extractions]
-      }
-    } else {
-      // Regular field
-      newFields[field.name] = {
-        selector: field.selector,
-        type: field.type === 'attribute' ? 'attr' : field.type,
-        attribute: field.attribute || '',
-        transform: 'none',
-        default_value: '',
-        multiple: field.multiple || false,
-        limit: 0,
-        fields: '',
-        extractions: ''
-      }
-    }
-  })
-  
-  emit('update:modelValue', newFields)
-}
-
-async function closeVisualSelector() {
-  if (stopPolling) {
-    stopPolling()
-    stopPolling = null
-  }
-  
-  if (visualSelectorSessionId.value) {
-    try {
-      await selectorApi.closeSession(visualSelectorSessionId.value)
-    } catch (error) {
-      console.error('Error closing selector session:', error)
-    }
-    visualSelectorSessionId.value = null
-  }
-  
-  isVisualSelectorOpen.value = false
-  visualSelectorError.value = null
-}
 </script>
 
 <template>
@@ -296,47 +166,12 @@ async function closeVisualSelector() {
       </div>
     </div>
     
-    <!-- Visual Selector Status Banner -->
-    <div v-if="isVisualSelectorOpen" class="p-3 bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 rounded-lg">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>
-          <span class="text-sm font-medium text-blue-900 dark:text-blue-100">Visual Selector Active</span>
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          @click="closeVisualSelector"
-          class="border-blue-300 hover:bg-blue-100"
-        >
-          Close Session
-        </Button>
-      </div>
-      <p class="text-xs text-blue-700 dark:text-blue-300 mt-2">
-        Select elements in the browser window. Selected fields will automatically appear below.
-      </p>
-    </div>
-    
-    <!-- Error Message -->
-    <div v-if="visualSelectorError" class="p-3 bg-red-50 dark:bg-red-950/30 border-2 border-red-200 dark:border-red-800 rounded-lg">
-      <p class="text-sm text-red-900 dark:text-red-100">{{ visualSelectorError }}</p>
-    </div>
+
     
     <!-- Toolbar -->
     <div class="sticky top-0 z-10 bg-background pb-2 space-y-2 border-b border-border">
       <div class="flex items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="default"
-          @click="openVisualSelector"
-          :disabled="visualSelectorLoading || isVisualSelectorOpen"
-          class="flex-1"
-        >
-          <MousePointerClick class="h-4 w-4 mr-2" />
-          {{ visualSelectorLoading ? 'Opening Browser...' : 'Visual Selector' }}
-        </Button>
+
         
         <Button
           type="button"

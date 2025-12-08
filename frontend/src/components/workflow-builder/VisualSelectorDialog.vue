@@ -30,7 +30,7 @@ const fields = ref<Record<string, any> | null>(null)
 const error = ref<string | null>(null)
 const pollInterval = ref<number | null>(null)
 const pollCount = ref(0)
-const MAX_POLL_COUNT = 300 // 5 minutes at 1 second intervals
+const MAX_POLL_COUNT = 300 * 6 // 30 minutes at 1 second intervals
 
 const isOpen = computed({
   get: () => props.open,
