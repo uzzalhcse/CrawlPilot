@@ -1,0 +1,37 @@
+{
+    "name": "selectflow",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vue-tsc -b && vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "@tanstack/vue-table": "^8.21.3",
+        "@vueuse/core": "^14.1.0",
+        "reka-ui": "^2.6.0",
+        "tailwindcss-animate": "^1.0.7",
+        "vaul-vue": "^0.4.1",
+        "vue": "^3.4.0",
+        "vue-sonner": "^2.0.9"
+    },
+    "devDependencies": {
+        "@types/node": "^24.10.1",
+        "@vitejs/plugin-vue": "^5.0.0",
+        "animate.css": "^4.1.1",
+        "autoprefixer": "^10.4.19",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "lucide-vue-next": "^0.555.0",
+        "postcss": "^8.4.38",
+        "radix-vue": "^1.9.17",
+        "tailwind-merge": "^3.4.0",
+        "tailwindcss": "^3.4.18",
+        "typescript": "^5.2.2",
+        "vite": "^5.2.0",
+        "vite-plugin-css-injected-by-js": "^3.5.2",
+        "vue-tsc": "^2.0.6"
+    }
+}
