@@ -5,6 +5,18 @@ set -e
 
 echo "🚀 Starting Crawlify Deployment on GCP VM..."
 
+# 0. Install Dependencies
+echo "📦 Checking system dependencies..."
+if ! command -v psql &> /dev/null; then
+    echo "Installing postgresql-client..."
+    # Check if we have sudo, otherwise try running directly (user is root in logs)
+    if command -v sudo &> /dev/null; then
+        sudo apt-get update && sudo apt-get install -y postgresql-client jq
+    else
+        apt-get update && apt-get install -y postgresql-client jq
+    fi
+fi
+
 # 1. Update Codebase
 echo "📥 Pulling latest code..."
 git fetch origin
