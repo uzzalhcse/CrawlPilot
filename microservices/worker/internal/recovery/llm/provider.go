@@ -88,6 +88,42 @@ type Config struct {
 	Timeout  int    `yaml:"timeout"`  // Seconds
 }
 
+// IsEmpty checks if the config is empty/unset
+func (c Config) IsEmpty() bool {
+	return c.Provider == "" && c.Model == ""
+}
+
+// MultiConfig holds separate LLM configs for different agents
+// Both recovery and probe agents can have their own model configuration
+type MultiConfig struct {
+	RecoveryLLM Config `yaml:"recovery_llm"` // Error recovery agent (fast decisions)
+	ProbeLLM    Config `yaml:"probe_llm"`    // Probe agent (DOM analysis)
+}
+
+// GetRecoveryConfig returns the effective config for recovery agent
+// Falls back to probe config if recovery is empty
+func (mc MultiConfig) GetRecoveryConfig() Config {
+	if !mc.RecoveryLLM.IsEmpty() {
+		return mc.RecoveryLLM
+	}
+	if !mc.ProbeLLM.IsEmpty() {
+		return mc.ProbeLLM
+	}
+	return Config{} // Both empty
+}
+
+// GetProbeConfig returns the effective config for probe agent
+// Falls back to recovery config if probe is empty
+func (mc MultiConfig) GetProbeConfig() Config {
+	if !mc.ProbeLLM.IsEmpty() {
+		return mc.ProbeLLM
+	}
+	if !mc.RecoveryLLM.IsEmpty() {
+		return mc.RecoveryLLM
+	}
+	return Config{} // Both empty
+}
+
 // ParseFunctionArgs parses JSON arguments from a tool call
 func ParseFunctionArgs(args string, v interface{}) error {
 	return json.Unmarshal([]byte(args), v)

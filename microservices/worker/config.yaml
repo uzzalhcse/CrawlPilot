@@ -65,11 +65,23 @@ recovery:
   
   # AI Agent Fallback (when rules don't match)
   ai_fallback_enabled: true
-  llm_provider: "openai"          # ollama, openai
-  llm_model: "gpt-4o-mini"        # gpt-4o-mini, gpt-4o (for OpenAI)
-  llm_endpoint: ""                # Leave empty for OpenAI default
-  llm_timeout: 120                # seconds
-  llm_api_key: "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"                 # Your OpenAI API key (or set OPENAI_API_KEY env var)
+  
+  # Recovery Agent LLM (fast local model for quick error recovery decisions)
+  recovery_llm:
+    provider: "ollama"           # ollama, openai
+    model: "qwen2.5:7b"          # Fast local model
+    endpoint: "http://localhost:11434"
+    api_key: ""
+    timeout: 30
+  
+  # Probe Agent LLM (powerful model for DOM analysis and selector fixes)
+  # Falls back to recovery_llm if not configured
+  probe_llm:
+    provider: "openai"           # Use more powerful model for complex DOM analysis
+    model: "gpt-4o-mini"
+    endpoint: ""                 # Default OpenAI endpoint
+    api_key: "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"
+    timeout: 120
   
   # Proxy settings (used when switching proxies)
   proxy_source: "database"       # database (seeded from JSON)
@@ -82,3 +94,4 @@ recovery:
   probe_autofix_enabled: true   # Enable probe AI auto-fix (requires Ollama/LLM running)
   probe_chunked_dom: false       # Use multi-pass chunked DOM analysis (set false for full DOM single-pass)
   probe_dom_chunk_size: 60000   # DOM chunk size in bytes (default 30KB)
+

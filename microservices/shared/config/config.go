@@ -119,19 +119,28 @@ type RecoveryConfig struct {
 	ConsecutiveThreshold int     `mapstructure:"consecutive_threshold"`
 	MaxRecoveryAttempts  int     `mapstructure:"max_recovery_attempts"`
 	AIFallbackEnabled    bool    `mapstructure:"ai_fallback_enabled"`
-	LLMProvider          string  `mapstructure:"llm_provider"`
-	LLMModel             string  `mapstructure:"llm_model"`
-	LLMEndpoint          string  `mapstructure:"llm_endpoint"`
-	LLMTimeout           int     `mapstructure:"llm_timeout"`
-	LLMAPIKey            string  `mapstructure:"llm_api_key"` // Required for OpenAI
-	ProxySource          string  `mapstructure:"proxy_source"`
-	ProxyRotation        string  `mapstructure:"proxy_rotation"`
-	SlackWebhookURL      string  `mapstructure:"slack_webhook_url"`
+
+	// Separate LLM configs for different agents
+	RecoveryLLM LLMConfig `mapstructure:"recovery_llm"` // Fast local model for error recovery
+	ProbeLLM    LLMConfig `mapstructure:"probe_llm"`    // Powerful model for DOM analysis
+
+	ProxySource     string `mapstructure:"proxy_source"`
+	ProxyRotation   string `mapstructure:"proxy_rotation"`
+	SlackWebhookURL string `mapstructure:"slack_webhook_url"`
 
 	// Probe System Settings
 	ProbeAutoFixEnabled bool `mapstructure:"probe_autofix_enabled"` // Enable/disable probe AI auto-fix (default: true)
 	ProbeChunkedDOM     bool `mapstructure:"probe_chunked_dom"`     // Use chunked DOM analysis (default: true)
 	ProbeDOMChunkSize   int  `mapstructure:"probe_dom_chunk_size"`  // DOM chunk size in bytes (default: 30000)
+}
+
+// LLMConfig holds configuration for an LLM provider
+type LLMConfig struct {
+	Provider string `mapstructure:"provider"` // ollama, openai
+	Model    string `mapstructure:"model"`    // qwen2.5, gpt-4o-mini
+	Endpoint string `mapstructure:"endpoint"` // http://localhost:11434
+	APIKey   string `mapstructure:"api_key"`  // For OpenAI
+	Timeout  int    `mapstructure:"timeout"`  // Seconds
 }
 
 // Load loads configuration from a file

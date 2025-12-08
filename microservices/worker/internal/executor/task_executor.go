@@ -146,12 +146,21 @@ func NewTaskExecutor(
 			ConsecutiveThreshold: recoveryCfg.ConsecutiveThreshold,
 			SlackWebhookURL:      recoveryCfg.SlackWebhookURL,
 			OrchestratorURL:      orchestratorURL, // For recovery attempt tracking
-			LLMConfig: llm.Config{
-				Provider: recoveryCfg.LLMProvider,
-				Model:    recoveryCfg.LLMModel,
-				Endpoint: recoveryCfg.LLMEndpoint,
-				Timeout:  recoveryCfg.LLMTimeout,
-				APIKey:   recoveryCfg.LLMAPIKey,
+			LLMMultiConfig: llm.MultiConfig{
+				RecoveryLLM: llm.Config{
+					Provider: recoveryCfg.RecoveryLLM.Provider,
+					Model:    recoveryCfg.RecoveryLLM.Model,
+					Endpoint: recoveryCfg.RecoveryLLM.Endpoint,
+					Timeout:  recoveryCfg.RecoveryLLM.Timeout,
+					APIKey:   recoveryCfg.RecoveryLLM.APIKey,
+				},
+				ProbeLLM: llm.Config{
+					Provider: recoveryCfg.ProbeLLM.Provider,
+					Model:    recoveryCfg.ProbeLLM.Model,
+					Endpoint: recoveryCfg.ProbeLLM.Endpoint,
+					Timeout:  recoveryCfg.ProbeLLM.Timeout,
+					APIKey:   recoveryCfg.ProbeLLM.APIKey,
+				},
 			},
 		}
 		rm, err := recovery.NewRecoveryManager(db.Pool, redisCache, pubsubClient, recoveryConfig)
@@ -193,7 +202,7 @@ func NewTaskExecutor(
 
 	// ProbeAgent is initialized lazily when LLM provider is available from recoveryManager
 	var probeAgent *recovery.ProbeAgent
-	if recoveryManager != nil && recoveryManager.GetLLMProvider() != nil {
+	if recoveryManager != nil && recoveryManager.GetProbeLLMProvider() != nil {
 		probeAgentConfig := recovery.DefaultProbeAgentConfig()
 		// Override with config values if available
 		if recoveryCfg != nil {
@@ -202,7 +211,7 @@ func NewTaskExecutor(
 				probeAgentConfig.DOMChunkSize = recoveryCfg.ProbeDOMChunkSize
 			}
 		}
-		probeAgent = recovery.NewProbeAgent(recoveryManager.GetLLMProvider(), probeAgentConfig)
+		probeAgent = recovery.NewProbeAgent(recoveryManager.GetProbeLLMProvider(), probeAgentConfig)
 		logger.Info("Probe auto-fix agent initialized",
 			zap.Bool("chunked_dom", probeAgentConfig.ChunkedDOM),
 			zap.Int("chunk_size", probeAgentConfig.DOMChunkSize),

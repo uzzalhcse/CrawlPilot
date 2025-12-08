@@ -21,6 +21,7 @@ type RecoveryManager struct {
 	detector         *ErrorDetector
 	ruleEngine       *RuleEngine
 	agent            *Agent
+	probeProvider    llm.Provider // Separate provider for probe agent (may be same as agent's)
 	learning         *LearningSystem
 	domainHealth     *DomainHealth
 	proxyManager     *ProxyManager                     // Local proxy manager (deprecated, use distributed)
@@ -42,7 +43,7 @@ type ManagerConfig struct {
 	Enabled             bool
 	MaxRecoveryAttempts int
 	AIFallbackEnabled   bool
-	LLMConfig           llm.Config
+	LLMMultiConfig      llm.MultiConfig // Separate configs for recovery and probe agents
 
 	// Smart triggering settings
 	WindowSize           int     // Number of results to track (default: 100)
@@ -65,11 +66,14 @@ func DefaultManagerConfig() *ManagerConfig {
 		WindowSize:           100,
 		ErrorRateThreshold:   0.10, // 10%
 		ConsecutiveThreshold: 3,
-		LLMConfig: llm.Config{
-			Provider: "ollama",
-			Model:    "qwen2.5",
-			Endpoint: "http://localhost:11434",
-			Timeout:  30,
+		LLMMultiConfig: llm.MultiConfig{
+			RecoveryLLM: llm.Config{
+				Provider: "ollama",
+				Model:    "qwen2.5",
+				Endpoint: "http://localhost:11434",
+				Timeout:  30,
+			},
+			// ProbeLLM empty - will fall back to RecoveryLLM
 		},
 	}
 }
@@ -111,15 +115,18 @@ func NewRecoveryManager(
 		// Continue without proxy manager
 	}
 
-	// Initialize AI agent if enabled
+	// Initialize AI agents with separate providers for recovery and probe
 	var agent *Agent
+	var probeProvider llm.Provider
 	if config.AIFallbackEnabled {
 		factory := llm.NewProviderFactory()
-		provider, err := factory.Create(config.LLMConfig)
+
+		recoveryProvider, probeProviderResult, err := factory.CreateBoth(config.LLMMultiConfig)
 		if err != nil {
-			logger.Warn("Failed to create LLM provider, AI fallback disabled", zap.Error(err))
+			logger.Warn("Failed to create LLM providers, AI fallback disabled", zap.Error(err))
 		} else {
-			agent = NewAgent(provider, nil)
+			agent = NewAgent(recoveryProvider, nil)
+			probeProvider = probeProviderResult
 		}
 	}
 
@@ -216,7 +223,8 @@ func NewRecoveryManager(
 		zap.Bool("incident_reporter", incidentReporter != nil),
 		zap.Bool("coordinator", coordinator != nil),
 		zap.String("worker_id", workerID),
-		zap.String("llm_provider", config.LLMConfig.Provider),
+		zap.String("recovery_llm", config.LLMMultiConfig.RecoveryLLM.Provider),
+		zap.String("probe_llm", config.LLMMultiConfig.ProbeLLM.Provider),
 		zap.Int("window_size", config.WindowSize),
 		zap.Float64("error_rate_threshold", config.ErrorRateThreshold),
 		zap.Int("consecutive_threshold", config.ConsecutiveThreshold),
@@ -226,6 +234,7 @@ func NewRecoveryManager(
 		detector:         detector,
 		ruleEngine:       ruleEngine,
 		agent:            agent,
+		probeProvider:    probeProvider,
 		learning:         learning,
 		domainHealth:     domainHealth,
 		proxyManager:     proxyManager,
@@ -650,20 +659,53 @@ func (m *RecoveryManager) GetWorkerID() string {
 	return m.workerID
 }
 
-// Close cleans up resources
-func (m *RecoveryManager) Close() error {
-	if m.agent != nil {
-		m.agent.Close()
-	}
-	return nil
-}
-
-// GetLLMProvider returns the LLM provider for sharing with other agents (e.g., ProbeAgent)
+// GetLLMProvider returns the LLM provider for recovery agent
 func (m *RecoveryManager) GetLLMProvider() llm.Provider {
 	if m.agent == nil {
 		return nil
 	}
 	return m.agent.GetProvider()
+}
+
+// GetProbeLLMProvider returns the LLM provider for probe agent
+// Falls back to recovery provider if probe-specific provider is not set
+func (m *RecoveryManager) GetProbeLLMProvider() llm.Provider {
+	if m.probeProvider != nil {
+		return m.probeProvider
+	}
+	// Fallback to recovery provider
+	return m.GetLLMProvider()
+}
+
+// Close gracefully shuts down the recovery manager and its resources
+func (m *RecoveryManager) Close() error {
+	var errs []error
+
+	// Close batched recovery reporter (flush pending)
+	if m.recoveryReporter != nil {
+		if err := m.recoveryReporter.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("recovery reporter: %w", err))
+		}
+	}
+
+	// Close probe LLM provider (only if different from recovery agent's)
+	if m.probeProvider != nil && (m.agent == nil || m.probeProvider != m.agent.GetProvider()) {
+		if err := m.probeProvider.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("probe provider: %w", err))
+		}
+	}
+
+	// Close recovery agent (and its provider)
+	if m.agent != nil {
+		if err := m.agent.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("recovery agent: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("close errors: %v", errs)
+	}
+	return nil
 }
 
 // historyKeyFor returns the Redis key for task recovery history

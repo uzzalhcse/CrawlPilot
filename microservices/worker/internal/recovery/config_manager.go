@@ -238,11 +238,19 @@ func (cm *ConfigManager) GetManagerConfig(ctx context.Context) *ManagerConfig {
 		WindowSize:           cm.GetInt(ctx, "recovery.window_size", 100),
 		ErrorRateThreshold:   cm.GetFloat(ctx, "recovery.error_rate_threshold", 0.10),
 		ConsecutiveThreshold: cm.GetInt(ctx, "recovery.consecutive_threshold", 3),
-		LLMConfig: llm.Config{
-			Provider: cm.GetString(ctx, "ai.provider", "ollama"),
-			Model:    cm.GetString(ctx, "ai.model", "qwen2.5"),
-			Endpoint: cm.GetString(ctx, "ai.endpoint", "http://localhost:11434"),
-			Timeout:  cm.GetInt(ctx, "ai.timeout", 30),
+		LLMMultiConfig: llm.MultiConfig{
+			RecoveryLLM: llm.Config{
+				Provider: cm.GetString(ctx, "ai.recovery.provider", "ollama"),
+				Model:    cm.GetString(ctx, "ai.recovery.model", "qwen2.5"),
+				Endpoint: cm.GetString(ctx, "ai.recovery.endpoint", "http://localhost:11434"),
+				Timeout:  cm.GetInt(ctx, "ai.recovery.timeout", 30),
+			},
+			ProbeLLM: llm.Config{
+				Provider: cm.GetString(ctx, "ai.probe.provider", ""),
+				Model:    cm.GetString(ctx, "ai.probe.model", ""),
+				Endpoint: cm.GetString(ctx, "ai.probe.endpoint", ""),
+				Timeout:  cm.GetInt(ctx, "ai.probe.timeout", 120),
+			},
 		},
 	}
 }
