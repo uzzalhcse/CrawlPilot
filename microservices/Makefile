@@ -173,24 +173,24 @@ setup-pubsub-local: ## Setup Pub/Sub emulator topics (including DLQ)
 # Development workflow
 dev: docker-up migrate-up setup-pubsub-local ## Start full development environment
 	@echo "Development environment ready!"
-	@echo "Orchestrator: http://localhost:8090"
-	@echo "Worker: http://localhost:8091"
+	@echo "Orchestrator: http://localhost:8181"
+	@echo "Worker: http://localhost:8282"
 	@echo "Pub/Sub Emulator: http://localhost:8095"
 	@echo "PostgreSQL: localhost:5433"
 	@echo "Redis: localhost:6380"
 
 # Health checks
 health-orchestrator: ## Check orchestrator health
-	@curl http://localhost:8090/health | jq .
+	@curl http://localhost:8181/health | jq .
 
 health-worker: ## Check worker health
-	@curl http://localhost:8091/health | jq .
+	@curl http://localhost:8282/health | jq .
 
 health-all: ## Check all services health
 	@echo "=== Orchestrator ==="
-	@curl -s http://localhost:8090/health | jq .
+	@curl -s http://localhost:8181/health | jq .
 	@echo "\n=== Worker ==="
-	@curl -s http://localhost:8091/health | jq .
+	@curl -s http://localhost:8282/health | jq .
 
 # ============================================
 # Standalone Local Development (Native Services)
@@ -218,7 +218,7 @@ run-orchestrator-standalone: ## Run orchestrator with native PostgreSQL/Redis/Pu
 run-worker-standalone: ## Run worker with native PostgreSQL/Redis/PubSub
 	@echo "Starting Worker (standalone mode)..."
 	@echo "NOTE: Requires native PostgreSQL:5432, Redis:6379, PubSub:8085"
-	@export SERVER_PORT=8081 && \
+	@export SERVER_PORT=8282 && \
 	export DATABASE_PORT=5432 && \
 	export REDIS_PORT=6379 && \
 	export GCP_PUBSUB_EMULATOR_HOST=localhost:8085 && \
