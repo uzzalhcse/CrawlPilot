@@ -233,7 +233,8 @@ const loadExecutionData = async () => {
     await Promise.all([
       executionsStore.fetchExecutionById(executionId),
       executionsStore.fetchExecutionStats(executionId),
-      loadExtractedData()
+      loadExtractedData(),
+      loadExecutionErrors()
     ])
   } catch (error) {
     console.error('Failed to load execution data:', error)
@@ -300,7 +301,6 @@ const handlePageSizeChange = (value: any) => {
 
 onMounted(async () => {
   await loadExecutionData()
-  await loadExecutionErrors()
 })
 </script>
 
