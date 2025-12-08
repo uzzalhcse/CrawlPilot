@@ -13,15 +13,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// PooledContext wraps a browser context with metadata for lifecycle management
+type PooledContext struct {
+	ctx       playwright.BrowserContext
+	createdAt time.Time
+}
+
 // Pool manages a pool of browser contexts
 type Pool struct {
 	browser     playwright.Browser
-	contexts    chan playwright.BrowserContext
+	contexts    chan *PooledContext
 	config      *config.BrowserConfig
 	profile     *models.BrowserProfile // Optional profile for fingerprint settings
 	mu          sync.Mutex
 	activeCount int
 	pw          *playwright.Playwright
+	semaphore   chan struct{} // Limits concurrent browser operations
 }
 
 // ProxyConfig holds proxy settings for a browser context
@@ -92,12 +99,19 @@ func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) 
 		return nil, fmt.Errorf("failed to launch %s browser: %w", browserType, err)
 	}
 
+	// Initialize semaphore for max_concurrency (defaults to pool_size if not set)
+	maxConcurrency := cfg.MaxConcurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = cfg.PoolSize
+	}
+
 	pool := &Pool{
-		browser:  browser,
-		contexts: make(chan playwright.BrowserContext, cfg.PoolSize),
-		config:   cfg,
-		profile:  profile,
-		pw:       pw,
+		browser:   browser,
+		contexts:  make(chan *PooledContext, cfg.PoolSize),
+		config:    cfg,
+		profile:   profile,
+		pw:        pw,
+		semaphore: make(chan struct{}, maxConcurrency),
 	}
 
 	// Pre-create contexts with profile fingerprint applied
@@ -107,11 +121,16 @@ func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) 
 			pool.Close()
 			return nil, fmt.Errorf("failed to create initial context: %w", err)
 		}
-		pool.contexts <- ctx
+		pool.contexts <- &PooledContext{
+			ctx:       ctx,
+			createdAt: time.Now(),
+		}
 	}
 
 	logger.Info("Browser pool initialized",
 		zap.Int("pool_size", cfg.PoolSize),
+		zap.Int("max_concurrency", maxConcurrency),
+		zap.Int("context_lifetime_sec", cfg.ContextLifetime),
 		zap.Bool("headless", cfg.Headless),
 		zap.String("browser_type", browserType),
 	)
@@ -241,26 +260,71 @@ func (p *Pool) CreateContextWithProxy(proxy *ProxyConfig) (playwright.BrowserCon
 
 // Acquire gets a browser context from the pool
 func (p *Pool) Acquire(ctx context.Context) (playwright.BrowserContext, error) {
+	// Acquire semaphore slot for max_concurrency limiting
 	select {
-	case browserCtx := <-p.contexts:
+	case p.semaphore <- struct{}{}:
+		// Got semaphore slot, proceed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("timeout waiting for concurrency slot")
+	}
+
+	// Get context from pool
+	select {
+	case pooledCtx := <-p.contexts:
 		p.mu.Lock()
 		p.activeCount++
 		p.mu.Unlock()
+
+		// Check context_lifetime and recycle if expired
+		if p.config.ContextLifetime > 0 {
+			age := time.Since(pooledCtx.createdAt)
+			lifetime := time.Duration(p.config.ContextLifetime) * time.Second
+			if age > lifetime {
+				logger.Debug("Context expired, recycling",
+					zap.Duration("age", age),
+					zap.Duration("lifetime", lifetime),
+				)
+				pooledCtx.ctx.Close()
+				newCtx, err := p.createContextWithProfile(nil)
+				if err != nil {
+					p.mu.Lock()
+					p.activeCount--
+					p.mu.Unlock()
+					<-p.semaphore // Release semaphore on error
+					return nil, fmt.Errorf("failed to recreate expired context: %w", err)
+				}
+				pooledCtx.ctx = newCtx
+				pooledCtx.createdAt = time.Now()
+			}
+		}
 
 		logger.Debug("Context acquired",
 			zap.Int("active_contexts", p.activeCount),
 		)
 
-		return browserCtx, nil
+		return pooledCtx.ctx, nil
 	case <-ctx.Done():
+		<-p.semaphore // Release semaphore on cancel
 		return nil, ctx.Err()
 	case <-time.After(30 * time.Second):
+		<-p.semaphore // Release semaphore on timeout
 		return nil, fmt.Errorf("timeout waiting for browser context")
 	}
 }
 
 // Release returns a browser context to the pool
 func (p *Pool) Release(browserCtx playwright.BrowserContext) {
+	// Release semaphore slot
+	select {
+	case <-p.semaphore:
+		// Released semaphore slot
+	default:
+		// Semaphore was empty (shouldn't happen normally)
+		logger.Warn("Release called but semaphore was empty")
+	}
+
 	// Clean up context (close all pages, clear cookies, etc.)
 	pages := browserCtx.Pages()
 	for _, page := range pages {
@@ -274,9 +338,15 @@ func (p *Pool) Release(browserCtx playwright.BrowserContext) {
 	p.activeCount--
 	p.mu.Unlock()
 
+	// Create pooled context wrapper
+	pooledCtx := &PooledContext{
+		ctx:       browserCtx,
+		createdAt: time.Now(), // Reset creation time on release
+	}
+
 	// Return to pool
 	select {
-	case p.contexts <- browserCtx:
+	case p.contexts <- pooledCtx:
 		logger.Debug("Context released",
 			zap.Int("active_contexts", p.activeCount),
 		)
@@ -288,7 +358,10 @@ func (p *Pool) Release(browserCtx playwright.BrowserContext) {
 			logger.Error("Failed to recreate context", zap.Error(err))
 			return
 		}
-		p.contexts <- newCtx
+		p.contexts <- &PooledContext{
+			ctx:       newCtx,
+			createdAt: time.Now(),
+		}
 	}
 }
 
@@ -297,8 +370,8 @@ func (p *Pool) Close() error {
 	close(p.contexts)
 
 	// Close all contexts
-	for ctx := range p.contexts {
-		ctx.Close()
+	for pooledCtx := range p.contexts {
+		pooledCtx.ctx.Close()
 	}
 
 	// Close browser
