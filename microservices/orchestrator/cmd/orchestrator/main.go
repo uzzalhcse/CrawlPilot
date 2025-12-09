@@ -212,7 +212,8 @@ func main() {
 
 	// Initialize browser profile repository and handler
 	browserProfileRepo := repository.NewBrowserProfileRepository(db)
-	browserProfileHandler := handlers.NewBrowserProfileHandler(browserProfileRepo)
+	browserManager := service.NewBrowserManager(browserProfileRepo)
+	browserProfileHandler := handlers.NewBrowserProfileHandler(browserProfileRepo, browserManager)
 
 	// Browser profile routes (GoLogin/Multilogin-style profile management)
 	profiles := api.Group("/profiles")
@@ -226,6 +227,8 @@ func main() {
 	profiles.Put("/:id", browserProfileHandler.UpdateProfile)
 	profiles.Delete("/:id", browserProfileHandler.DeleteProfile)
 	profiles.Post("/:id/duplicate", browserProfileHandler.DuplicateProfile)
+	profiles.Post("/:id/launch", browserProfileHandler.LaunchProfile)
+	profiles.Post("/:id/stop", browserProfileHandler.StopProfile)
 
 	// Initialize visual selector service and handler
 	selectFlowScript := os.Getenv("SELECTFLOW_SCRIPT_PATH")

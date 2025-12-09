@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/uzzalhcse/crawlify/microservices/orchestrator/internal/repository"
+	"github.com/uzzalhcse/crawlify/microservices/orchestrator/internal/service"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"go.uber.org/zap"
@@ -13,13 +14,15 @@ import (
 
 // BrowserProfileHandler handles browser profile HTTP requests
 type BrowserProfileHandler struct {
-	profileRepo repository.BrowserProfileRepository
+	profileRepo    repository.BrowserProfileRepository
+	browserManager *service.BrowserManager
 }
 
 // NewBrowserProfileHandler creates a new browser profile handler
-func NewBrowserProfileHandler(profileRepo repository.BrowserProfileRepository) *BrowserProfileHandler {
+func NewBrowserProfileHandler(profileRepo repository.BrowserProfileRepository, browserManager *service.BrowserManager) *BrowserProfileHandler {
 	return &BrowserProfileHandler{
-		profileRepo: profileRepo,
+		profileRepo:    profileRepo,
+		browserManager: browserManager,
 	}
 }
 
@@ -213,6 +216,40 @@ func (h *BrowserProfileHandler) TestBrowserConfig(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "Browser configuration is valid",
+	})
+}
+
+// LaunchProfile handles POST /api/v1/profiles/:id/launch
+func (h *BrowserProfileHandler) LaunchProfile(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	if err := h.browserManager.Launch(c.Context(), id); err != nil {
+		logger.Error("Failed to launch browser profile", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Browser launched successfully",
+	})
+}
+
+// StopProfile handles POST /api/v1/profiles/:id/stop
+func (h *BrowserProfileHandler) StopProfile(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	if err := h.browserManager.Stop(c.Context(), id); err != nil {
+		logger.Error("Failed to stop browser profile", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Browser stopped successfully",
 	})
 }
 
