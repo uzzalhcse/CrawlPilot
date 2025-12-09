@@ -3,32 +3,39 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useExecutionsStore } from '@/stores/executions'
 import { useWorkflowsStore } from '@/stores/workflows'
+import { schedulesApi, type Schedule } from '@/api/schedules'
+import type { Workflow } from '@/types'
 import { 
   PlayCircle, 
-  Workflow, 
+  Workflow as WorkflowIcon, 
   CheckCircle2, 
   Activity, 
-  Plus, 
-  Search, 
-  FileText, 
-  Server,
+  Plus,
   Clock,
-  AlertCircle
+  Calendar,
+  ArrowRight,
+  Zap,
+  Timer,
+  ChevronRight,
+  Loader2,
+  Globe
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
 
 const router = useRouter()
 const executionsStore = useExecutionsStore()
 const workflowsStore = useWorkflowsStore()
 
 const loading = ref(true)
+const schedules = ref<Schedule[]>([])
+const activeTab = ref<'recent' | 'scheduled'>('recent')
 
 // Stats
 const totalWorkflows = computed(() => workflowsStore.workflows.length)
 const activeExecutions = computed(() => executionsStore.runningExecutions.length)
-const recentExecutions = computed(() => executionsStore.executions.slice(0, 5))
+const recentExecutions = computed(() => executionsStore.executions.slice(0, 6))
+const recentWorkflows = computed(() => workflowsStore.workflows.slice(0, 3))
 
 const successRate = computed(() => {
   const total = executionsStore.executions.length
@@ -37,48 +44,86 @@ const successRate = computed(() => {
   return Math.round((successful / total) * 100)
 })
 
-const systemHealth = ref('Healthy') // Placeholder for now
+const upcomingSchedules = computed(() => {
+  return schedules.value
+    .filter(s => s.is_enabled && s.next_run_at)
+    .sort((a, b) => new Date(a.next_run_at!).getTime() - new Date(b.next_run_at!).getTime())
+    .slice(0, 6)
+})
 
-// Quick Actions
-const quickActions = [
-  { label: 'New Workflow', icon: Plus, route: '/workflows/create', color: 'text-blue-500' },
-  { label: 'Browse Plugins', icon: Search, route: '/plugins', color: 'text-purple-500' },
-  { label: 'View Executions', icon: PlayCircle, route: '/executions', color: 'text-green-500' },
-  { label: 'View Probes', icon: Activity, route: '/probes', color: 'text-orange-500' }
-]
+const navigateTo = (route: string) => router.push(route)
 
-const navigateTo = (route: string) => {
-  router.push(route)
+// Count nodes in a workflow - nodes are inside phases
+const getNodeCount = (workflow: Workflow) => {
+  const phases = workflow.config?.phases || []
+  return phases.reduce((total, phase) => total + (phase.nodes?.length || 0), 0)
 }
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleString()
+// Get phase count
+const getPhaseCount = (workflow: Workflow) => {
+  return workflow.config?.phases?.length || 0
+}
+
+const formatTimeAgo = (dateString?: string) => {
+  if (!dateString) return 'Unknown'
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return 'Unknown'
+  
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const minutes = Math.floor(diff / (1000 * 60))
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  if (days < 7) return `${days}d ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+const formatNextRun = (dateString?: string) => {
+  if (!dateString) return 'Not scheduled'
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return 'N/A'
+  
+  const now = new Date()
+  const diff = date.getTime() - now.getTime()
+  const minutes = Math.floor(diff / (1000 * 60))
+  const hours = Math.floor(minutes / 60)
+  
+  if (minutes < 1) return 'Now'
+  if (minutes < 60) return `in ${minutes}m`
+  if (hours < 24) return `in ${hours}h`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 const getStatusColor = (status: string) => {
   switch (status) {
-    case 'completed': return 'text-green-500'
-    case 'failed': return 'text-red-500'
-    case 'running': return 'text-blue-500'
-    default: return 'text-gray-500'
+    case 'completed': return 'bg-emerald-500'
+    case 'failed': return 'bg-red-500'
+    case 'running': return 'bg-blue-500'
+    default: return 'bg-gray-500'
   }
 }
 
-const getStatusIcon = (status: string) => {
+const getStatusBadgeClass = (status: string) => {
   switch (status) {
-    case 'completed': return CheckCircle2
-    case 'failed': return AlertCircle
-    case 'running': return Activity
-    default: return Clock
+    case 'completed': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+    case 'failed': return 'bg-red-500/10 text-red-500 border-red-500/20'
+    case 'running': return 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+    default: return 'bg-gray-500/10 text-gray-400 border-gray-500/20'
   }
 }
 
 onMounted(async () => {
   try {
-    await Promise.all([
+    const [, , schedulesRes] = await Promise.all([
       workflowsStore.fetchWorkflows(),
-      executionsStore.fetchAllExecutions({ limit: 20 })
+      executionsStore.fetchAllExecutions({ limit: 20 }),
+      schedulesApi.list({ limit: 10 })
     ])
+    schedules.value = schedulesRes.data.schedules || []
   } catch (error) {
     console.error('Failed to load dashboard data:', error)
   } finally {
@@ -88,194 +133,250 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="p-8 space-y-8 max-w-[1600px] mx-auto">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight text-white">Dashboard</h1>
-        <p class="text-muted-foreground mt-1">
-          Overview of your crawling automation platform.
-        </p>
+  <div class="min-h-screen">
+    <div class="p-6 space-y-6">
+      
+      <!-- Welcome Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-semibold">Welcome back</h1>
+          <p class="text-muted-foreground text-sm mt-0.5">Here's what's happening with your workflows</p>
+        </div>
+        <Button @click="navigateTo('/workflows/create')" size="sm">
+          <Plus class="w-4 h-4 mr-2" />
+          New Workflow
+        </Button>
       </div>
-      <div class="flex items-center gap-2">
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 text-green-500 text-sm font-medium border border-green-500/20">
-          <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          System Operational
+
+      <!-- Stats Row -->
+      <div class="grid grid-cols-4 gap-4">
+        <div 
+          @click="navigateTo('/workflows')"
+          class="group rounded-xl border bg-card p-4 cursor-pointer hover:border-primary/40 transition-all"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs text-muted-foreground font-medium">Workflows</p>
+              <p class="text-2xl font-bold mt-0.5">{{ totalWorkflows }}</p>
+            </div>
+            <div class="p-2 rounded-lg bg-blue-500/10">
+              <WorkflowIcon class="w-4 h-4 text-blue-500" />
+            </div>
+          </div>
+        </div>
+
+        <div 
+          @click="navigateTo('/executions?status=running')"
+          class="group rounded-xl border bg-card p-4 cursor-pointer hover:border-primary/40 transition-all"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs text-muted-foreground font-medium">Running</p>
+              <p class="text-2xl font-bold mt-0.5">{{ activeExecutions }}</p>
+            </div>
+            <div class="p-2 rounded-lg bg-emerald-500/10">
+              <Activity class="w-4 h-4 text-emerald-500" :class="{ 'animate-pulse': activeExecutions > 0 }" />
+            </div>
+          </div>
+        </div>
+
+        <div 
+          @click="navigateTo('/executions')"
+          class="group rounded-xl border bg-card p-4 cursor-pointer hover:border-primary/40 transition-all"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs text-muted-foreground font-medium">Success Rate</p>
+              <p class="text-2xl font-bold mt-0.5">{{ successRate }}%</p>
+            </div>
+            <div class="p-2 rounded-lg bg-purple-500/10">
+              <CheckCircle2 class="w-4 h-4 text-purple-500" />
+            </div>
+          </div>
+        </div>
+
+        <div 
+          @click="navigateTo('/schedules')"
+          class="group rounded-xl border bg-card p-4 cursor-pointer hover:border-primary/40 transition-all"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs text-muted-foreground font-medium">Schedules</p>
+              <p class="text-2xl font-bold mt-0.5">{{ schedules.filter(s => s.is_enabled).length }}</p>
+            </div>
+            <div class="p-2 rounded-lg bg-amber-500/10">
+              <Calendar class="w-4 h-4 text-amber-500" />
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Stats Grid -->
-    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card class="bg-[#1a1d21] border-gray-800">
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium text-gray-400">Total Workflows</CardTitle>
-          <Workflow class="h-4 w-4 text-blue-500" />
-        </CardHeader>
-        <CardContent>
-          <div class="text-2xl font-bold text-white">{{ totalWorkflows }}</div>
-          <p class="text-xs text-gray-500 mt-1">Defined automations</p>
-        </CardContent>
-      </Card>
-
-      <Card class="bg-[#1a1d21] border-gray-800">
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium text-gray-400">Active Executions</CardTitle>
-          <Activity class="h-4 w-4 text-green-500" />
-        </CardHeader>
-        <CardContent>
-          <div class="text-2xl font-bold text-white">{{ activeExecutions }}</div>
-          <p class="text-xs text-gray-500 mt-1">Currently running jobs</p>
-        </CardContent>
-      </Card>
-
-      <Card class="bg-[#1a1d21] border-gray-800">
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium text-gray-400">Success Rate</CardTitle>
-          <CheckCircle2 class="h-4 w-4 text-purple-500" />
-        </CardHeader>
-        <CardContent>
-          <div class="text-2xl font-bold text-white">{{ successRate }}%</div>
-          <p class="text-xs text-gray-500 mt-1">Based on recent runs</p>
-        </CardContent>
-      </Card>
-
-      <Card class="bg-[#1a1d21] border-gray-800">
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle class="text-sm font-medium text-gray-400">System Health</CardTitle>
-          <Server class="h-4 w-4 text-orange-500" />
-        </CardHeader>
-        <CardContent>
-          <div class="text-2xl font-bold text-white">{{ systemHealth }}</div>
-          <p class="text-xs text-gray-500 mt-1">All systems normal</p>
-        </CardContent>
-      </Card>
-    </div>
-
-    <!-- Quick Actions -->
-    <div>
-      <h2 class="text-lg font-semibold text-white mb-4">Quick Actions</h2>
-      <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <button
-          v-for="action in quickActions"
-          :key="action.label"
-          class="flex items-center gap-4 p-4 rounded-xl bg-[#1a1d21] border border-gray-800 hover:bg-[#222529] hover:border-gray-700 transition-all group text-left"
-          @click="navigateTo(action.route)"
-        >
-          <div class="p-3 rounded-lg bg-gray-800/50 group-hover:bg-gray-800 transition-colors">
-            <component :is="action.icon" :class="['w-6 h-6', action.color]" />
+      <!-- Your Workflows -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">Your Workflows</h2>
+          <Button variant="link" size="sm" @click="navigateTo('/workflows')" class="text-muted-foreground hover:text-foreground h-auto p-0">
+            View all <ArrowRight class="w-3 h-3 ml-1" />
+          </Button>
+        </div>
+        
+        <div v-if="loading" class="grid grid-cols-4 gap-4">
+          <div v-for="i in 4" :key="i" class="h-24 rounded-xl bg-muted/30 animate-pulse" />
+        </div>
+        
+        <div v-else class="grid grid-cols-4 gap-4">
+          <div
+            v-for="workflow in recentWorkflows"
+            :key="workflow.id"
+            @click="navigateTo(`/workflows/${workflow.id}`)"
+            class="group rounded-xl border bg-card p-4 cursor-pointer hover:border-primary/40 transition-all"
+          >
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-lg bg-primary/10 shrink-0">
+                <Globe class="w-4 h-4 text-primary" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <h3 class="font-medium text-sm truncate">{{ workflow.name }}</h3>
+                <p class="text-xs text-muted-foreground mt-0.5 truncate">
+                  {{ workflow.config?.start_urls?.[0] || 'No target URL' }}
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mt-3 pt-2 border-t border-border/50">
+              <span class="text-xs text-muted-foreground">{{ getPhaseCount(workflow) }} phases</span>
+              <span class="text-muted-foreground/50">•</span>
+              <span class="text-xs text-muted-foreground">{{ getNodeCount(workflow) }} nodes</span>
+            </div>
           </div>
-          <div>
-            <div class="font-medium text-white group-hover:text-blue-400 transition-colors">{{ action.label }}</div>
-            <div class="text-xs text-gray-500">Jump to section</div>
+
+          <!-- Create New -->
+          <div
+            @click="navigateTo('/workflows/create')"
+            class="rounded-xl border-2 border-dashed border-muted-foreground/20 p-4 cursor-pointer hover:border-primary/40 hover:bg-muted/20 transition-all flex flex-col items-center justify-center text-center min-h-[96px]"
+          >
+            <Plus class="w-5 h-5 text-muted-foreground mb-1" />
+            <span class="text-sm text-muted-foreground">Create New</span>
           </div>
-        </button>
+        </div>
       </div>
-    </div>
 
-    <!-- Main Content Split -->
-    <div class="grid gap-8 lg:grid-cols-3">
-      <!-- Recent Activity -->
-      <div class="lg:col-span-2 space-y-4">
-        <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-white">Recent Activity</h2>
-          <Button variant="ghost" size="sm" class="text-gray-400 hover:text-white" @click="navigateTo('/executions')">
-            View all
+      <!-- Workflow Runs -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold">Workflow Runs</h2>
+          <Button variant="link" size="sm" @click="navigateTo('/executions')" class="text-muted-foreground hover:text-foreground h-auto p-0">
+            View all runs <ArrowRight class="w-3 h-3 ml-1" />
           </Button>
         </div>
 
-        <Card class="bg-[#1a1d21] border-gray-800">
-          <CardContent class="p-0">
-            <div v-if="loading" class="p-8 text-center text-gray-500">
-              Loading activity...
-            </div>
-            <div v-else-if="recentExecutions.length === 0" class="p-8 text-center text-gray-500">
-              No recent activity found.
-            </div>
-            <div v-else class="divide-y divide-gray-800">
+        <!-- Custom Tabs -->
+        <div class="flex items-center gap-1 mb-4 bg-muted/50 p-1 rounded-lg w-fit">
+          <button 
+            @click="activeTab = 'recent'"
+            :class="[
+              'px-4 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-2',
+              activeTab === 'recent' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            ]"
+          >
+            <Clock class="w-3.5 h-3.5" /> Recent
+          </button>
+          <button 
+            @click="activeTab = 'scheduled'"
+            :class="[
+              'px-4 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-2',
+              activeTab === 'scheduled' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            ]"
+          >
+            <Calendar class="w-3.5 h-3.5" /> Scheduled
+          </button>
+        </div>
+
+        <!-- Recent Runs -->
+        <div v-if="activeTab === 'recent'">
+          <div v-if="loading" class="flex items-center justify-center py-12">
+            <Loader2 class="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+          
+          <div v-else-if="recentExecutions.length === 0" class="text-center py-12 border rounded-xl bg-card/50">
+            <PlayCircle class="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+            <p class="text-muted-foreground text-sm">No recent runs</p>
+          </div>
+
+          <div v-else class="border rounded-xl overflow-hidden">
+            <div class="divide-y divide-border">
               <div
                 v-for="execution in recentExecutions"
                 :key="execution.id"
-                class="flex items-center justify-between p-4 hover:bg-white/5 transition-colors cursor-pointer"
                 @click="navigateTo(`/executions/${execution.id}`)"
+                class="flex items-center justify-between px-4 py-3 hover:bg-muted/30 cursor-pointer transition-colors"
               >
-                <div class="flex items-center gap-4">
-                  <div :class="['p-2 rounded-full bg-gray-800/50', getStatusColor(execution.status)]">
-                    <component :is="getStatusIcon(execution.status)" class="w-4 h-4" />
+                <div class="flex items-center gap-3">
+                  <div :class="['w-2 h-2 rounded-full shrink-0', getStatusColor(execution.status)]" />
+                  <div>
+                    <p class="font-medium text-sm">{{ execution.workflow_name || 'Untitled' }}</p>
+                    <p class="text-xs text-muted-foreground">{{ formatTimeAgo(execution.started_at) }}</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="text-right">
+                    <p class="text-sm font-medium">{{ execution.stats?.items_extracted || 0 }} items</p>
+                    <p class="text-xs text-muted-foreground">extracted</p>
+                  </div>
+                  <Badge :class="getStatusBadgeClass(execution.status)" class="capitalize text-xs">
+                    {{ execution.status }}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scheduled Runs -->
+        <div v-if="activeTab === 'scheduled'">
+          <div v-if="loading" class="flex items-center justify-center py-12">
+            <Loader2 class="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+
+          <div v-else-if="upcomingSchedules.length === 0" class="text-center py-12 border rounded-xl bg-card/50">
+            <Calendar class="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+            <p class="text-muted-foreground text-sm">No scheduled runs</p>
+            <Button @click="navigateTo('/schedules')" size="sm" variant="outline" class="mt-3">
+              <Plus class="w-3 h-3 mr-1" /> Create Schedule
+            </Button>
+          </div>
+
+          <div v-else class="border rounded-xl overflow-hidden">
+            <div class="divide-y divide-border">
+              <div
+                v-for="schedule in upcomingSchedules"
+                :key="schedule.id"
+                @click="navigateTo('/schedules')"
+                class="flex items-center justify-between px-4 py-3 hover:bg-muted/30 cursor-pointer transition-colors"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="p-1.5 rounded-lg bg-amber-500/10">
+                    <Timer class="w-3.5 h-3.5 text-amber-500" />
                   </div>
                   <div>
-                    <div class="font-medium text-white">{{ execution.workflow_name || 'Untitled Workflow' }}</div>
-                    <div class="text-xs text-gray-500 flex items-center gap-2">
-                      <span>{{ formatDate(execution.created_at) }}</span>
-                      <span>•</span>
-                      <span class="capitalize">{{ execution.status }}</span>
-                    </div>
+                    <p class="font-medium text-sm">{{ schedule.name }}</p>
+                    <p class="text-xs text-muted-foreground">{{ schedule.workflow_name }}</p>
                   </div>
                 </div>
-                <div class="text-right">
-                  <div class="text-sm font-medium text-gray-300">
-                    {{ execution.stats?.items_extracted || 0 }} items
+                <div class="flex items-center gap-3">
+                  <div class="text-right">
+                    <p class="text-sm font-medium text-amber-500">{{ formatNextRun(schedule.next_run_at) }}</p>
+                    <code class="text-xs text-muted-foreground">{{ schedule.cron_expression }}</code>
                   </div>
-                  <div class="text-xs text-gray-500">extracted</div>
+                  <Badge class="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-xs">
+                    <Zap class="w-2.5 h-2.5 mr-1" /> Active
+                  </Badge>
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
-      <!-- System Status / Resources -->
-      <div class="space-y-4">
-        <h2 class="text-lg font-semibold text-white">System Status</h2>
-        
-        <Card class="bg-[#1a1d21] border-gray-800">
-          <CardContent class="p-4 space-y-6">
-            <!-- Node Status -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-400">Active Nodes</span>
-                <span class="text-white font-medium">1/1</span>
-              </div>
-              <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
-                <div class="h-full bg-blue-500 w-full" />
-              </div>
-            </div>
-
-            <!-- Proxy Status -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-400">Proxy Health</span>
-                <span class="text-white font-medium">98%</span>
-              </div>
-              <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
-                <div class="h-full bg-green-500 w-[98%]" />
-              </div>
-            </div>
-
-            <!-- Storage -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-400">Storage Usage</span>
-                <span class="text-white font-medium">45%</span>
-              </div>
-              <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
-                <div class="h-full bg-purple-500 w-[45%]" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <!-- Documentation Link -->
-        <Card class="bg-gradient-to-br from-blue-900/20 to-purple-900/20 border-blue-500/20">
-          <CardContent class="p-4">
-            <h3 class="font-semibold text-blue-400 mb-1">Need Help?</h3>
-            <p class="text-sm text-gray-400 mb-3">Check out our documentation to learn more about creating workflows and plugins.</p>
-            <Button variant="outline" size="sm" class="w-full border-blue-500/30 hover:bg-blue-500/10 text-blue-400">
-              View Documentation
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   </div>
 </template>
