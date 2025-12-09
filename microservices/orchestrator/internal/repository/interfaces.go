@@ -133,3 +133,38 @@ type BrowserProfileFilters struct {
 	Folder     string
 	DriverType string
 }
+
+// ScheduleRepository defines the interface for schedule data access
+type ScheduleRepository interface {
+	// Create creates a new schedule
+	Create(ctx context.Context, schedule *models.Schedule) error
+
+	// Get retrieves a schedule by ID
+	Get(ctx context.Context, id string) (*models.Schedule, error)
+
+	// List retrieves all schedules with optional filters
+	List(ctx context.Context, filters ScheduleFilters) ([]*models.Schedule, error)
+
+	// Update updates an existing schedule
+	Update(ctx context.Context, schedule *models.Schedule) error
+
+	// Delete deletes a schedule
+	Delete(ctx context.Context, id string) error
+
+	// Toggle enables or disables a schedule
+	Toggle(ctx context.Context, id string) error
+
+	// GetDueSchedules retrieves all enabled schedules that are due to run
+	GetDueSchedules(ctx context.Context, now time.Time) ([]*models.Schedule, error)
+
+	// UpdateAfterRun updates the schedule after execution (last_run_at, next_run_at, last_execution_id)
+	UpdateAfterRun(ctx context.Context, id string, lastRunAt time.Time, nextRunAt time.Time, executionID string) error
+}
+
+// ScheduleFilters defines schedule query filters
+type ScheduleFilters struct {
+	Limit      int
+	Offset     int
+	WorkflowID string
+	IsEnabled  *bool
+}

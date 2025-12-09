@@ -163,3 +163,21 @@ type ExtractedItemMetadata struct {
 type ExecutionContext struct {
 	Variables map[string]interface{} `json:"variables"`
 }
+
+// Schedule represents a scheduled workflow execution
+type Schedule struct {
+	ID              string     `json:"id"`
+	WorkflowID      string     `json:"workflow_id"`
+	Name            string     `json:"name"`
+	CronExpression  string     `json:"cron_expression"`
+	Timezone        string     `json:"timezone"`
+	IsEnabled       bool       `json:"is_enabled"`
+	NextRunAt       *time.Time `json:"next_run_at,omitempty"`
+	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
+	LastExecutionID *string    `json:"last_execution_id,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+
+	// Denormalized fields for list views
+	WorkflowName string `json:"workflow_name,omitempty"`
+}

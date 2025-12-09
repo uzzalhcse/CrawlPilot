@@ -392,3 +392,51 @@ func (s *ExecutionService) GetProbeHistory(ctx context.Context, workflowID strin
 	}
 	return s.executionRepo.List(ctx, workflowID, filters)
 }
+
+// StartScheduledExecution starts a workflow execution triggered by a schedule
+// Returns the execution ID for tracking
+func (s *ExecutionService) StartScheduledExecution(ctx context.Context, workflowID string, scheduleID string) (string, error) {
+	// Get workflow (from cache if available)
+	workflow, err := s.workflowSvc.GetWorkflow(ctx, workflowID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get workflow: %w", err)
+	}
+
+	// Validate workflow is active
+	if workflow.Status != "active" {
+		return "", fmt.Errorf("workflow is not active: %s", workflow.Status)
+	}
+
+	// Create execution record with schedule metadata
+	execution := &models.Execution{
+		WorkflowID:  workflowID,
+		TriggeredBy: "scheduled",
+		Metadata: map[string]interface{}{
+			"schedule_id": scheduleID,
+		},
+	}
+
+	if err := s.executionRepo.Create(ctx, execution); err != nil {
+		return "", fmt.Errorf("failed to create execution: %w", err)
+	}
+
+	logger.Info("Scheduled execution created",
+		zap.String("execution_id", execution.ID),
+		zap.String("workflow_id", workflowID),
+		zap.String("schedule_id", scheduleID),
+	)
+
+	// Enqueue start URLs as tasks
+	if err := s.enqueueStartURLs(ctx, workflow, execution); err != nil {
+		// Mark execution as failed
+		s.executionRepo.Complete(ctx, execution.ID, "failed")
+		return "", fmt.Errorf("failed to enqueue start URLs: %w", err)
+	}
+
+	logger.Info("Scheduled execution started",
+		zap.String("execution_id", execution.ID),
+		zap.Int("url_count", len(workflow.Config.StartURLs)),
+	)
+
+	return execution.ID, nil
+}

@@ -285,6 +285,27 @@ func main() {
 	probes.Post("/auto-fixes/:id/approve", probeHandler.ApproveAutoFix)
 	probes.Post("/auto-fixes/:id/reject", probeHandler.RejectAutoFix)
 
+	// Initialize schedule repository, service, and handler
+	scheduleRepo := repository.NewScheduleRepository(db)
+	scheduleSvc := service.NewScheduleService(scheduleRepo)
+	scheduleHandler := handlers.NewScheduleHandler(scheduleSvc, executionSvc)
+
+	// Schedule routes
+	schedules := api.Group("/schedules")
+	schedules.Get("/presets", scheduleHandler.GetCronPresets)
+	schedules.Post("/", scheduleHandler.CreateSchedule)
+	schedules.Get("/", scheduleHandler.ListSchedules)
+	schedules.Get("/:id", scheduleHandler.GetSchedule)
+	schedules.Put("/:id", scheduleHandler.UpdateSchedule)
+	schedules.Delete("/:id", scheduleHandler.DeleteSchedule)
+	schedules.Patch("/:id/toggle", scheduleHandler.ToggleSchedule)
+	schedules.Post("/:id/run", scheduleHandler.RunNow)
+
+	// Start the scheduler background service
+	scheduler := service.NewScheduler(scheduleSvc, executionSvc)
+	scheduler.Start()
+	defer scheduler.Stop()
+
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	logger.Info("Orchestrator starting", zap.String("address", addr))

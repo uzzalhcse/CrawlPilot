@@ -347,3 +347,27 @@ export interface PluginSearchResult {
   total: number
 }
 
+// ============================================================================
+// Schedule Types
+// ============================================================================
+
+export interface Schedule {
+  id: string
+  workflow_id: string
+  name: string
+  cron_expression: string
+  timezone: string
+  is_enabled: boolean
+  next_run_at?: string
+  last_run_at?: string
+  last_execution_id?: string
+  created_at: string
+  updated_at: string
+  workflow_name?: string
+}
+
+export interface CronPreset {
+  name: string
+  expression: string
+  description: string
+}
