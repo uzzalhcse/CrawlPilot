@@ -55,6 +55,44 @@ func NewPersistentBrowser(opts Options, userDataDir string) (*PersistentBrowser,
 		}
 	}
 
+	// Apply fonts (same as NewBrowser)
+	if !opts.CustomFontsOnly {
+		osFonts := GetFontsForOS(opts.OS)
+		if len(opts.Fonts) > 0 {
+			config["fonts"] = MergeFonts(opts.Fonts, osFonts)
+		} else {
+			config["fonts"] = osFonts
+		}
+	} else if len(opts.Fonts) > 0 {
+		config["fonts"] = opts.Fonts
+	}
+
+	// Apply locale if specified
+	if len(opts.Locale) > 0 {
+		config["navigator.language"] = opts.Locale[0]
+		config["navigator.languages"] = opts.Locale
+	}
+
+	// Handle default addons
+	if opts.IncludeDefaultAddons {
+		am, err := NewAddonManager()
+		if err == nil {
+			defaultAddons, err := am.GetDefaultAddons(opts.ExcludeAddons...)
+			if err == nil && len(defaultAddons) > 0 {
+				opts.Addons = append(opts.Addons, defaultAddons...)
+			}
+		}
+	}
+	if len(opts.Addons) > 0 {
+		config["addons"] = opts.Addons
+	}
+
+	// Get fixed UserAgent from config for HTTP headers
+	fixedUA := ""
+	if ua, ok := config["navigator.userAgent"].(string); ok {
+		fixedUA = ua
+	}
+
 	// Handle virtual display (Linux only)
 	var virtDisplay *VirtualDisplay
 	headless := opts.Headless
@@ -114,8 +152,10 @@ func NewPersistentBrowser(opts Options, userDataDir string) (*PersistentBrowser,
 		FirefoxUserPrefs: firefoxPrefs,
 	}
 
-	// Apply fingerprint to context
-	if fp.Navigator.UserAgent != "" {
+	// Apply fixed UserAgent to context (for HTTP headers)
+	if fixedUA != "" {
+		contextOpts.UserAgent = playwright.String(fixedUA)
+	} else if fp.Navigator.UserAgent != "" {
 		contextOpts.UserAgent = playwright.String(fp.Navigator.UserAgent)
 	}
 	if fp.Screen.Width > 0 && fp.Screen.Height > 0 {

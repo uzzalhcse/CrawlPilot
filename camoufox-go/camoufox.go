@@ -72,6 +72,48 @@ func NewBrowser(opts Options) (*Camoufox, error) {
 		}
 	}
 
+	// Apply fonts
+	if !opts.CustomFontsOnly {
+		osFonts := GetFontsForOS(opts.OS)
+		if len(opts.Fonts) > 0 {
+			config["fonts"] = MergeFonts(opts.Fonts, osFonts)
+		} else {
+			config["fonts"] = osFonts
+		}
+	} else if len(opts.Fonts) > 0 {
+		config["fonts"] = opts.Fonts
+	}
+
+	// Apply locale if specified
+	if len(opts.Locale) > 0 {
+		config["navigator.language"] = opts.Locale[0]
+		config["navigator.languages"] = opts.Locale
+	}
+
+	// Apply timezone if specified
+	if opts.Timezone != "" {
+		config["timezone"] = opts.Timezone
+	}
+
+	// Handle default addons
+	if opts.IncludeDefaultAddons {
+		am, err := NewAddonManager()
+		if err == nil {
+			defaultAddons, err := am.GetDefaultAddons(opts.ExcludeAddons...)
+			if err == nil && len(defaultAddons) > 0 {
+				opts.Addons = append(opts.Addons, defaultAddons...)
+			}
+		}
+	}
+
+	// Validate and apply user addons
+	if len(opts.Addons) > 0 {
+		if err := ValidateAddonPaths(opts.Addons); err != nil {
+			return nil, fmt.Errorf("invalid addon path: %w", err)
+		}
+		config["addons"] = opts.Addons
+	}
+
 	// Debug output
 	if opts.Debug {
 		fmt.Printf("[Debug] Config keys: %d\n", len(config))
