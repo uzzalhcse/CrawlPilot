@@ -209,6 +209,11 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 		if opts.MainWorldEval {
 			config["allowMainWorld"] = true
 		}
+
+		// Force scope access for closed shadow DOM (required for CAPTCHA solving)
+		if opts.ForceScopeAccess {
+			config["forceScopeAccess"] = true
+		}
 	}
 
 	return config

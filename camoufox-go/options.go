@@ -96,6 +96,11 @@ type Options struct {
 	// If set, browser will use persistent context mode
 	UserDataDir string
 
+	// ForceScopeAccess enables access to closed Shadow DOM roots via shadowRootUnl.
+	// Required for CAPTCHA solving (e.g., Cloudflare Turnstile).
+	// When enabled, closed shadow roots become accessible via element.shadowRootUnl
+	ForceScopeAccess bool
+
 	// Debug prints the config being sent to Camoufox
 	Debug bool
 }
