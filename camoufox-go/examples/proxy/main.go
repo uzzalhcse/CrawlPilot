@@ -34,7 +34,7 @@ func main() {
 
 	// Check your IP
 	fmt.Println("Checking IP address via proxy...")
-	if _, err := page.Goto("https://www.browserscan.net/"); err != nil {
+	if _, err := page.Goto("https://www.mister-auto.es/filtro-de-aire-8-g/"); err != nil {
 		log.Fatalf("Failed to navigate: %v", err)
 	}
 
