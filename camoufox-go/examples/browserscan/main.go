@@ -16,10 +16,14 @@ func main() {
 
 	// Launch with full stealth settings
 	browser, err := camoufox.NewBrowser(camoufox.Options{
-		Headless:    false,
-		GeoIP:       "auto", // Auto-detect IP and spoof geolocation
-		BlockWebRTC: false,  // Don't block - spoof instead
-		Debug:       true,
+		Headless: false,
+		GeoIP:    "auto", // Auto-detect IP and spoof geolocation
+		Proxy: &camoufox.ProxyConfig{
+			Server:   "http://82.22.93.243:7950",
+			Username: "lnvmpyru",
+			Password: "5un1tb1azapa",
+		},
+		Debug: true,
 	})
 	if err != nil {
 		fmt.Printf("❌ Failed to launch: %v\n", err)
