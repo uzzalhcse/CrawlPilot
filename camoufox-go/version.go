@@ -50,8 +50,8 @@ func GetVersionInfo() (*VersionInfo, error) {
 		}
 	}
 
-	// Default fallback version
-	return &VersionInfo{Version: "135.0", Release: "0.1.3"}, nil
+	// Default fallback version (Firefox 142 via coryking's fork)
+	return &VersionInfo{Version: "142.0", Release: "0.4.12"}, nil
 }
 
 // UpdateUserAgentVersion updates the UserAgent to match the actual Firefox version

@@ -86,7 +86,7 @@ func findViaPython() (string, error) {
 // Install downloads and installs all required dependencies for Camoufox.
 // This includes:
 // - browserforge Python package (for fingerprint generation)
-// - camoufox Python package
+// - camoufox Python package (from coryking's Firefox 142 fork)
 // - Camoufox browser binary
 func Install() error {
 	// Check if Python is available
@@ -106,13 +106,29 @@ func Install() error {
 		return err
 	}
 
-	// Install camoufox Python package if not present
-	if err := installPythonPackage("camoufox", "camoufox"); err != nil {
-		return err
+	// Install camoufox Python package from coryking's fork (Firefox 142)
+	// This uninstalls any existing version first
+	fmt.Println("Installing camoufox (Firefox 142) from coryking's fork...")
+	pipCmd := "pip"
+	if _, err := exec.LookPath("pip"); err != nil {
+		pipCmd = "pip3"
+	}
+
+	// Uninstall old version first
+	uninstallCmd := exec.Command(pipCmd, "uninstall", "camoufox", "-y")
+	uninstallCmd.Run() // Ignore errors if not installed
+
+	// Install from coryking's fork
+	installCmd := exec.Command(pipCmd, "install",
+		"git+https://github.com/coryking/camoufox.git@v142.0.1-fork.27#subdirectory=pythonlib")
+	installCmd.Stdout = os.Stdout
+	installCmd.Stderr = os.Stderr
+	if err := installCmd.Run(); err != nil {
+		return fmt.Errorf("failed to install camoufox from fork: %w", err)
 	}
 
 	// Run the Camoufox browser installer (uses 'python -m camoufox fetch')
-	fmt.Println("Installing Camoufox browser binary...")
+	fmt.Println("Installing Camoufox browser binary (Firefox 142)...")
 	cmd := exec.Command("python3", "-m", "camoufox", "fetch")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -120,7 +136,7 @@ func Install() error {
 		return fmt.Errorf("failed to install camoufox browser: %w", err)
 	}
 
-	fmt.Println("✅ Camoufox installed successfully!")
+	fmt.Println("✅ Camoufox (Firefox 142) installed successfully!")
 	return nil
 }
 
