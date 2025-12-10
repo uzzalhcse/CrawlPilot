@@ -17,7 +17,7 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 
 	// Get actual Camoufox version to fix UserAgent mismatch
 	versionInfo, _ := GetVersionInfo()
-	actualVersion := "135.0"
+	actualVersion := "142.0"
 	if versionInfo != nil && versionInfo.Version != "" {
 		actualVersion = versionInfo.Version
 	}
@@ -38,7 +38,9 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 		config["navigator.languages"] = fp.Navigator.Languages
 	}
 	if fp.Navigator.OsCPU != "" {
-		config["navigator.oscpu"] = fp.Navigator.OsCPU
+		// Also fix version in oscpu (may contain "rv:1XX.0")
+		fixedOsCPU := UpdateUserAgentVersion(fp.Navigator.OsCPU, actualVersion)
+		config["navigator.oscpu"] = fixedOsCPU
 	}
 	if fp.Navigator.AppCodeName != "" {
 		config["navigator.appCodeName"] = fp.Navigator.AppCodeName
@@ -47,7 +49,9 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 		config["navigator.appName"] = fp.Navigator.AppName
 	}
 	if fp.Navigator.AppVersion != "" {
-		config["navigator.appVersion"] = fp.Navigator.AppVersion
+		// Also fix version in appVersion
+		fixedAppVersion := UpdateUserAgentVersion(fp.Navigator.AppVersion, actualVersion)
+		config["navigator.appVersion"] = fixedAppVersion
 	}
 	if fp.Navigator.HardwareConcurrency > 0 {
 		config["navigator.hardwareConcurrency"] = fp.Navigator.HardwareConcurrency

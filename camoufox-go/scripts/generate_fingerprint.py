@@ -17,6 +17,7 @@ Arguments:
 import sys
 import json
 import os
+import re
 
 # Suppress browserforge download messages by redirecting stderr temporarily
 _original_stderr = sys.stderr
@@ -40,11 +41,46 @@ except Exception as e:
         sys.exit(1)
 
 
+def get_firefox_version():
+    """Get the actual installed Firefox version from version.json"""
+    version_paths = [
+        os.path.expanduser("~/.cache/camoufox/version.json"),
+        os.path.expanduser("~/.cache/camoufox-go/version.json"),
+    ]
+    
+    for path in version_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+                    version = data.get('version', '142.0')
+                    # Extract major version (e.g., "142" from "142.0.1")
+                    return version.split('.')[0]
+            except:
+                pass
+    
+    return "142"  # Default to 142 for coryking's fork
+
+
+def update_version_in_string(value, ff_version):
+    r"""Replace Firefox version numbers in a string with the actual version.
+    
+    Python pattern from camoufox: re.sub(r'(?<!\d)(1[0-9]{2})(\.0)(?!\d)', rf'{ff_version}\2', data)
+    """
+    if not isinstance(value, str):
+        return value
+    # Replace 1XX.0 patterns (e.g., 140.0 -> 142.0)
+    return re.sub(r'(?<!\d)(1[0-9]{2})(\.0)(?!\d)', rf'{ff_version}\2', value)
+
+
 def main():
     # Parse command line arguments
     os_target = sys.argv[1] if len(sys.argv) > 1 else "linux"
     max_width = int(sys.argv[2]) if len(sys.argv) > 2 else None
     max_height = int(sys.argv[3]) if len(sys.argv) > 3 else None
+
+    # Get actual Firefox version
+    ff_version = get_firefox_version()
 
     # Create screen constraints if provided
     screen = None
@@ -67,9 +103,17 @@ def main():
     nav = fingerprint.navigator
     extra_props = getattr(nav, 'extraProperties', None) or {}
     
+    # Get raw values
+    user_agent = getattr(nav, 'userAgent', '')
+    app_version = getattr(nav, 'appVersion', '')
+    
+    # Fix version in UserAgent and appVersion to match actual Firefox
+    user_agent = update_version_in_string(user_agent, ff_version)
+    app_version = update_version_in_string(app_version, ff_version)
+    
     result = {
         "navigator": {
-            "userAgent": getattr(nav, 'userAgent', ''),
+            "userAgent": user_agent,
             "platform": getattr(nav, 'platform', ''),
             "language": getattr(nav, 'language', 'en-US'),
             "languages": getattr(nav, 'languages', ['en-US']),
@@ -78,7 +122,7 @@ def main():
             "oscpu": getattr(nav, 'oscpu', ''),
             "appCodeName": getattr(nav, 'appCodeName', 'Mozilla'),
             "appName": getattr(nav, 'appName', 'Netscape'),
-            "appVersion": getattr(nav, 'appVersion', ''),
+            "appVersion": app_version,
             "product": getattr(nav, 'product', 'Gecko'),
             # Never override productSub per browserforge.yml #105
             "doNotTrack": getattr(nav, 'doNotTrack', None),
