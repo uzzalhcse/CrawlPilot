@@ -24,12 +24,13 @@ import (
 
 // Camoufox wraps a Playwright browser with anti-detect capabilities
 type Camoufox struct {
-	pw          *playwright.Playwright
-	browser     playwright.Browser
-	fingerprint *Fingerprint
-	options     *Options
-	envVars     map[string]string
-	virtDisplay *VirtualDisplay
+	pw             *playwright.Playwright
+	browser        playwright.Browser
+	fingerprint    *Fingerprint
+	options        *Options
+	envVars        map[string]string
+	virtDisplay    *VirtualDisplay
+	fixedUserAgent string // Version-corrected UserAgent for HTTP headers
 }
 
 // NewBrowser launches a new Camoufox browser instance with anti-detect fingerprinting.
@@ -176,12 +177,19 @@ func NewBrowser(opts Options) (*Camoufox, error) {
 		return nil, fmt.Errorf("failed to launch camoufox: %w", err)
 	}
 
+	// Get fixed UserAgent from config for HTTP headers
+	fixedUA := ""
+	if ua, ok := config["navigator.userAgent"].(string); ok {
+		fixedUA = ua
+	}
+
 	cam := &Camoufox{
-		pw:          pw,
-		browser:     browser,
-		fingerprint: fp,
-		options:     &opts,
-		envVars:     envVars,
+		pw:             pw,
+		browser:        browser,
+		fingerprint:    fp,
+		options:        &opts,
+		envVars:        envVars,
+		fixedUserAgent: fixedUA,
 	}
 
 	// Store virtual display for cleanup
@@ -197,10 +205,14 @@ func (c *Camoufox) NewPage() (playwright.Page, error) {
 	contextOpts := playwright.BrowserNewContextOptions{}
 
 	// Apply fingerprint settings to context
+	// Use fixedUserAgent for HTTP headers (version-corrected)
+	if c.fixedUserAgent != "" {
+		contextOpts.UserAgent = playwright.String(c.fixedUserAgent)
+	} else if c.fingerprint != nil && c.fingerprint.Navigator.UserAgent != "" {
+		contextOpts.UserAgent = playwright.String(c.fingerprint.Navigator.UserAgent)
+	}
+
 	if c.fingerprint != nil {
-		if c.fingerprint.Navigator.UserAgent != "" {
-			contextOpts.UserAgent = playwright.String(c.fingerprint.Navigator.UserAgent)
-		}
 		if c.fingerprint.Screen.Width > 0 && c.fingerprint.Screen.Height > 0 {
 			contextOpts.Viewport = &playwright.Size{
 				Width:  c.fingerprint.Screen.Width,
@@ -235,10 +247,11 @@ func (c *Camoufox) NewPage() (playwright.Page, error) {
 func (c *Camoufox) NewContext() (playwright.BrowserContext, error) {
 	contextOpts := playwright.BrowserNewContextOptions{}
 
-	if c.fingerprint != nil {
-		if c.fingerprint.Navigator.UserAgent != "" {
-			contextOpts.UserAgent = playwright.String(c.fingerprint.Navigator.UserAgent)
-		}
+	// Use fixedUserAgent for HTTP headers (version-corrected)
+	if c.fixedUserAgent != "" {
+		contextOpts.UserAgent = playwright.String(c.fixedUserAgent)
+	} else if c.fingerprint != nil && c.fingerprint.Navigator.UserAgent != "" {
+		contextOpts.UserAgent = playwright.String(c.fingerprint.Navigator.UserAgent)
 	}
 
 	return c.browser.NewContext(contextOpts)

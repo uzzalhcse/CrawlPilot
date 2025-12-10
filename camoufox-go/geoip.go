@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -64,13 +65,7 @@ func GeoIPLookup(ip string, proxy *ProxyConfig) (*Geolocation, error) {
 }
 
 func fetchGeoIP(url string, proxy *ProxyConfig, parser func([]byte) (*Geolocation, error)) (*Geolocation, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	// Configure proxy if provided
-	if proxy != nil && proxy.Server != "" {
-		// For simplicity, we'll use the default client
-		// In production, you'd configure the transport with proxy
-	}
+	client := createHTTPClient(proxy)
 
 	resp, err := client.Get(url)
 	if err != nil {
@@ -84,6 +79,42 @@ func fetchGeoIP(url string, proxy *ProxyConfig, parser func([]byte) (*Geolocatio
 	}
 
 	return parser(body)
+}
+
+// createHTTPClient creates an HTTP client with optional proxy support
+func createHTTPClient(proxy *ProxyConfig) *http.Client {
+	transport := &http.Transport{}
+
+	if proxy != nil && proxy.Server != "" {
+		proxyURL, err := parseProxyURL(proxy)
+		if err == nil {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+	}
+}
+
+// parseProxyURL converts ProxyConfig to *url.URL
+func parseProxyURL(proxy *ProxyConfig) (*url.URL, error) {
+	if proxy == nil || proxy.Server == "" {
+		return nil, fmt.Errorf("no proxy configured")
+	}
+
+	proxyURL, err := url.Parse(proxy.Server)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add authentication if provided
+	if proxy.Username != "" {
+		proxyURL.User = url.UserPassword(proxy.Username, proxy.Password)
+	}
+
+	return proxyURL, nil
 }
 
 func parseIPAPI(data []byte) (*Geolocation, error) {
@@ -147,7 +178,7 @@ func parseIPWhoIs(data []byte) (*Geolocation, error) {
 	}, nil
 }
 
-// GetPublicIP returns the public IP address
+// GetPublicIP returns the public IP address (through proxy if configured)
 func GetPublicIP(proxy *ProxyConfig) (string, error) {
 	services := []string{
 		"https://api.ipify.org",
@@ -156,10 +187,11 @@ func GetPublicIP(proxy *ProxyConfig) (string, error) {
 		"https://icanhazip.com",
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Use proxy-aware client for accurate IP detection
+	client := createHTTPClient(proxy)
 
-	for _, url := range services {
-		resp, err := client.Get(url)
+	for _, svcURL := range services {
+		resp, err := client.Get(svcURL)
 		if err != nil {
 			continue
 		}

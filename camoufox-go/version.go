@@ -56,27 +56,29 @@ func GetVersionInfo() (*VersionInfo, error) {
 
 // UpdateUserAgentVersion updates the UserAgent to match the actual Firefox version
 // This fixes the "Different browser version" detection
+// Python uses: re.sub(r'(?<!\d)(1[0-9]{2})(\.0)(?!\d)', rf'{ff_version}\g<2>', data)
 func UpdateUserAgentVersion(userAgent string, actualVersion string) string {
 	if userAgent == "" || actualVersion == "" {
 		return userAgent
 	}
 
-	// Pattern to match Firefox version in UserAgent
-	// e.g., "Firefox/145.0" -> "Firefox/135.0"
-	firefoxPattern := regexp.MustCompile(`Firefox/(\d+\.?\d*)`)
-	rvPattern := regexp.MustCompile(`rv:(\d+\.?\d*)`)
-
-	// Extract major version
+	// Extract major version number (e.g., "135" from "135.0.1")
 	majorVersion := strings.Split(actualVersion, ".")[0]
-	fullVersion := actualVersion
-	if !strings.Contains(actualVersion, ".") {
-		fullVersion = actualVersion + ".0"
-	}
 
-	// Replace Firefox version
-	result := firefoxPattern.ReplaceAllString(userAgent, "Firefox/"+fullVersion)
-	// Replace rv: version (should match major version)
+	// Python pattern: (?<!\d)(1[0-9]{2})(\.0)(?!\d)
+	// This matches 100-199 followed by .0 (like "145.0" in BrowserForge fingerprints)
+	// Go doesn't support lookbehind, so we use a different approach
+
+	// Replace Firefox/1XX.0 pattern (e.g., Firefox/145.0 -> Firefox/135.0)
+	firefoxPattern := regexp.MustCompile(`Firefox/1\d{2}\.0`)
+	result := firefoxPattern.ReplaceAllString(userAgent, "Firefox/"+majorVersion+".0")
+
+	// Replace rv:1XX.0 pattern (e.g., rv:145.0 -> rv:135.0)
+	rvPattern := regexp.MustCompile(`rv:1\d{2}\.0`)
 	result = rvPattern.ReplaceAllString(result, "rv:"+majorVersion+".0")
+
+	// Also fix Gecko/20100101 - this should stay the same (it's a date, not version)
+	// No change needed
 
 	return result
 }
