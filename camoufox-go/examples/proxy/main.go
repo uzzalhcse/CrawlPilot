@@ -19,6 +19,7 @@ func main() {
 			Username: "lnvmpyru",
 			Password: "5un1tb1azapa",
 		},
+		Debug: true,
 	})
 	if err != nil {
 		log.Fatalf("Failed to launch browser: %v", err)

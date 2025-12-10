@@ -47,7 +47,7 @@ func NewPersistentBrowser(opts Options, userDataDir string) (*PersistentBrowser,
 	// Build Camoufox config from fingerprint
 	config := BuildConfig(fp, &opts)
 
-	// Apply GeoIP if specified
+	// Apply GeoIP if specified (uses MaxMind GeoLite2 database, auto-downloads if needed)
 	if opts.GeoIP != "" {
 		geo, err := GeoIPLookup(opts.GeoIP, opts.Proxy)
 		if err == nil && geo != nil {
