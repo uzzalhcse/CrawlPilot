@@ -28,6 +28,8 @@ func (f *Factory) CreateDriver() (Driver, error) {
 		return NewPlaywrightDriver(f.config)
 	case "chromedp":
 		return NewChromedpDriver(f.config), nil
+	case "camoufox":
+		return NewCamoufoxDriver(f.config)
 	default:
 		return nil, fmt.Errorf("unknown driver type: %s", f.config.Driver)
 	}
@@ -54,6 +56,9 @@ func (f *Factory) CreateDriverFromProfile(profile *models.BrowserProfile) (Drive
 	case "playwright", "":
 		// Playwright supports all browser types
 		return NewPlaywrightDriverWithProfile(f.config, profile)
+	case "camoufox":
+		// Camoufox anti-detect browser with auto CAPTCHA solving
+		return NewCamoufoxDriverWithProfile(f.config, profile)
 	default:
 		return nil, fmt.Errorf("unknown driver type: %s", profile.DriverType)
 	}

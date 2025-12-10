@@ -35,6 +35,19 @@ type BrowserProfile struct {
 	DoNotTrack          bool     `json:"do_not_track"`
 	DisableWebRTC       bool     `json:"disable_webrtc"`
 
+	// Camoufox-specific Settings
+	GeoIP                string  `json:"geo_ip,omitempty"`        // "auto" or IP address for geolocation
+	VirtualHeadless      bool    `json:"virtual_headless"`        // Use Xvfb virtual display
+	ForceScopeAccess     bool    `json:"force_scope_access"`      // Enable shadow DOM access for CAPTCHA
+	AutoCaptchaSolve     bool    `json:"auto_captcha_solve"`      // Enable auto CAPTCHA solving middleware
+	BlockImages          bool    `json:"block_images"`            // Block image loading
+	BlockWebGL           bool    `json:"block_webgl"`             // Block WebGL
+	Humanize             float64 `json:"humanize"`                // Human-like mouse movement (seconds, 0=disabled)
+	IncludeDefaultAddons bool    `json:"include_default_addons"`  // Include uBlock Origin addon
+	EnableCache          bool    `json:"enable_cache"`            // Enable browser caching
+	UserDataDir          string  `json:"user_data_dir,omitempty"` // Persistent browser data directory
+	TargetOS             string  `json:"target_os,omitempty"`     // Fingerprint OS (windows/macos/linux)
+
 	// Geolocation
 	GeolocationLatitude  *float64 `json:"geolocation_latitude,omitempty"`
 	GeolocationLongitude *float64 `json:"geolocation_longitude,omitempty"`
@@ -62,7 +75,7 @@ func (p *BrowserProfile) Validate() error {
 
 	// Validate driver type
 	switch p.DriverType {
-	case "playwright", "chromedp", "http", "":
+	case "playwright", "chromedp", "http", "camoufox", "":
 		// Valid
 	default:
 		return &ValidationError{Field: "driver_type", Message: "invalid driver type: " + p.DriverType}

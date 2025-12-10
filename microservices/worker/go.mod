@@ -15,7 +15,10 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
+	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
+	github.com/chromedp/chromedp v0.14.2
 	github.com/playwright-community/playwright-go v0.5200.1
+	github.com/refraction-networking/utls v1.8.1
 	github.com/stretchr/testify v1.11.1
 	github.com/uzzalhcse/crawlify/microservices/shared v0.0.0
 	google.golang.org/api v0.214.0
@@ -31,8 +34,6 @@ require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327 // indirect
-	github.com/chromedp/chromedp v0.14.2 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
@@ -59,9 +60,11 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/mattn/go-sqlite3 v1.14.32 // indirect
+	github.com/oschwald/geoip2-golang v1.13.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/refraction-networking/utls v1.8.1 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
@@ -70,6 +73,8 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/uzzalhcse/camoufox-captcha-go v0.0.0-00010101000000-000000000000 // indirect
+	github.com/uzzalhcse/camoufox-go v0.0.0-00010101000000-000000000000 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
@@ -97,3 +102,7 @@ require (
 )
 
 replace github.com/uzzalhcse/crawlify/microservices/shared => ../shared
+
+replace github.com/uzzalhcse/camoufox-go => ../../camoufox-go
+
+replace github.com/uzzalhcse/camoufox-captcha-go => ../../camoufox-captcha-go
