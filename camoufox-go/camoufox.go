@@ -29,6 +29,7 @@ type Camoufox struct {
 	fingerprint *Fingerprint
 	options     *Options
 	envVars     map[string]string
+	virtDisplay *VirtualDisplay
 }
 
 // NewBrowser launches a new Camoufox browser instance with anti-detect fingerprinting.
@@ -56,20 +57,97 @@ func NewBrowser(opts Options) (*Camoufox, error) {
 	// Build Camoufox config from fingerprint
 	config := BuildConfig(fp, &opts)
 
+	// Apply GeoIP if specified
+	if opts.GeoIP != "" {
+		geo, err := GeoIPLookup(opts.GeoIP, opts.Proxy)
+		if err != nil && opts.Debug {
+			fmt.Printf("[Debug] GeoIP lookup failed: %v\n", err)
+		} else if geo != nil {
+			ApplyGeolocation(geo, config, opts.BlockWebRTC)
+			if opts.Debug {
+				fmt.Printf("[Debug] GeoIP: %s -> %s, %s (%s) at (%.4f, %.4f)\n",
+					geo.IP, geo.City, geo.Country, geo.Timezone, geo.Latitude, geo.Longitude)
+			}
+		}
+	}
+
+	// Debug output
+	if opts.Debug {
+		fmt.Printf("[Debug] Config keys: %d\n", len(config))
+		for k, v := range config {
+			fmt.Printf("  %s: %v\n", k, v)
+		}
+	}
+
+	// Handle virtual display (Linux only)
+	var virtDisplay *VirtualDisplay
+	headless := opts.Headless
+	if opts.VirtualHeadless && IsLinux() {
+		virtDisplay = NewVirtualDisplay(opts.Debug)
+		displayStr, err := virtDisplay.Start()
+		if err != nil {
+			return nil, fmt.Errorf("failed to start virtual display: %w", err)
+		}
+		// Will be added to env vars
+		config["_virtdisplay"] = displayStr
+		headless = false // Run as headed in virtual display
+	}
+
 	// Get environment variables for config
 	envVars := GetEnvVars(config, opts.OS)
+
+	// Add virtual display to env if needed
+	if virtDisplay != nil {
+		envVars["DISPLAY"] = virtDisplay.Display()
+	}
 
 	// Initialize Playwright
 	pw, err := playwright.Run()
 	if err != nil {
+		if virtDisplay != nil {
+			virtDisplay.Stop()
+		}
 		return nil, fmt.Errorf("failed to start playwright: %w", err)
+	}
+
+	// Build Firefox user prefs
+	firefoxPrefs := make(map[string]interface{})
+	if opts.FirefoxPrefs != nil {
+		for k, v := range opts.FirefoxPrefs {
+			firefoxPrefs[k] = v
+		}
+	}
+
+	// Apply Firefox pref options
+	if opts.BlockImages {
+		firefoxPrefs["permissions.default.image"] = 2
+	}
+	if opts.BlockWebRTC {
+		firefoxPrefs["media.peerconnection.enabled"] = false
+	}
+	if opts.BlockWebGL {
+		firefoxPrefs["webgl.disabled"] = true
+	} else {
+		firefoxPrefs["webgl.force-enabled"] = true
+	}
+	if opts.DisableCOOP {
+		firefoxPrefs["browser.tabs.remote.useCrossOriginOpenerPolicy"] = false
+	}
+	if opts.EnableCache {
+		firefoxPrefs["browser.sessionhistory.max_entries"] = 10
+		firefoxPrefs["browser.cache.memory.enable"] = true
+		firefoxPrefs["browser.cache.disk_cache_ssl"] = true
+	}
+	if opts.CustomFontsOnly {
+		firefoxPrefs["gfx.bundled-fonts.activate"] = 0
 	}
 
 	// Build launch options
 	launchOpts := playwright.BrowserTypeLaunchOptions{
-		ExecutablePath: playwright.String(opts.ExecutablePath),
-		Headless:       playwright.Bool(opts.Headless),
-		Env:            envVars,
+		ExecutablePath:   playwright.String(opts.ExecutablePath),
+		Headless:         playwright.Bool(headless),
+		Env:              envVars,
+		FirefoxUserPrefs: firefoxPrefs,
 	}
 
 	// Add extra args
@@ -92,16 +170,26 @@ func NewBrowser(opts Options) (*Camoufox, error) {
 	browser, err := pw.Firefox.Launch(launchOpts)
 	if err != nil {
 		pw.Stop()
+		if virtDisplay != nil {
+			virtDisplay.Stop()
+		}
 		return nil, fmt.Errorf("failed to launch camoufox: %w", err)
 	}
 
-	return &Camoufox{
+	cam := &Camoufox{
 		pw:          pw,
 		browser:     browser,
 		fingerprint: fp,
 		options:     &opts,
 		envVars:     envVars,
-	}, nil
+	}
+
+	// Store virtual display for cleanup
+	if virtDisplay != nil {
+		cam.virtDisplay = virtDisplay
+	}
+
+	return cam, nil
 }
 
 // NewPage creates a new browser page with the configured fingerprint context
@@ -177,6 +265,10 @@ func (c *Camoufox) Close() error {
 		if err := c.pw.Stop(); err != nil {
 			return err
 		}
+	}
+	// Stop virtual display if running
+	if c.virtDisplay != nil {
+		c.virtDisplay.Stop()
 	}
 	return nil
 }

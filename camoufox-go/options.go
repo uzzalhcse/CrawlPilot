@@ -14,6 +14,14 @@ type Options struct {
 	// Default: false
 	Headless bool
 
+	// VirtualHeadless uses Xvfb virtual display (Linux only).
+	// This is useful for running headed browsers in headless environments.
+	// Requires Xvfb to be installed: apt-get install xvfb
+	VirtualHeadless bool
+
+	// Window sets a fixed window size (width, height)
+	Window *WindowSize
+
 	// Humanize enables human-like mouse movement.
 	// Set to true or a float representing max duration in seconds.
 	// Default: false (0)
@@ -52,14 +60,50 @@ type Options struct {
 	// BlockWebGL blocks WebGL (use sparingly, may cause detection)
 	BlockWebGL bool
 
+	// WebGLConfig forces a specific WebGL vendor/renderer pair
+	// Use SampleWebGL() to get realistic values
+	WebGLConfig *WebGLConfig
+
 	// Addons is a list of Firefox addon paths to load
 	Addons []string
+
+	// IncludeDefaultAddons includes default addons (uBlock Origin)
+	// Set to true to automatically download and include uBlock Origin
+	IncludeDefaultAddons bool
+
+	// ExcludeAddons excludes specific default addons
+	ExcludeAddons []DefaultAddon
 
 	// Fonts is a list of additional font family names to load
 	Fonts []string
 
+	// CustomFontsOnly disables OS-specific system fonts
+	// Only the fonts in the Fonts field will be used
+	CustomFontsOnly bool
+
+	// EnableCache enables browser caching (uses more memory)
+	EnableCache bool
+
+	// DisableCOOP disables Cross-Origin-Opener-Policy
+	// Useful for clicking elements in cross-origin iframes (e.g., Turnstile)
+	DisableCOOP bool
+
+	// MainWorldEval enables running scripts in the main world
+	// To use, prepend "mw:" to scripts: page.evaluate("mw:" + script)
+	MainWorldEval bool
+
+	// UserDataDir is the path for persistent browser data (cookies, localStorage)
+	// If set, browser will use persistent context mode
+	UserDataDir string
+
 	// Debug prints the config being sent to Camoufox
 	Debug bool
+}
+
+// WindowSize specifies fixed window dimensions
+type WindowSize struct {
+	Width  int
+	Height int
 }
 
 // Screen constraints for fingerprint generation

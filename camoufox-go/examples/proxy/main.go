@@ -11,16 +11,14 @@ import (
 func main() {
 	// Launch Camoufox with proxy configuration
 	browser, err := camoufox.NewBrowser(camoufox.Options{
-		OS:       "windows",
 		Headless: false,
+		GeoIP:    "auto", // Auto-detect location from proxy IP
 		// Configure proxy
 		Proxy: &camoufox.ProxyConfig{
 			Server:   "http://82.22.93.243:7950",
 			Username: "lnvmpyru",
 			Password: "5un1tb1azapa",
 		},
-		// Enable human-like mouse movement
-		Humanize: 1.5, // Max 1.5 seconds for cursor movements
 	})
 	if err != nil {
 		log.Fatalf("Failed to launch browser: %v", err)

@@ -63,43 +63,71 @@ def main():
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
 
-    # Extract relevant fields
+    # Extract navigator properties (matching browserforge.yml)
+    nav = fingerprint.navigator
+    extra_props = getattr(nav, 'extraProperties', None) or {}
+    
     result = {
         "navigator": {
-            "userAgent": getattr(fingerprint.navigator, 'userAgent', ''),
-            "platform": getattr(fingerprint.navigator, 'platform', ''),
-            "language": getattr(fingerprint.navigator, 'language', 'en-US'),
-            "languages": getattr(fingerprint.navigator, 'languages', ['en-US']),
-            "hardwareConcurrency": getattr(fingerprint.navigator, 'hardwareConcurrency', 4),
-            "maxTouchPoints": getattr(fingerprint.navigator, 'maxTouchPoints', 0),
-            "oscpu": getattr(fingerprint.navigator, 'oscpu', ''),
-            "appCodeName": getattr(fingerprint.navigator, 'appCodeName', 'Mozilla'),
-            "appName": getattr(fingerprint.navigator, 'appName', 'Netscape'),
-            "appVersion": getattr(fingerprint.navigator, 'appVersion', ''),
-            "product": getattr(fingerprint.navigator, 'product', 'Gecko'),
-            "productSub": getattr(fingerprint.navigator, 'productSub', '20030107'),
-            "vendor": getattr(fingerprint.navigator, 'vendor', ''),
-            "vendorSub": getattr(fingerprint.navigator, 'vendorSub', ''),
+            "userAgent": getattr(nav, 'userAgent', ''),
+            "platform": getattr(nav, 'platform', ''),
+            "language": getattr(nav, 'language', 'en-US'),
+            "languages": getattr(nav, 'languages', ['en-US']),
+            "hardwareConcurrency": getattr(nav, 'hardwareConcurrency', 4),
+            "maxTouchPoints": getattr(nav, 'maxTouchPoints', 0),
+            "oscpu": getattr(nav, 'oscpu', ''),
+            "appCodeName": getattr(nav, 'appCodeName', 'Mozilla'),
+            "appName": getattr(nav, 'appName', 'Netscape'),
+            "appVersion": getattr(nav, 'appVersion', ''),
+            "product": getattr(nav, 'product', 'Gecko'),
+            # Never override productSub per browserforge.yml #105
+            "doNotTrack": getattr(nav, 'doNotTrack', None),
+            "globalPrivacyControl": extra_props.get('globalPrivacyControl', None),
         },
         "screen": {
+            # Core screen properties
             "width": getattr(fingerprint.screen, 'width', 1920),
             "height": getattr(fingerprint.screen, 'height', 1080),
             "availWidth": getattr(fingerprint.screen, 'availWidth', 1920),
             "availHeight": getattr(fingerprint.screen, 'availHeight', 1040),
+            "availLeft": getattr(fingerprint.screen, 'availLeft', 0),
+            "availTop": getattr(fingerprint.screen, 'availTop', 0),
             "colorDepth": getattr(fingerprint.screen, 'colorDepth', 24),
             "pixelDepth": getattr(fingerprint.screen, 'pixelDepth', 24),
+            # Window properties
             "outerWidth": getattr(fingerprint.screen, 'outerWidth', 1920),
             "outerHeight": getattr(fingerprint.screen, 'outerHeight', 1080),
             "innerWidth": getattr(fingerprint.screen, 'innerWidth', 1920),
             "innerHeight": getattr(fingerprint.screen, 'innerHeight', 969),
+            # Screen position
+            "screenX": getattr(fingerprint.screen, 'screenX', 0),
+            "screenY": getattr(fingerprint.screen, 'screenY', 0),
+            "pageXOffset": getattr(fingerprint.screen, 'pageXOffset', 0),
+            "pageYOffset": getattr(fingerprint.screen, 'pageYOffset', 0),
         }
     }
     
     # Add headers if available
     if hasattr(fingerprint, 'headers'):
         result["headers"] = {
-            "User-Agent": getattr(fingerprint.headers, 'user_agent', result["navigator"]["userAgent"]),
-            "Accept-Language": getattr(fingerprint.headers, 'accept_language', 'en-US,en;q=0.9'),
+            "Accept-Encoding": getattr(fingerprint.headers, 'accept_encoding', 'gzip, deflate, br'),
+        }
+    else:
+        result["headers"] = {
+            "Accept-Encoding": "gzip, deflate, br",
+        }
+    
+    # Add battery if available
+    if hasattr(fingerprint, 'battery'):
+        discharging = getattr(fingerprint.battery, 'dischargingTime', None)
+        # Convert infinity to None (null in JSON)
+        if discharging is not None and discharging == float('inf'):
+            discharging = None
+        result["battery"] = {
+            "charging": getattr(fingerprint.battery, 'charging', True),
+            "chargingTime": getattr(fingerprint.battery, 'chargingTime', 0),
+            "dischargingTime": discharging,
+            "level": getattr(fingerprint.battery, 'level', 1.0),
         }
 
     # Output only JSON to stdout
@@ -108,3 +136,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

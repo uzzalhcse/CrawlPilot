@@ -2,7 +2,10 @@ module github.com/uzzalhcse/camoufox-go
 
 go 1.22
 
-require github.com/playwright-community/playwright-go v0.5200.1
+require (
+	github.com/mattn/go-sqlite3 v1.14.32
+	github.com/playwright-community/playwright-go v0.5200.1
+)
 
 require (
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect

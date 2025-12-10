@@ -14,24 +14,24 @@ type Fingerprint struct {
 	Navigator NavigatorFingerprint `json:"navigator"`
 	Screen    ScreenFingerprint    `json:"screen"`
 	Headers   HeadersFingerprint   `json:"headers,omitempty"`
+	Battery   BatteryFingerprint   `json:"battery,omitempty"`
 }
 
 // NavigatorFingerprint contains navigator property values
 type NavigatorFingerprint struct {
-	UserAgent           string   `json:"userAgent"`
-	AppCodeName         string   `json:"appCodeName,omitempty"`
-	AppName             string   `json:"appName,omitempty"`
-	AppVersion          string   `json:"appVersion,omitempty"`
-	Platform            string   `json:"platform,omitempty"`
-	OsCPU               string   `json:"oscpu,omitempty"`
-	Language            string   `json:"language,omitempty"`
-	Languages           []string `json:"languages,omitempty"`
-	HardwareConcurrency int      `json:"hardwareConcurrency,omitempty"`
-	MaxTouchPoints      int      `json:"maxTouchPoints,omitempty"`
-	Product             string   `json:"product,omitempty"`
-	ProductSub          string   `json:"productSub,omitempty"`
-	Vendor              string   `json:"vendor,omitempty"`
-	VendorSub           string   `json:"vendorSub,omitempty"`
+	UserAgent            string   `json:"userAgent"`
+	AppCodeName          string   `json:"appCodeName,omitempty"`
+	AppName              string   `json:"appName,omitempty"`
+	AppVersion           string   `json:"appVersion,omitempty"`
+	Platform             string   `json:"platform,omitempty"`
+	OsCPU                string   `json:"oscpu,omitempty"`
+	Language             string   `json:"language,omitempty"`
+	Languages            []string `json:"languages,omitempty"`
+	HardwareConcurrency  int      `json:"hardwareConcurrency,omitempty"`
+	MaxTouchPoints       int      `json:"maxTouchPoints,omitempty"`
+	Product              string   `json:"product,omitempty"`
+	DoNotTrack           *string  `json:"doNotTrack,omitempty"`
+	GlobalPrivacyControl *bool    `json:"globalPrivacyControl,omitempty"`
 }
 
 // ScreenFingerprint contains screen/window property values
@@ -40,19 +40,31 @@ type ScreenFingerprint struct {
 	Height      int `json:"height,omitempty"`
 	AvailWidth  int `json:"availWidth,omitempty"`
 	AvailHeight int `json:"availHeight,omitempty"`
+	AvailLeft   int `json:"availLeft,omitempty"`
+	AvailTop    int `json:"availTop,omitempty"`
 	ColorDepth  int `json:"colorDepth,omitempty"`
 	PixelDepth  int `json:"pixelDepth,omitempty"`
 	OuterWidth  int `json:"outerWidth,omitempty"`
 	OuterHeight int `json:"outerHeight,omitempty"`
 	InnerWidth  int `json:"innerWidth,omitempty"`
 	InnerHeight int `json:"innerHeight,omitempty"`
+	ScreenX     int `json:"screenX,omitempty"`
+	ScreenY     int `json:"screenY,omitempty"`
+	PageXOffset int `json:"pageXOffset,omitempty"`
+	PageYOffset int `json:"pageYOffset,omitempty"`
 }
 
 // HeadersFingerprint contains HTTP header values
 type HeadersFingerprint struct {
-	UserAgent      string `json:"User-Agent,omitempty"`
-	AcceptLanguage string `json:"Accept-Language,omitempty"`
-	Accept         string `json:"Accept,omitempty"`
+	AcceptEncoding string `json:"Accept-Encoding,omitempty"`
+}
+
+// BatteryFingerprint contains battery status
+type BatteryFingerprint struct {
+	Charging        bool     `json:"charging,omitempty"`
+	ChargingTime    float64  `json:"chargingTime,omitempty"`
+	DischargingTime *float64 `json:"dischargingTime,omitempty"`
+	Level           float64  `json:"level,omitempty"`
 }
 
 // GenerateFingerprint generates a browser fingerprint using BrowserForge via Python script.

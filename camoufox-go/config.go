@@ -15,9 +15,18 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 		return config
 	}
 
-	// Navigator properties
+	// Get actual Camoufox version to fix UserAgent mismatch
+	versionInfo, _ := GetVersionInfo()
+	actualVersion := "135.0"
+	if versionInfo != nil && versionInfo.Version != "" {
+		actualVersion = versionInfo.Version
+	}
+
+	// Navigator properties (matching browserforge.yml)
+	// Fix UserAgent version to match actual Camoufox Firefox version
 	if fp.Navigator.UserAgent != "" {
-		config["navigator.userAgent"] = fp.Navigator.UserAgent
+		fixedUA := UpdateUserAgentVersion(fp.Navigator.UserAgent, actualVersion)
+		config["navigator.userAgent"] = fixedUA
 	}
 	if fp.Navigator.Platform != "" {
 		config["navigator.platform"] = fp.Navigator.Platform
@@ -49,23 +58,40 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 	if fp.Navigator.Product != "" {
 		config["navigator.product"] = fp.Navigator.Product
 	}
-	if fp.Navigator.ProductSub != "" {
-		config["navigator.productSub"] = fp.Navigator.ProductSub
+	// doNotTrack (can be "1", "0", or nil)
+	if fp.Navigator.DoNotTrack != nil {
+		config["navigator.doNotTrack"] = *fp.Navigator.DoNotTrack
+	}
+	// globalPrivacyControl from navigator.extraProperties
+	if fp.Navigator.GlobalPrivacyControl != nil {
+		config["navigator.globalPrivacyControl"] = *fp.Navigator.GlobalPrivacyControl
 	}
 
-	// Screen properties
+	// Screen properties (matching browserforge.yml)
 	if fp.Screen.Width > 0 {
 		config["screen.width"] = fp.Screen.Width
-		config["screen.availWidth"] = fp.Screen.Width
 	}
 	if fp.Screen.Height > 0 {
 		config["screen.height"] = fp.Screen.Height
-		config["screen.availHeight"] = fp.Screen.Height
 	}
+	if fp.Screen.AvailWidth > 0 {
+		config["screen.availWidth"] = fp.Screen.AvailWidth
+	}
+	if fp.Screen.AvailHeight > 0 {
+		config["screen.availHeight"] = fp.Screen.AvailHeight
+	}
+	// availLeft and availTop (can be 0)
+	config["screen.availLeft"] = fp.Screen.AvailLeft
+	config["screen.availTop"] = fp.Screen.AvailTop
 	if fp.Screen.ColorDepth > 0 {
 		config["screen.colorDepth"] = fp.Screen.ColorDepth
-		config["screen.pixelDepth"] = fp.Screen.ColorDepth
 	}
+	if fp.Screen.PixelDepth > 0 {
+		config["screen.pixelDepth"] = fp.Screen.PixelDepth
+	}
+	// pageXOffset and pageYOffset
+	config["screen.pageXOffset"] = fp.Screen.PageXOffset
+	config["screen.pageYOffset"] = fp.Screen.PageYOffset
 
 	// Window properties
 	if fp.Screen.OuterWidth > 0 {
@@ -80,12 +106,71 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 	if fp.Screen.InnerHeight > 0 {
 		config["window.innerHeight"] = fp.Screen.InnerHeight
 	}
+	// screenX and screenY (can be 0)
+	config["window.screenX"] = fp.Screen.ScreenX
+	config["window.screenY"] = fp.Screen.ScreenY
+
+	// Headers (matching browserforge.yml)
+	if fp.Headers.AcceptEncoding != "" {
+		config["headers.Accept-Encoding"] = fp.Headers.AcceptEncoding
+	}
+
+	// Battery properties
+	if fp.Battery.Level > 0 {
+		config["battery:charging"] = fp.Battery.Charging
+		config["battery:chargingTime"] = fp.Battery.ChargingTime
+		if fp.Battery.DischargingTime != nil {
+			config["battery:dischargingTime"] = *fp.Battery.DischargingTime
+		}
+		config["battery:level"] = fp.Battery.Level
+	}
 
 	// Random history length (1-5)
 	config["window.history.length"] = rand.Intn(5) + 1
 
+	// Canvas anti-fingerprinting
+	config["canvas:aaOffset"] = GetRandomCanvasOffset()
+	config["canvas:aaCapOffset"] = true
+
+	// Font spacing seed
+	config["fonts:spacing_seed"] = GetRandomFontSpacing()
+
 	// Apply options
 	if opts != nil {
+		// Get target OS for fonts/WebGL
+		targetOS := opts.OS
+		if targetOS == "" {
+			targetOS = "linux"
+		}
+
+		// Apply OS-specific fonts
+		if !opts.CustomFontsOnly {
+			osFonts := GetFontsForOS(targetOS)
+			if len(opts.Fonts) > 0 {
+				// Merge custom fonts with OS fonts
+				config["fonts"] = MergeFonts(opts.Fonts, osFonts)
+			} else {
+				config["fonts"] = osFonts
+			}
+		} else if len(opts.Fonts) > 0 {
+			config["fonts"] = opts.Fonts
+		}
+
+		// Apply WebGL config (if not blocking WebGL)
+		if !opts.BlockWebGL {
+			var webglCfg *WebGLConfig
+			if opts.WebGLConfig != nil {
+				webglCfg = opts.WebGLConfig
+			} else {
+				// Sample random WebGL config for OS
+				webglCfg, _ = SampleWebGL(targetOS)
+			}
+			if webglCfg != nil {
+				config["webGl:vendor"] = webglCfg.Vendor
+				config["webGl:renderer"] = webglCfg.Renderer
+			}
+		}
+
 		// Block images
 		if opts.BlockImages {
 			config["camoufox.blockImages"] = true
@@ -103,7 +188,8 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 
 		// Humanize mouse movement
 		if opts.Humanize > 0 {
-			config["camoufox.humanize"] = opts.Humanize
+			config["humanize"] = true
+			config["humanize:maxTime"] = opts.Humanize
 		}
 
 		// Timezone
@@ -119,9 +205,9 @@ func BuildConfig(fp *Fingerprint, opts *Options) map[string]interface{} {
 			}
 		}
 
-		// Custom fonts
-		if len(opts.Fonts) > 0 {
-			config["fonts"] = opts.Fonts
+		// Main world eval
+		if opts.MainWorldEval {
+			config["allowMainWorld"] = true
 		}
 	}
 
