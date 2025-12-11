@@ -193,7 +193,7 @@ const runScraper = async () => {
           </div>
 
           <!-- AI Unblocker Banner -->
-          <div class="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-center gap-3">
+          <div v-if="0" class="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-center gap-3">
             <div class="p-2 rounded-lg bg-emerald-500/10">
               <Zap class="w-4 h-4 text-emerald-500" />
             </div>

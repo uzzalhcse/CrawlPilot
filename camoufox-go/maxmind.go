@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,14 +24,15 @@ const (
 
 // Geolocation holds location data based on IP
 type Geolocation struct {
-	IP        string  `json:"ip"`
-	Country   string  `json:"country"`
-	Region    string  `json:"region"`
-	City      string  `json:"city"`
-	Timezone  string  `json:"timezone"`
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	Locale    string  `json:"locale"`
+	IP          string  `json:"ip"`
+	Country     string  `json:"country"`
+	CountryCode string  `json:"country_code"` // ISO 3166-1 alpha-2 code for locale selection
+	Region      string  `json:"region"`
+	City        string  `json:"city"`
+	Timezone    string  `json:"timezone"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	Locale      string  `json:"locale"`
 }
 
 // MaxMindReader provides GeoIP lookup using MaxMind GeoLite2 database
@@ -190,14 +192,15 @@ func (r *MaxMindReader) Lookup(ip string) (*Geolocation, error) {
 	}
 
 	return &Geolocation{
-		IP:        ip,
-		Country:   countryName,
-		Region:    regionName,
-		City:      cityName,
-		Timezone:  record.Location.TimeZone,
-		Latitude:  record.Location.Latitude,
-		Longitude: record.Location.Longitude,
-		Locale:    deriveLocale(countryName),
+		IP:          ip,
+		Country:     countryName,
+		CountryCode: record.Country.IsoCode, // ISO 3166-1 alpha-2 code
+		Region:      regionName,
+		City:        cityName,
+		Timezone:    record.Location.TimeZone,
+		Latitude:    record.Location.Latitude,
+		Longitude:   record.Location.Longitude,
+		Locale:      deriveLocale(countryName),
 	}, nil
 }
 
@@ -212,6 +215,40 @@ func (r *MaxMindReader) Close() error {
 	return nil
 }
 
+// ExtractIPFromProxy extracts the IP address from a proxy server URL
+// Supports formats: "82.22.69.28:7235", "http://236.22.02.144:6952", "socks5://user:pass@1.2.3.4:1080"
+func ExtractIPFromProxy(proxyServer string) string {
+	if proxyServer == "" {
+		return ""
+	}
+
+	// Parse as URL to handle various formats
+	server := proxyServer
+
+	// Remove scheme if present
+	if idx := strings.Index(server, "://"); idx != -1 {
+		server = server[idx+3:]
+	}
+
+	// Remove userinfo (user:pass@) if present
+	if idx := strings.Index(server, "@"); idx != -1 {
+		server = server[idx+1:]
+	}
+
+	// Extract host (remove port)
+	host := server
+	if idx := strings.LastIndex(server, ":"); idx != -1 {
+		host = server[:idx]
+	}
+
+	// Validate it's an IP address (not a hostname)
+	if ip := net.ParseIP(host); ip != nil {
+		return host
+	}
+
+	return ""
+}
+
 // GeoIPLookup performs GeoIP lookup using MaxMind database
 func GeoIPLookup(ip string, proxy *ProxyConfig) (*Geolocation, error) {
 	reader, err := GetMaxMindReader()
@@ -219,33 +256,64 @@ func GeoIPLookup(ip string, proxy *ProxyConfig) (*Geolocation, error) {
 		return nil, err
 	}
 
-	// If ip is "auto", get the public IP first
+	// If ip is "auto", try to extract from proxy first (no API call needed)
 	if ip == "" || ip == "auto" {
-		detectedIP, err := GetPublicIP(proxy)
-		if err != nil {
-			return nil, fmt.Errorf("failed to detect public IP: %w", err)
+		if proxy != nil && proxy.Server != "" {
+			// Try to extract IP from proxy URL (e.g., "82.22.69.28:7235")
+			extractedIP := ExtractIPFromProxy(proxy.Server)
+			if extractedIP != "" {
+				ip = extractedIP
+			}
 		}
-		ip = detectedIP
+
+		// Fallback to public IP detection if extraction failed
+		if ip == "" || ip == "auto" {
+			detectedIP, err := GetPublicIP(proxy)
+			if err != nil {
+				return nil, fmt.Errorf("failed to detect public IP: %w", err)
+			}
+			ip = detectedIP
+		}
 	}
 
 	return reader.Lookup(ip)
 }
 
 // ApplyGeolocation applies geolocation data to the config
+// This follows the Python implementation by using statistical locale selection
+// and applying full locale config (locale:language, locale:region, etc.)
 func ApplyGeolocation(geo *Geolocation, config map[string]interface{}, blockWebRTC bool) {
+	ApplyGeolocationWithPrefs(geo, config, nil, blockWebRTC)
+}
+
+// ApplyGeolocationWithPrefs applies geolocation data to the config and Firefox preferences
+// When using IPv4, it also disables IPv6 DNS to match the Python implementation
+func ApplyGeolocationWithPrefs(geo *Geolocation, config map[string]interface{}, firefoxPrefs map[string]interface{}, blockWebRTC bool) {
 	if geo == nil {
 		return
 	}
 
+	// Set geolocation data
 	config["geolocation:latitude"] = geo.Latitude
 	config["geolocation:longitude"] = geo.Longitude
 	config["geolocation:accuracy"] = 100.0
 	config["timezone"] = geo.Timezone
 
+	// Apply statistically-selected locale based on country code
+	// This matches the Python implementation which uses get_geolocation() -> Geolocation.as_config()
+	if geo.CountryCode != "" {
+		locale := GetLocaleForRegion(geo.CountryCode)
+		ApplyLocaleToConfig(locale, config)
+	}
+
 	// Spoof WebRTC if not blocked
 	if !blockWebRTC && geo.IP != "" {
 		if isIPv4(geo.IP) {
 			config["webrtc:ipv4"] = geo.IP
+			// Disable IPv6 DNS when using IPv4 (matches Python implementation)
+			if firefoxPrefs != nil {
+				firefoxPrefs["network.dns.disableIPv6"] = true
+			}
 		} else if isIPv6(geo.IP) {
 			config["webrtc:ipv6"] = geo.IP
 		}

@@ -58,13 +58,22 @@ func NewBrowser(opts Options) (*Camoufox, error) {
 	// Build Camoufox config from fingerprint
 	config := BuildConfig(fp, &opts)
 
+	// Build Firefox user prefs early (needed for GeoIP IPv6 DNS disable)
+	firefoxPrefs := make(map[string]interface{})
+	if opts.FirefoxPrefs != nil {
+		for k, v := range opts.FirefoxPrefs {
+			firefoxPrefs[k] = v
+		}
+	}
+
 	// Apply GeoIP if specified (uses MaxMind GeoLite2 database, auto-downloads if needed)
 	if opts.GeoIP != "" {
 		geo, err := GeoIPLookup(opts.GeoIP, opts.Proxy)
 		if err != nil && opts.Debug {
 			fmt.Printf("[Debug] GeoIP lookup failed: %v\n", err)
 		} else if geo != nil {
-			ApplyGeolocation(geo, config, opts.BlockWebRTC)
+			// Use ApplyGeolocationWithPrefs to also set network.dns.disableIPv6 for IPv4
+			ApplyGeolocationWithPrefs(geo, config, firefoxPrefs, opts.BlockWebRTC)
 			if opts.Debug {
 				fmt.Printf("[Debug] GeoIP: %s -> %s, %s (%s) at (%.4f, %.4f)\n",
 					geo.IP, geo.City, geo.Country, geo.Timezone, geo.Latitude, geo.Longitude)
@@ -151,14 +160,6 @@ func NewBrowser(opts Options) (*Camoufox, error) {
 			virtDisplay.Stop()
 		}
 		return nil, fmt.Errorf("failed to start playwright: %w", err)
-	}
-
-	// Build Firefox user prefs
-	firefoxPrefs := make(map[string]interface{})
-	if opts.FirefoxPrefs != nil {
-		for k, v := range opts.FirefoxPrefs {
-			firefoxPrefs[k] = v
-		}
 	}
 
 	// Apply Firefox pref options
