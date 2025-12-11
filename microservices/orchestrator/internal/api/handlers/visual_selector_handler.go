@@ -16,7 +16,9 @@ type VisualSelectorSession struct {
 	ID             string                 `json:"id"`
 	URL            string                 `json:"url"`
 	WorkflowID     string                 `json:"workflow_id,omitempty"`
-	Status         string                 `json:"status"` // launching, running, completed, failed, timeout
+	Driver         string                 `json:"driver,omitempty"`     // playwright, camoufox
+	ProfileID      string                 `json:"profile_id,omitempty"` // browser profile ID
+	Status         string                 `json:"status"`               // launching, running, completed, failed, timeout
 	Fields         map[string]interface{} `json:"fields,omitempty"`
 	ExistingFields map[string]interface{} `json:"existing_fields,omitempty"`
 	Error          string                 `json:"error,omitempty"`
@@ -41,6 +43,8 @@ func NewVisualSelectorHandler(selectorSvc *service.VisualSelectorService) *Visua
 type StartSessionRequest struct {
 	URL            string                 `json:"url"`
 	WorkflowID     string                 `json:"workflow_id,omitempty"`
+	Driver         string                 `json:"driver,omitempty"`          // playwright or camoufox (default: playwright)
+	ProfileID      string                 `json:"profile_id,omitempty"`      // browser profile ID for fingerprint/proxy
 	ExistingFields map[string]interface{} `json:"existing_fields,omitempty"` // Pre-populate with existing extract fields
 }
 
@@ -60,11 +64,19 @@ func (h *VisualSelectorHandler) StartSession(c *fiber.Ctx) error {
 		})
 	}
 
+	// Default driver to playwright if not specified
+	driver := req.Driver
+	if driver == "" {
+		driver = "playwright"
+	}
+
 	// Create session
 	session := &VisualSelectorSession{
 		ID:             uuid.New().String(),
 		URL:            req.URL,
 		WorkflowID:     req.WorkflowID,
+		Driver:         driver,
+		ProfileID:      req.ProfileID,
 		Status:         "launching",
 		ExistingFields: req.ExistingFields,
 		CreatedAt:      time.Now(),
@@ -77,11 +89,13 @@ func (h *VisualSelectorHandler) StartSession(c *fiber.Ctx) error {
 		zap.String("session_id", session.ID),
 		zap.String("url", req.URL),
 		zap.String("workflow_id", req.WorkflowID),
+		zap.String("driver", driver),
+		zap.String("profile_id", req.ProfileID),
 	)
 
 	// Launch browser session asynchronously
 	go func() {
-		if err := h.selectorSvc.LaunchSession(session.ID, req.URL, req.ExistingFields); err != nil {
+		if err := h.selectorSvc.LaunchSession(session.ID, req.URL, driver, req.ProfileID, req.ExistingFields); err != nil {
 			logger.Error("Failed to launch visual selector session",
 				zap.String("session_id", session.ID),
 				zap.Error(err),

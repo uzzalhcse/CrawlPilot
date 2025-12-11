@@ -238,7 +238,7 @@ func main() {
 		selectFlowScript = "assets/selectflow.js"
 	}
 	callbackBaseURL := fmt.Sprintf("http://%s:%d/api/v1", cfg.Server.Host, cfg.Server.Port)
-	visualSelectorSvc, err := service.NewVisualSelectorService(selectFlowScript, callbackBaseURL)
+	visualSelectorSvc, err := service.NewVisualSelectorService(selectFlowScript, callbackBaseURL, browserProfileRepo)
 	if err != nil {
 		logger.Warn("Visual selector service not available", zap.Error(err))
 	}

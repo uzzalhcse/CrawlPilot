@@ -43,18 +43,19 @@ const hasAdvancedSettings = computed(() => {
 const selectedDriver = ref('http')
 const selectedProfile = ref('')
 
-// Static driver options (matches backend)
-const drivers = [
-  { id: 'http', name: 'HTTP Client (Fast)', description: 'Fast HTTP requests without JavaScript' },
-  { id: 'playwright', name: 'Playwright', description: 'Full browser automation' },
-  { id: 'camoufox', name: 'Camoufox (Stealth)', description: 'Anti-detection browser' },
-]
+// Use drivers store for dynamic driver list
+import { useDriversStore } from '@/stores/drivers'
+const driversStore = useDriversStore()
 
 // Use browser profiles store
 const profilesStore = useBrowserProfilesStore()
 
-// Load profiles on mount
+// Load drivers and profiles on mount
 onMounted(async () => {
+  // Fetch drivers from API
+  await driversStore.fetchDrivers()
+  
+  // Fetch browser profiles
   if (profilesStore.profiles.length === 0) {
     try {
       await profilesStore.fetchProfiles()
@@ -216,14 +217,14 @@ const runScraper = async () => {
                     v-model="selectedDriver"
                     class="w-full px-4 py-2.5 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors appearance-none cursor-pointer"
                   >
-                    <option v-for="driver in drivers" :key="driver.id" :value="driver.id">
+                    <option v-for="driver in driversStore.drivers" :key="driver.id" :value="driver.id">
                       {{ driver.name }}
                     </option>
                   </select>
                   <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 </div>
                 <p class="text-xs text-muted-foreground mt-1.5">
-                  {{ drivers.find(d => d.id === selectedDriver)?.description }}
+                  {{ driversStore.getDriverById(selectedDriver)?.description }}
                 </p>
               </div>
 

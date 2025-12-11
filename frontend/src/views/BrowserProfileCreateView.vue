@@ -59,12 +59,28 @@ const formData = ref({
   user_data_dir: ''
 })
 
-// Driver types with browser compatibility info (HTTP excluded - uses inline browser_name)
-const driverTypes = ref([
-  { value: 'playwright', label: 'Playwright', description: 'All browsers (Chromium, Firefox, WebKit)', browsers: ['chromium', 'firefox', 'webkit'] },
-  { value: 'camoufox', label: 'Camoufox', description: 'Stealth Firefox (Anti-detect)', browsers: ['firefox'] },
-  { value: 'chromedp', label: 'Chromedp', description: 'Chromium only (CDP)', browsers: ['chromium'] }
-])
+// Use drivers store for dynamic driver list
+import { useDriversStore } from '@/stores/drivers'
+import { computed } from 'vue'
+const driversStore = useDriversStore()
+
+// Browser compatibility mapping for each driver
+const browserCompatibility: Record<string, string[]> = {
+  'playwright': ['chromium', 'firefox', 'webkit'],
+  'camoufox': ['firefox'],
+  'chromedp': ['chromium']
+}
+
+// Computed: Driver types with browser compatibility info
+const driverTypes = computed(() => {
+  // Filter out 'http' driver for browser profiles (HTTP doesn't need browser profiles)
+  return driversStore.browserDrivers.map(d => ({
+    value: d.id,
+    label: d.name.replace(' (Fast)', '').replace(' (Stealth)', ''), // Clean up labels for cards
+    description: d.description,
+    browsers: browserCompatibility[d.id] || ['chromium', 'firefox', 'webkit']
+  }))
+})
 
 const browserTypes = ref([
   { value: 'chromium', label: 'Chromium', icon: Chrome, description: 'Google Chrome, Microsoft Edge, Brave' },
@@ -96,6 +112,9 @@ const timezones = [
 ]
 
 onMounted(async () => {
+  // Fetch drivers from API
+  await driversStore.fetchDrivers()
+  
   if (route.params.id) {
     isEdit.value = true
     loading.value = true

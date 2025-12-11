@@ -1,15 +1,12 @@
 {
-    "name": "mister-auto.es",
-    "description": "mister-auto.es",
+    "name": "mister-auto",
+    "description": "Comprehensive crawler for mister-auto",
     "config": {
         "start_urls": [
-            "https://www.mister-auto.es/filtro-de-aire-8-g/"
+            "https://www.mister-auto.es"
         ],
         "max_depth": 3,
         "rate_limit_delay": 2000,
-        "headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        },
         "phases": [
             {
                 "id": "discover_categories",
@@ -29,15 +26,51 @@
                         "type": "extract_links",
                         "name": "Extract Category Links",
                         "params": {
-                            "selector": ".listing-title a",
+                            "selector": "ul.container.fx-items-center.ma-list li a",
                             "marker": "category",
                             "limit": 2
                         },
-                        "probe_url": "https://www.mister-auto.es/filtro-de-aire-8-g/"
+                        "probe_url": "https://www.mister-auto.es"
                     }
                 ],
                 "url_filter": {
                     "depth": 0
+                },
+                "transition": {
+                    "condition": "all_nodes_complete",
+                    "next_phase": "discover_products"
+                }
+            },
+            {
+                "id": "discover_products",
+                "type": "discovery",
+                "name": "Discover Product Listing Pages",
+                "nodes": [
+                    {
+                        "id": "navigate_to_category",
+                        "type": "navigate",
+                        "name": "Navigate to Category Page",
+                        "params": {
+                            "url": "{{current_url}}",
+                            "driver": "chromedp"
+                        }
+                    },
+                    {
+                        "id": "discover_product_listings",
+                        "type": "extract_links",
+                        "name": "Extract Product Links",
+                        "params": {
+                            "selector": ".vertical-product a.ma-links",
+                            "marker": "product",
+                            "limit": 5
+                        },
+                        "probe_url": "https://www.mister-auto.es/neumaticos/"
+                    }
+                ],
+                "url_filter": {
+                    "markers": [
+                        "category"
+                    ]
                 },
                 "transition": {
                     "condition": "all_nodes_complete",
@@ -71,26 +104,14 @@
                                     "transform": "trim"
                                 },
                                 "product_name": {
-                                    "selector": ".product-title .abt-listing-title",
+                                    "selector": "#product-item-main-container .abt-listing-title",
                                     "type": "text",
                                     "transform": "trim",
                                     "required": true
-                                },
-                                "images": {
-                                    "selector": ".product-card-pictures .slick-list .slick-track img",
-                                    "type": "attr",
-                                    "attribute": "src",
-                                    "multiple": true
-                                },
-                                "list_price": {
-                                    "selector": ".product-card-details .medium-price--std",
-                                    "type": "text",
-                                    "transform": "trim",
-                                    "default": "0"
                                 }
                             }
                         },
-                        "probe_url": "https://www.mister-auto.es/filtro-de-aire-mann-filter-004-c27009-p/"
+                        "probe_url": "https://www.mister-auto.es/neumaticos-michelin-921-mic698-p/"
                     }
                 ],
                 "url_filter": {

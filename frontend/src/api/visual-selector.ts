@@ -3,6 +3,8 @@ import apiClient from './client'
 export interface StartSessionRequest {
     url: string
     workflow_id?: string
+    driver?: string      // playwright or camoufox (default: playwright)
+    profile_id?: string  // browser profile ID for fingerprint/proxy
     existing_fields?: Record<string, any>
 }
 

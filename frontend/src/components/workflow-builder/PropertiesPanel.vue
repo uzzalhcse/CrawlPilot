@@ -45,8 +45,14 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const profilesStore = useBrowserProfilesStore()
+
+// Use drivers store for dynamic driver list
+import { useDriversStore } from '@/stores/drivers'
+const driversStore = useDriversStore()
+
 onMounted(() => {
   profilesStore.fetchProfiles()
+  driversStore.fetchDrivers()
 })
 
 const activeTab = ref('settings')
@@ -278,17 +284,17 @@ function updateWorkflowConfig(key: keyof WorkflowConfig, value: any) {
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select driver">
-                    {{ 
-                      workflowConfig?.default_driver === 'chromedp' ? 'Chromedp (Chrome DevTools Protocol)'
-                        : workflowConfig?.default_driver === 'http' ? 'HTTP Client (No Browser)'
-                        : 'Playwright (Default)'
-                    }}
+                    {{ driversStore.getDriverName(workflowConfig?.default_driver || 'playwright') }}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="playwright">Playwright (Default)</SelectItem>
-                  <SelectItem value="chromedp">Chromedp (Chrome DevTools Protocol)</SelectItem>
-                  <SelectItem value="http">HTTP Client (No Browser)</SelectItem>
+                  <SelectItem 
+                    v-for="driver in driversStore.drivers" 
+                    :key="driver.id" 
+                    :value="driver.id"
+                  >
+                    {{ driver.name }}
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p class="text-[10px] text-muted-foreground">

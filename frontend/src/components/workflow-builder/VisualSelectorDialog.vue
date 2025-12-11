@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, watch, computed, onUnmounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { visualSelectorApi } from '@/api/visual-selector'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Target, AlertCircle, CheckCircle2 } from 'lucide-vue-next'
+import { Loader2, Target, AlertCircle, CheckCircle2, ChevronDown } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import { useDriversStore } from '@/stores/drivers'
+import { useBrowserProfilesStore } from '@/stores/browserProfiles'
 
 interface Props {
   open: boolean
@@ -23,7 +25,16 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+// Stores
+const driversStore = useDriversStore()
+const profilesStore = useBrowserProfilesStore()
+
+// Form state
 const url = ref('')
+const selectedDriver = ref('playwright')
+const selectedProfile = ref('')
+
+// Session state
 const sessionId = ref<string | null>(null)
 const status = ref<'idle' | 'launching' | 'running' | 'completed' | 'failed' | 'timeout'>('idle')
 const fields = ref<Record<string, any> | null>(null)
@@ -31,6 +42,23 @@ const error = ref<string | null>(null)
 const pollInterval = ref<number | null>(null)
 const pollCount = ref(0)
 const MAX_POLL_COUNT = 300 * 6 // 30 minutes at 1 second intervals
+
+// Computed: Only show browser drivers (exclude http)
+const browserDrivers = computed(() => 
+  driversStore.drivers.filter(d => d.id !== 'http')
+)
+
+// Computed: Filter profiles by selected driver
+const filteredProfiles = computed(() => {
+  if (!selectedDriver.value || selectedDriver.value === 'http') return []
+  return profilesStore.profiles.filter(p => p.driver_type === selectedDriver.value)
+})
+
+// Load data on mount
+onMounted(() => {
+  driversStore.fetchDrivers()
+  profilesStore.fetchProfiles()
+})
 
 const isOpen = computed({
   get: () => props.open,
@@ -76,6 +104,8 @@ onUnmounted(() => {
 
 function resetState() {
   url.value = ''
+  selectedDriver.value = 'playwright'
+  selectedProfile.value = ''
   sessionId.value = null
   status.value = 'idle'
   fields.value = null
@@ -93,6 +123,8 @@ async function startSession() {
     const response = await visualSelectorApi.startSession({
       url: url.value,
       workflow_id: props.workflowId,
+      driver: selectedDriver.value,
+      profile_id: selectedProfile.value || undefined,
       existing_fields: props.existingFields
     })
 
@@ -192,6 +224,47 @@ function closeDialog() {
             placeholder="https://example.com/product/123"
             :disabled="status !== 'idle'"
           />
+        </div>
+
+        <!-- Driver Selection -->
+        <div class="space-y-2">
+          <Label>Browser Driver</Label>
+          <div class="relative">
+            <select
+              v-model="selectedDriver"
+              :disabled="status !== 'idle'"
+              class="w-full px-3 py-2 text-sm bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+            >
+              <option v-for="driver in browserDrivers" :key="driver.id" :value="driver.id">
+                {{ driver.name }}
+              </option>
+            </select>
+            <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          </div>
+          <p class="text-xs text-muted-foreground">
+            {{ selectedDriver === 'camoufox' ? 'Stealth browser with anti-detection' : 'Standard browser automation' }}
+          </p>
+        </div>
+
+        <!-- Profile Selection (only for camoufox) -->
+        <div v-if="selectedDriver === 'camoufox' && filteredProfiles.length > 0" class="space-y-2">
+          <Label>Browser Profile (Optional)</Label>
+          <div class="relative">
+            <select
+              v-model="selectedProfile"
+              :disabled="status !== 'idle'"
+              class="w-full px-3 py-2 text-sm bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+            >
+              <option value="">Default (no profile)</option>
+              <option v-for="profile in filteredProfiles" :key="profile.id" :value="profile.id">
+                {{ profile.name }}
+              </option>
+            </select>
+            <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          </div>
+          <p class="text-xs text-muted-foreground">
+            Apply fingerprint and proxy settings from a saved profile
+          </p>
         </div>
 
         <!-- Status Display -->
