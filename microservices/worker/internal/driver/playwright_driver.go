@@ -12,6 +12,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/shared/services"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 	"go.uber.org/zap"
 )
@@ -53,15 +54,18 @@ func NewPlaywrightDriverWithProfile(cfg *config.BrowserConfig, profile *models.B
 
 func (d *PlaywrightDriver) NewPage(ctx context.Context) (Page, error) {
 	var browserCtx playwright.BrowserContext
+	var fp *services.Fingerprint
 	var err error
 	var isProxy bool
 
 	// Check for proxy in context
 	if proxyCfg, ok := ctx.Value(ProxyKey).(*browser.ProxyConfig); ok && proxyCfg != nil {
-		browserCtx, err = d.pool.CreateContextWithProxy(proxyCfg)
+		// Use CreateContextWithProxyAndFingerprint to get fingerprint for session caching
+		browserCtx, fp, err = d.pool.CreateContextWithProxyAndFingerprint(proxyCfg)
 		isProxy = true
 	} else {
-		browserCtx, err = d.pool.Acquire(ctx)
+		// Use AcquireWithFingerprint to get the BrowserForge fingerprint
+		browserCtx, fp, err = d.pool.AcquireWithFingerprint(ctx)
 	}
 
 	if err != nil {
@@ -75,10 +79,11 @@ func (d *PlaywrightDriver) NewPage(ctx context.Context) (Page, error) {
 	}
 
 	return &PlaywrightPage{
-		page:       page,
-		browserCtx: browserCtx,
-		pool:       d.pool,
-		isProxy:    isProxy,
+		page:          page,
+		browserCtx:    browserCtx,
+		pool:          d.pool,
+		isProxy:       isProxy,
+		bfFingerprint: fp, // Store BrowserForge fingerprint
 	}, nil
 }
 
@@ -92,12 +97,13 @@ func (d *PlaywrightDriver) Name() string {
 
 // PlaywrightPage implements the Page interface
 type PlaywrightPage struct {
-	page       playwright.Page
-	browserCtx playwright.BrowserContext
-	pool       *browser.Pool
-	isProxy    bool
-	closed     bool
-	mu         sync.Mutex
+	page          playwright.Page
+	browserCtx    playwright.BrowserContext
+	pool          *browser.Pool
+	isProxy       bool
+	closed        bool
+	mu            sync.Mutex
+	bfFingerprint *services.Fingerprint // BrowserForge fingerprint for session caching
 }
 
 // NewPlaywrightPage creates a new PlaywrightPage from an existing playwright.Page
@@ -452,6 +458,24 @@ func (p *PlaywrightPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
 // so Cloudflare challenges may not be solvable.
 func (p *PlaywrightPage) SupportsCaptchaSolving() bool {
 	return true // Limited support
+}
+
+// GetFingerprint returns the browser's fingerprint data for session caching.
+// Implements the FingerprintProvider interface for consistent fingerprint support.
+// Uses BrowserForge fingerprint from browser pool (consistent with Camoufox approach).
+func (p *PlaywrightPage) GetFingerprint() (string, string, string, []string, int, int, int) {
+	if p.bfFingerprint == nil {
+		return "", "", "", nil, 0, 0, 0
+	}
+
+	// Return data from BrowserForge fingerprint
+	return p.bfFingerprint.Navigator.UserAgent,
+		p.bfFingerprint.Navigator.Platform,
+		p.bfFingerprint.Navigator.Language,
+		p.bfFingerprint.Navigator.Languages,
+		p.bfFingerprint.Navigator.HardwareConcurrency,
+		p.bfFingerprint.Screen.Width,
+		p.bfFingerprint.Screen.Height
 }
 
 // PlaywrightElement implements the Element interface

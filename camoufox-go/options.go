@@ -10,6 +10,12 @@ type Options struct {
 	// Screen constraints for fingerprint generation
 	Screen *Screen
 
+	// Fingerprint is a pre-defined fingerprint to use instead of generating a new one.
+	// When set, the browser will use this exact fingerprint, enabling session sharing
+	// across multiple browser instances (e.g., for CAPTCHA cookie reuse).
+	// If nil, a new random fingerprint will be generated using BrowserForge.
+	Fingerprint *Fingerprint
+
 	// Headless runs the browser in headless mode.
 	// Default: false
 	Headless bool

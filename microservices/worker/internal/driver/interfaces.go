@@ -94,6 +94,14 @@ type CaptchaSolver interface {
 	SupportsCaptchaSolving() bool
 }
 
+// FingerprintProvider is an optional interface that Page implementations can support
+// for exposing the browser's fingerprint data for session caching
+type FingerprintProvider interface {
+	// GetFingerprint returns the browser's fingerprint data
+	// Returns (userAgent, platform, language, languages, hardwareConcurrency, screenWidth, screenHeight)
+	GetFingerprint() (string, string, string, []string, int, int, int)
+}
+
 // CaptchaSolveOptions configures CAPTCHA solving behavior
 type CaptchaSolveOptions struct {
 	// CaptchaType is the CAPTCHA provider (e.g., "cloudflare")

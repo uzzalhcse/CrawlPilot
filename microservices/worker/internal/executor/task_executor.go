@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	camoufoxLib "github.com/uzzalhcse/camoufox-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/database"
@@ -14,6 +15,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/shared/queue"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/captcha"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/dedup"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/nodes"
@@ -35,15 +37,16 @@ type TaskExecutor struct {
 	nodeRegistry         *nodes.Registry
 	pubsubClient         *queue.PubSubClient
 	gcsClient            *storage.GCSClient
-	itemWriter           storage.Writer                 // Primary storage: COPY protocol for max throughput
-	deduplicator         dedup.Deduplicator             // URL deduplication (interface)
-	batchedStatsReporter *reporter.BatchedStatsReporter // High-throughput batched stats
-	errorLogger          *reporter.BatchedErrorLogger   // High-throughput batched error logging
-	completionTracker    *reporter.CompletionTracker    // Tracks outstanding tasks for completion
-	retryConfig          RetryConfig                    // Retry configuration for transient failures
-	recoveryManager      *recovery.RecoveryManager      // AI-powered error recovery
-	recoveryCfg          *config.RecoveryConfig         // Recovery configuration (for feature toggles)
-	probeReporter        *reporter.ProbeReporter        // Reports probe results to orchestrator
+	itemWriter           storage.Writer                    // Primary storage: COPY protocol for max throughput
+	deduplicator         dedup.Deduplicator                // URL deduplication (interface)
+	batchedStatsReporter *reporter.BatchedStatsReporter    // High-throughput batched stats
+	errorLogger          *reporter.BatchedErrorLogger      // High-throughput batched error logging
+	completionTracker    *reporter.CompletionTracker       // Tracks outstanding tasks for completion
+	retryConfig          RetryConfig                       // Retry configuration for transient failures
+	recoveryManager      *recovery.RecoveryManager         // AI-powered error recovery
+	recoveryCfg          *config.RecoveryConfig            // Recovery configuration (for feature toggles)
+	probeReporter        *reporter.ProbeReporter           // Reports probe results to orchestrator
+	captchaCookieCache   nodes.CaptchaCookieCacheInterface // Cookie cache for CAPTCHA bypass sharing
 
 	// Probe auto-fix components
 	probeAgent       *recovery.ProbeAgent       // AI agent for probe fix analysis
@@ -218,6 +221,13 @@ func NewTaskExecutor(
 		)
 	}
 
+	// Initialize CAPTCHA cookie cache for sharing solved cookies across browser instances
+	var captchaCookieCache nodes.CaptchaCookieCacheInterface
+	if redisCache != nil {
+		captchaCookieCache = captcha.NewCookieCache(redisCache)
+		logger.Info("CAPTCHA cookie cache initialized for session sharing")
+	}
+
 	return &TaskExecutor{
 		drivers:              drivers,
 		defaultDriver:        defaultDriver,
@@ -237,6 +247,7 @@ func NewTaskExecutor(
 		recoveryManager:      recoveryManager,
 		recoveryCfg:          recoveryCfg,
 		probeReporter:        probeReporter,
+		captchaCookieCache:   captchaCookieCache,
 		probeAgent:           probeAgent,
 		probeBaseline:        probeBaseline,
 		incidentReporter:     incidentReporter,
@@ -633,9 +644,10 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 
 	// Create execution context
 	execCtx := &nodes.ExecutionContext{
-		Page:      page,
-		Task:      task,
-		Variables: make(map[string]interface{}),
+		Page:               page,
+		Task:               task,
+		Variables:          make(map[string]interface{}),
+		CaptchaCookieCache: e.captchaCookieCache,
 	}
 
 	// Log extraction warnings to execution history (only if log_warnings: true in config)
@@ -1419,7 +1431,59 @@ func (e *TaskExecutor) getDriverForTask(task *models.Task) (driver.Driver, bool,
 		zap.String("browser_type", profile.BrowserType),
 	)
 
-	// Create driver from profile
+	// For browser-based drivers, check for cached fingerprint (domain-locked session)
+	// This enables consistent CAPTCHA bypass across concurrent instances
+	if (profile.DriverType == "camoufox" || profile.DriverType == "playwright") && e.captchaCookieCache != nil {
+		domain := extractDomain(task.URL)
+		if domain != "" {
+			// Check if we have a cached session with fingerprint for this domain
+			session, err := e.captchaCookieCache.GetSession(context.Background(), domain)
+			if err == nil && session != nil && session.Fingerprint != nil {
+				fp := session.Fingerprint
+
+				// Camoufox: Create driver with locked fingerprint (BrowserForge)
+				if profile.DriverType == "camoufox" {
+					camoufoxFP := &camoufoxLib.Fingerprint{
+						Navigator: camoufoxLib.NavigatorFingerprint{
+							UserAgent:           fp.UserAgent,
+							Platform:            fp.Platform,
+							Language:            fp.Language,
+							Languages:           fp.Languages,
+							HardwareConcurrency: fp.HardwareConcurrency,
+						},
+						Screen: camoufoxLib.ScreenFingerprint{
+							Width:  fp.ScreenWidth,
+							Height: fp.ScreenHeight,
+						},
+					}
+
+					profileDriver, err := e.driverFactory.CreateCamoufoxWithFingerprint(profile, camoufoxFP)
+					if err == nil {
+						logger.Info("Using fingerprint-locked Camoufox driver for domain",
+							zap.String("domain", domain),
+							zap.String("task_id", task.TaskID),
+						)
+						return profileDriver, true, nil
+					}
+					logger.Debug("Failed to create fingerprint-locked driver, falling back to normal",
+						zap.Error(err),
+					)
+				}
+
+				// Playwright: Log that we'll use cached cookies (fingerprint tracking only)
+				// Note: Playwright can't pre-inject fingerprints like Camoufox,
+				// but cookies will be applied in NavigateNode for CAPTCHA bypass
+				if profile.DriverType == "playwright" {
+					logger.Info("Cached session found for Playwright - cookies will be applied for domain",
+						zap.String("domain", domain),
+						zap.String("task_id", task.TaskID),
+					)
+				}
+			}
+		}
+	}
+
+	// Create driver from profile (standard path)
 	profileDriver, err := e.driverFactory.CreateDriverFromProfile(profile)
 	if err != nil {
 		logger.Warn("Failed to create profile driver, using default",

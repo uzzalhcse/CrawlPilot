@@ -36,6 +36,9 @@ type Camoufox struct {
 // NewBrowser launches a new Camoufox browser instance with anti-detect fingerprinting.
 // It generates a realistic browser fingerprint using BrowserForge and configures
 // the Camoufox Firefox binary with the appropriate settings.
+//
+// If opts.Fingerprint is provided, it will use that fingerprint instead of generating
+// a new random one. This enables fingerprint locking for CAPTCHA session sharing.
 func NewBrowser(opts Options) (*Camoufox, error) {
 	// Set defaults
 	if opts.OS == "" {
@@ -49,10 +52,23 @@ func NewBrowser(opts Options) (*Camoufox, error) {
 		opts.ExecutablePath = path
 	}
 
-	// Generate fingerprint via Python/BrowserForge
-	fp, err := GenerateFingerprint(opts.OS, opts.Screen)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate fingerprint: %w", err)
+	// Use pre-defined fingerprint if provided, otherwise generate a new one
+	var fp *Fingerprint
+	if opts.Fingerprint != nil {
+		fp = opts.Fingerprint
+		if opts.Debug {
+			fmt.Println("[Debug] Using pre-defined fingerprint (locked session)")
+		}
+	} else {
+		// Generate fingerprint via BrowserForge
+		var err error
+		fp, err = GenerateFingerprint(opts.OS, opts.Screen)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate fingerprint: %w", err)
+		}
+		if opts.Debug {
+			fmt.Println("[Debug] Generated new random fingerprint")
+		}
 	}
 
 	// Build Camoufox config from fingerprint

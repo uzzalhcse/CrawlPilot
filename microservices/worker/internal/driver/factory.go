@@ -3,6 +3,7 @@ package driver
 import (
 	"fmt"
 
+	camoufox "github.com/uzzalhcse/camoufox-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 )
@@ -44,6 +45,13 @@ func (f *Factory) CreateDriverFromProfileWithHeadless(profile *models.BrowserPro
 		profile = &models.BrowserProfile{DriverType: f.config.Driver}
 	}
 	return f.createDriverWithConfig(&cfgCopy, profile)
+}
+
+// CreateCamoufoxWithFingerprint creates a Camoufox driver with a locked fingerprint.
+// This is used for domain-locked CAPTCHA session sharing - all browsers for the same
+// domain use the same fingerprint to ensure cookies remain valid.
+func (f *Factory) CreateCamoufoxWithFingerprint(profile *models.BrowserProfile, fingerprint *camoufox.Fingerprint) (Driver, error) {
+	return NewCamoufoxDriverWithFingerprint(f.config, profile, fingerprint)
 }
 
 // createDriverWithConfig is the internal method that creates drivers

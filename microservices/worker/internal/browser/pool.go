@@ -17,8 +17,9 @@ import (
 
 // PooledContext wraps a browser context with metadata for lifecycle management
 type PooledContext struct {
-	ctx       playwright.BrowserContext
-	createdAt time.Time
+	ctx         playwright.BrowserContext
+	createdAt   time.Time
+	Fingerprint *services.Fingerprint // BrowserForge fingerprint used for this context
 }
 
 // Pool manages a pool of browser contexts
@@ -118,14 +119,15 @@ func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) 
 
 	// Pre-create contexts with profile fingerprint applied
 	for i := 0; i < cfg.PoolSize; i++ {
-		ctx, err := pool.createContextWithProfile(nil)
+		ctx, fp, err := pool.createContextWithProfile(nil)
 		if err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("failed to create initial context: %w", err)
 		}
 		pool.contexts <- &PooledContext{
-			ctx:       ctx,
-			createdAt: time.Now(),
+			ctx:         ctx,
+			createdAt:   time.Now(),
+			Fingerprint: fp,
 		}
 	}
 
@@ -141,12 +143,13 @@ func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) 
 }
 
 // createContext creates a new browser context with optional proxy
-func (p *Pool) createContext(proxy *ProxyConfig) (playwright.BrowserContext, error) {
+func (p *Pool) createContext(proxy *ProxyConfig) (playwright.BrowserContext, *services.Fingerprint, error) {
 	return p.createContextWithProfile(proxy)
 }
 
 // createContextWithProfile creates a new browser context with profile fingerprint settings
-func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserContext, error) {
+// Returns the context and the fingerprint used for session caching
+func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserContext, *services.Fingerprint, error) {
 	var fingerprint *services.Fingerprint
 
 	// Use shared browser factory for context options (includes fingerprints and proxy validation)
@@ -154,7 +157,7 @@ func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserC
 
 	opts, err := services.BuildPlaywrightContextOptions(p.profile, fpService)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build context options: %w", err)
+		return nil, nil, fmt.Errorf("failed to build context options: %w", err)
 	}
 
 	// Get fingerprint for init script injection (if using standard Playwright, not Camoufox)
@@ -225,7 +228,7 @@ func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserC
 
 	ctx, err := p.browser.NewContext(opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Inject additional fingerprint properties via init script
@@ -234,41 +237,55 @@ func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserC
 		ctx.AddInitScript(playwright.Script{Content: playwright.String(initScript)})
 	}
 
-	return ctx, nil
+	return ctx, fingerprint, nil
 }
 
 // CreateContextWithProxy is a public method to create a context with proxy
 // Use this when recovery needs a fresh context with a different proxy
 func (p *Pool) CreateContextWithProxy(proxy *ProxyConfig) (playwright.BrowserContext, error) {
+	ctx, _, err := p.CreateContextWithProxyAndFingerprint(proxy)
+	return ctx, err
+}
+
+// CreateContextWithProxyAndFingerprint creates a context with proxy and returns the fingerprint
+// Use this for session caching with proxied requests
+func (p *Pool) CreateContextWithProxyAndFingerprint(proxy *ProxyConfig) (playwright.BrowserContext, *services.Fingerprint, error) {
 	p.mu.Lock()
 	p.activeCount++
 	p.mu.Unlock()
 
-	ctx, err := p.createContext(proxy)
+	ctx, fp, err := p.createContext(proxy)
 	if err != nil {
 		p.mu.Lock()
 		p.activeCount--
 		p.mu.Unlock()
-		return nil, err
+		return nil, nil, err
 	}
 
-	logger.Debug("Created proxy context",
+	logger.Debug("Created proxy context with fingerprint",
 		zap.Int("active_contexts", p.activeCount),
 	)
 
-	return ctx, nil
+	return ctx, fp, nil
 }
 
 // Acquire gets a browser context from the pool
 func (p *Pool) Acquire(ctx context.Context) (playwright.BrowserContext, error) {
+	browserCtx, _, err := p.AcquireWithFingerprint(ctx)
+	return browserCtx, err
+}
+
+// AcquireWithFingerprint gets a browser context and its fingerprint from the pool
+// Use this for session caching to get the BrowserForge fingerprint used for this context
+func (p *Pool) AcquireWithFingerprint(ctx context.Context) (playwright.BrowserContext, *services.Fingerprint, error) {
 	// Acquire semaphore slot for max_concurrency limiting
 	select {
 	case p.semaphore <- struct{}{}:
 		// Got semaphore slot, proceed
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	case <-time.After(30 * time.Second):
-		return nil, fmt.Errorf("timeout waiting for concurrency slot")
+		return nil, nil, fmt.Errorf("timeout waiting for concurrency slot")
 	}
 
 	// Get context from pool
@@ -288,15 +305,16 @@ func (p *Pool) Acquire(ctx context.Context) (playwright.BrowserContext, error) {
 					zap.Duration("lifetime", lifetime),
 				)
 				pooledCtx.ctx.Close()
-				newCtx, err := p.createContextWithProfile(nil)
+				newCtx, newFP, err := p.createContextWithProfile(nil)
 				if err != nil {
 					p.mu.Lock()
 					p.activeCount--
 					p.mu.Unlock()
 					<-p.semaphore // Release semaphore on error
-					return nil, fmt.Errorf("failed to recreate expired context: %w", err)
+					return nil, nil, fmt.Errorf("failed to recreate expired context: %w", err)
 				}
 				pooledCtx.ctx = newCtx
+				pooledCtx.Fingerprint = newFP
 				pooledCtx.createdAt = time.Now()
 			}
 		}
@@ -305,13 +323,13 @@ func (p *Pool) Acquire(ctx context.Context) (playwright.BrowserContext, error) {
 			zap.Int("active_contexts", p.activeCount),
 		)
 
-		return pooledCtx.ctx, nil
+		return pooledCtx.ctx, pooledCtx.Fingerprint, nil
 	case <-ctx.Done():
 		<-p.semaphore // Release semaphore on cancel
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	case <-time.After(30 * time.Second):
 		<-p.semaphore // Release semaphore on timeout
-		return nil, fmt.Errorf("timeout waiting for browser context")
+		return nil, nil, fmt.Errorf("timeout waiting for browser context")
 	}
 }
 
@@ -354,14 +372,15 @@ func (p *Pool) Release(browserCtx playwright.BrowserContext) {
 	default:
 		// Pool is full, close this context and create a new one
 		browserCtx.Close()
-		newCtx, err := p.createContext(nil)
+		newCtx, newFP, err := p.createContext(nil)
 		if err != nil {
 			logger.Error("Failed to recreate context", zap.Error(err))
 			return
 		}
 		p.contexts <- &PooledContext{
-			ctx:       newCtx,
-			createdAt: time.Now(),
+			ctx:         newCtx,
+			createdAt:   time.Now(),
+			Fingerprint: newFP,
 		}
 	}
 }

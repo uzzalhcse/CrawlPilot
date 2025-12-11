@@ -37,16 +37,23 @@ type CamoufoxOptions struct {
 
 // NewCamoufoxDriver creates a new CamoufoxDriver with default settings
 func NewCamoufoxDriver(cfg *config.BrowserConfig) (*CamoufoxDriver, error) {
-	return newCamoufoxDriverInternal(cfg, nil)
+	return newCamoufoxDriverInternal(cfg, nil, nil)
 }
 
 // NewCamoufoxDriverWithProfile creates a CamoufoxDriver using browser profile settings
 func NewCamoufoxDriverWithProfile(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*CamoufoxDriver, error) {
-	return newCamoufoxDriverInternal(cfg, profile)
+	return newCamoufoxDriverInternal(cfg, profile, nil)
 }
 
-// newCamoufoxDriverInternal creates the driver with optional profile
-func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*CamoufoxDriver, error) {
+// NewCamoufoxDriverWithFingerprint creates a CamoufoxDriver with a locked fingerprint.
+// This is used for domain-locked CAPTCHA session sharing - all browsers for the same domain
+// use the same fingerprint to ensure cookies remain valid.
+func NewCamoufoxDriverWithFingerprint(cfg *config.BrowserConfig, profile *models.BrowserProfile, fingerprint *camoufox.Fingerprint) (*CamoufoxDriver, error) {
+	return newCamoufoxDriverInternal(cfg, profile, fingerprint)
+}
+
+// newCamoufoxDriverInternal creates the driver with optional profile and fingerprint
+func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile, fingerprint *camoufox.Fingerprint) (*CamoufoxDriver, error) {
 	// Use shared browser factory for consistent configuration with orchestrator (includes proxy validation)
 	opts, err := services.BuildCamoufoxOptions(profile, cfg.Headless)
 	if err != nil {
@@ -59,6 +66,12 @@ func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.Browse
 	opts.ForceScopeAccess = true
 	opts.DisableCOOP = true
 
+	// Use pre-defined fingerprint if provided (for domain-locked sessions)
+	if fingerprint != nil {
+		opts.Fingerprint = fingerprint
+		logger.Debug("Using pre-defined fingerprint for domain-locked session")
+	}
+
 	cam, err := camoufox.NewBrowser(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create camoufox browser: %w", err)
@@ -70,6 +83,7 @@ func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.Browse
 		zap.Bool("disable_coop", opts.DisableCOOP),
 		zap.Bool("virtual_headless", opts.VirtualHeadless),
 		zap.String("geo_ip", opts.GeoIP),
+		zap.Bool("fingerprint_locked", fingerprint != nil),
 	)
 
 	return &CamoufoxDriver{
@@ -253,6 +267,24 @@ func (p *CamoufoxPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
 // via shadowRootUnl for accessing closed Shadow DOM elements.
 func (p *CamoufoxPage) SupportsCaptchaSolving() bool {
 	return true
+}
+
+// GetFingerprint returns the browser's fingerprint data for session caching.
+// Returns (userAgent, platform, language, languages, hardwareConcurrency, screenWidth, screenHeight)
+// This implements the FingerprintProvider interface.
+func (p *CamoufoxPage) GetFingerprint() (string, string, string, []string, int, int, int) {
+	fp := p.camoufox.Fingerprint()
+	if fp == nil {
+		return "", "", "", nil, 0, 0, 0
+	}
+
+	return fp.Navigator.UserAgent,
+		fp.Navigator.Platform,
+		fp.Navigator.Language,
+		fp.Navigator.Languages,
+		fp.Navigator.HardwareConcurrency,
+		fp.Screen.Width,
+		fp.Screen.Height
 }
 
 // detectCloudflareChallenge checks if the page has a Cloudflare challenge
