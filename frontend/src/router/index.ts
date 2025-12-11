@@ -119,6 +119,11 @@ const router = createRouter({
           component: () => import('@/views/RecoveryHistoryView.vue')
         },
         {
+          path: 'universal-scraper',
+          name: 'universal-scraper',
+          component: () => import('@/views/UniversalScraperView.vue')
+        },
+        {
           path: '/:pathMatch(.*)*',
           name: 'not-found',
           component: () => import('@/views/NotFoundView.vue')

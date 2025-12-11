@@ -33,7 +33,7 @@ const menuItems = [
   { icon: Workflow, label: 'Workflows', route: '/workflows', badge: null },
   { icon: PlayCircle, label: 'Executions', route: '/executions' },
   { icon: Activity, label: 'Probes', route: '/probes' },
-  { icon: Sparkles, label: 'Auto-Fixes', route: '/auto-fixes' },
+  { icon: Sparkles, label: 'Universal Scraper', route: '/universal-scraper' },
   { icon: Package, label: 'Plugins', route: '/plugins' },
   { icon: Calendar, label: 'Schedules', route: '/schedules' },
 ]
