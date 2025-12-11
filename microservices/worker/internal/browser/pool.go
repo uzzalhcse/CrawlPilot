@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/playwright-community/playwright-go"
+	"github.com/uzzalhcse/camoufox-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/shared/services"
 	"go.uber.org/zap"
 )
 
@@ -28,6 +30,7 @@ type Pool struct {
 	mu          sync.Mutex
 	activeCount int
 	pw          *playwright.Playwright
+	cam         *camoufox.Camoufox
 	semaphore   chan struct{} // Limits concurrent browser operations
 }
 
@@ -51,52 +54,79 @@ func NewPoolWithProfile(cfg *config.BrowserConfig, profile *models.BrowserProfil
 
 // newPoolInternal is the internal pool creation function
 func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*Pool, error) {
-	// Initialize Playwright
-	pw, err := playwright.Run()
-	if err != nil {
-		return nil, fmt.Errorf("failed to start playwright: %w", err)
-	}
-
-	// Determine browser type from profile or default to Chromium
-	browserType := "chromium"
-	if profile != nil && profile.BrowserType != "" {
-		browserType = profile.BrowserType
-	}
-
-	// Build launch options
-	launchOpts := playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(cfg.Headless),
-		Args: []string{
-			"--no-sandbox",
-			"--disable-setuid-sandbox",
-			"--disable-dev-shm-usage",
-			"--disable-gpu",
-		},
-	}
-
-	// Add custom executable path from profile
-	if profile != nil && profile.ExecutablePath != "" {
-		launchOpts.ExecutablePath = playwright.String(profile.ExecutablePath)
-	}
-
-	// Add extra launch args from profile
-	if profile != nil && len(profile.LaunchArgs) > 0 {
-		launchOpts.Args = append(launchOpts.Args, profile.LaunchArgs...)
-	}
-
-	// Launch browser based on type
+	// Launch browser
 	var browser playwright.Browser
-	switch browserType {
-	case "firefox":
-		browser, err = pw.Firefox.Launch(launchOpts)
-	case "webkit":
-		browser, err = pw.WebKit.Launch(launchOpts)
-	default:
-		browser, err = pw.Chromium.Launch(launchOpts)
-	}
-	if err != nil {
-		pw.Stop()
-		return nil, fmt.Errorf("failed to launch %s browser: %w", browserType, err)
+	var pw *playwright.Playwright
+	var cam *camoufox.Camoufox
+	var browserType string = "camoufox"
+
+	if profile != nil && profile.DriverType == "camoufox" {
+		// Configure Camoufox options
+		opts := camoufox.Options{
+			Headless:        cfg.Headless,
+			Humanize:        profile.Humanize,
+			VirtualHeadless: profile.VirtualHeadless,
+			BlockImages:     profile.BlockImages,
+			BlockWebGL:      profile.BlockWebGL,
+			OS:              profile.TargetOS,
+			GeoIP:           profile.GeoIP,
+		}
+
+		// Launch Camoufox
+		var err error
+		cam, err = camoufox.NewBrowser(opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to launch camoufox: %w", err)
+		}
+		browser = cam.Browser()
+	} else {
+		// Initialize Playwright for standard browsers
+		var err error
+		pw, err = playwright.Run()
+		if err != nil {
+			return nil, fmt.Errorf("failed to start playwright: %w", err)
+		}
+
+		// Determine browser type from profile or default to Chromium
+		browserType = "chromium"
+		if profile != nil && profile.BrowserType != "" {
+			browserType = profile.BrowserType
+		}
+
+		// Build launch options
+		launchOpts := playwright.BrowserTypeLaunchOptions{
+			Headless: playwright.Bool(cfg.Headless),
+			Args: []string{
+				"--no-sandbox",
+				"--disable-setuid-sandbox",
+				"--disable-dev-shm-usage",
+				"--disable-gpu",
+			},
+		}
+
+		// Add custom executable path from profile
+		if profile != nil && profile.ExecutablePath != "" {
+			launchOpts.ExecutablePath = playwright.String(profile.ExecutablePath)
+		}
+
+		// Add extra launch args from profile
+		if profile != nil && len(profile.LaunchArgs) > 0 {
+			launchOpts.Args = append(launchOpts.Args, profile.LaunchArgs...)
+		}
+
+		// Standard Playwright launch
+		switch browserType {
+		case "firefox":
+			browser, err = pw.Firefox.Launch(launchOpts)
+		case "webkit":
+			browser, err = pw.WebKit.Launch(launchOpts)
+		default:
+			browser, err = pw.Chromium.Launch(launchOpts)
+		}
+		if err != nil {
+			pw.Stop()
+			return nil, fmt.Errorf("failed to launch %s browser: %w", browserType, err)
+		}
 	}
 
 	// Initialize semaphore for max_concurrency (defaults to pool_size if not set)
@@ -111,6 +141,7 @@ func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) 
 		config:    cfg,
 		profile:   profile,
 		pw:        pw,
+		cam:       cam,
 		semaphore: make(chan struct{}, maxConcurrency),
 	}
 
@@ -145,36 +176,84 @@ func (p *Pool) createContext(proxy *ProxyConfig) (playwright.BrowserContext, err
 
 // createContextWithProfile creates a new browser context with profile fingerprint settings
 func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserContext, error) {
+	// Generate BrowserForge fingerprint
+	var fingerprint *services.Fingerprint
+	if p.profile != nil {
+		fpService, err := services.GetFingerprintService()
+		if err == nil {
+			targetOS := "linux"
+			if p.profile.TargetOS != "" {
+				targetOS = p.profile.TargetOS
+			}
+
+			maxWidth := p.profile.ScreenWidth
+			if maxWidth == 0 {
+				maxWidth = 1920
+			}
+			maxHeight := p.profile.ScreenHeight
+			if maxHeight == 0 {
+				maxHeight = 1080
+			}
+
+			fingerprint, _ = fpService.GenerateFingerprint(targetOS, maxWidth, maxHeight)
+		}
+	}
+
 	opts := playwright.BrowserNewContextOptions{
 		IgnoreHttpsErrors: playwright.Bool(true),
 		JavaScriptEnabled: playwright.Bool(true),
 	}
 
-	// Apply profile fingerprint settings if available
-	if p.profile != nil {
-		// User agent
-		if p.profile.UserAgent != "" {
-			opts.UserAgent = playwright.String(p.profile.UserAgent)
-		} else {
-			opts.UserAgent = playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	// Apply BrowserForge fingerprint
+	if p.cam != nil {
+		// Use Camoufox fingerprint
+		fp := p.cam.Fingerprint()
+		if fp != nil {
+			opts.UserAgent = playwright.String(fp.Navigator.UserAgent)
+			if fp.Screen.Width > 0 && fp.Screen.Height > 0 {
+				opts.Screen = &playwright.Size{
+					Width:  fp.Screen.Width,
+					Height: fp.Screen.Height,
+				}
+				opts.Viewport = &playwright.Size{
+					Width:  fp.Screen.InnerWidth,
+					Height: fp.Screen.InnerHeight,
+				}
+			}
+			if fp.Navigator.Language != "" {
+				opts.Locale = playwright.String(fp.Navigator.Language)
+			}
 		}
+	} else if fingerprint != nil {
+		// Use standard BrowserForge fingerprint
+		opts.UserAgent = playwright.String(fingerprint.Navigator.UserAgent)
 
-		// Viewport size - set via Screen property in playwright-go
-		if p.profile.ScreenWidth > 0 && p.profile.ScreenHeight > 0 {
+		if fingerprint.Screen.Width > 0 && fingerprint.Screen.Height > 0 {
 			opts.Screen = &playwright.Size{
-				Width:  p.profile.ScreenWidth,
-				Height: p.profile.ScreenHeight,
+				Width:  fingerprint.Screen.Width,
+				Height: fingerprint.Screen.Height,
+			}
+			opts.Viewport = &playwright.Size{
+				Width:  fingerprint.Screen.InnerWidth,
+				Height: fingerprint.Screen.InnerHeight,
 			}
 		}
 
-		// Locale
-		if p.profile.Locale != "" {
-			opts.Locale = playwright.String(p.profile.Locale)
+		if fingerprint.Navigator.Language != "" {
+			opts.Locale = playwright.String(fingerprint.Navigator.Language)
 		}
+	}
 
-		// Timezone
+	// Apply user-configurable settings from profile (can override fingerprint)
+	if p.profile != nil {
+		// Timezone override
 		if p.profile.Timezone != "" {
 			opts.TimezoneId = playwright.String(p.profile.Timezone)
+		}
+
+		// Locale override
+		if p.profile.Locale != "" {
+			opts.Locale = playwright.String(p.profile.Locale)
 		}
 
 		// Geolocation
@@ -210,8 +289,6 @@ func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserC
 				opts.Proxy.Password = playwright.String(p.profile.ProxyPassword)
 			}
 		}
-	} else {
-		opts.UserAgent = playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	}
 
 	// Add proxy if provided (overrides profile proxy)
@@ -231,6 +308,12 @@ func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserC
 	ctx, err := p.browser.NewContext(opts)
 	if err != nil {
 		return nil, err
+	}
+
+	// Inject additional fingerprint properties via init script
+	if fingerprint != nil {
+		initScript := buildFingerprintInjectionScript(fingerprint)
+		ctx.AddInitScript(playwright.Script{Content: playwright.String(initScript)})
 	}
 
 	return ctx, nil
@@ -375,7 +458,11 @@ func (p *Pool) Close() error {
 	}
 
 	// Close browser
-	if p.browser != nil {
+	if p.cam != nil {
+		if err := p.cam.Close(); err != nil {
+			logger.Error("Failed to close camoufox", zap.Error(err))
+		}
+	} else if p.browser != nil {
 		if err := p.browser.Close(); err != nil {
 			logger.Error("Failed to close browser", zap.Error(err))
 		}
@@ -402,4 +489,32 @@ func (p *Pool) Stats() map[string]interface{} {
 		"active_contexts":    p.activeCount,
 		"available_contexts": len(p.contexts),
 	}
+}
+
+// buildFingerprintInjectionScript creates a JavaScript init script to inject fingerprint properties
+func buildFingerprintInjectionScript(fp *services.Fingerprint) string {
+	return fmt.Sprintf(`
+		// Inject BrowserForge fingerprint properties
+		Object.defineProperty(navigator, 'hardwareConcurrency', {
+			get: () => %d,
+			configurable: false
+		});
+		
+		Object.defineProperty(navigator, 'platform', {
+			get: () => '%s',
+			configurable: false
+		});
+		
+		Object.defineProperty(navigator, 'maxTouchPoints', {
+			get: () => %d,
+			configurable: false
+		});
+		
+		// Hide that we're using Playwright
+		delete navigator.webdriver;
+		Object.defineProperty(navigator, 'webdriver', {
+			get: () => undefined,
+			configurable: false
+		});
+	`, fp.Navigator.HardwareConcurrency, fp.Navigator.Platform, fp.Navigator.MaxTouchPoints)
 }

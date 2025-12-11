@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	maxConcurrent = 6                // Number of concurrent tests
+	maxConcurrent = 1                // Number of concurrent tests
 	testTimeout   = 60 * time.Second // Timeout per test
 	closeTimeout  = 10 * time.Second // Timeout for browser close
 )
@@ -60,19 +60,19 @@ func main() {
 
 	// Test configurations
 	testConfigs := []TestConfig{
-		{Name: "Basic", Options: camoufox.Options{Headless: false, Debug: true}},
-		{Name: "GeoIP Auto", Options: camoufox.Options{Headless: false, GeoIP: "auto", Debug: true}},
+		//{Name: "Basic", Options: camoufox.Options{Headless: false, Debug: true}},
+		//{Name: "GeoIP Auto", Options: camoufox.Options{Headless: false, GeoIP: "auto", Debug: true}},
 		{Name: "WebRTC Blocked", Options: camoufox.Options{Headless: false, BlockWebRTC: true, Debug: true}},
 		{Name: "Full Stealth", Options: camoufox.Options{Headless: false, GeoIP: "auto", BlockWebRTC: false, Humanize: 1.5, Debug: true}},
 	}
 
 	// Add proxy tests if configured
 	if testProxy.Server != "" {
-		testConfigs = append(testConfigs,
-			TestConfig{Name: "Proxy Basic", Options: camoufox.Options{Headless: false, Proxy: testProxy, Debug: true}},
-			TestConfig{Name: "Proxy + GeoIP", Options: camoufox.Options{Headless: false, Proxy: testProxy, GeoIP: "auto", Debug: true}},
-			TestConfig{Name: "Proxy + Stealth", Options: camoufox.Options{Headless: false, Proxy: testProxy, GeoIP: "auto", BlockWebRTC: false, Debug: true}},
-		)
+		//testConfigs = append(testConfigs,
+		//	TestConfig{Name: "Proxy Basic", Options: camoufox.Options{Headless: false, Proxy: testProxy, Debug: true}},
+		//	TestConfig{Name: "Proxy + GeoIP", Options: camoufox.Options{Headless: false, Proxy: testProxy, GeoIP: "auto", Debug: true}},
+		//	TestConfig{Name: "Proxy + Stealth", Options: camoufox.Options{Headless: false, Proxy: testProxy, GeoIP: "auto", BlockWebRTC: false, Debug: true}},
+		//)
 		fmt.Printf("🔌 Proxy: %s\n", testProxy.Server)
 	}
 

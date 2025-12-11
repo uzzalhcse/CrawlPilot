@@ -20,6 +20,8 @@ require (
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/refraction-networking/utls v1.8.1
 	github.com/stretchr/testify v1.11.1
+	github.com/uzzalhcse/camoufox-captcha-go v0.0.0-00010101000000-000000000000
+	github.com/uzzalhcse/camoufox-go v0.0.0-00010101000000-000000000000
 	github.com/uzzalhcse/crawlify/microservices/shared v0.0.0
 	google.golang.org/api v0.214.0
 )
@@ -73,8 +75,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/uzzalhcse/camoufox-captcha-go v0.0.0-00010101000000-000000000000 // indirect
-	github.com/uzzalhcse/camoufox-go v0.0.0-00010101000000-000000000000 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect

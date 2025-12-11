@@ -7,24 +7,28 @@ export interface BrowserProfile {
     status: 'active' | 'inactive' | 'archived' | 'running'
     folder?: string
     tags?: string[]
-    driver_type: 'playwright' | 'chromedp' | 'http'
+    driver_type: 'playwright' | 'chromedp' | 'camoufox' | 'http'
     browser_type: 'chromium' | 'firefox' | 'webkit'
     executable_path?: string
     cdp_endpoint?: string
     launch_args?: string[]
-    user_agent: string
-    platform: string
+    target_os?: string
+    // Camoufox-specific
+    geo_ip?: string
+    virtual_headless?: boolean
+    force_scope_access?: boolean
+    auto_captcha_solve?: boolean
+    block_images?: boolean
+    block_webgl?: boolean
+    humanize?: number
+    include_default_addons?: boolean
+    enable_cache?: boolean
+    user_data_dir?: string
     screen_width: number
     screen_height: number
     timezone?: string
     locale?: string
     languages?: string[]
-    webgl_vendor?: string
-    webgl_renderer?: string
-    canvas_noise: boolean
-    hardware_concurrency: number
-    device_memory: number
-    fonts?: string[]
     do_not_track: boolean
     disable_webrtc: boolean
     geolocation_latitude?: number
@@ -49,26 +53,30 @@ export interface BrowserProfile {
 export interface CreateBrowserProfileRequest {
     name: string
     description?: string
-    driver_type?: 'playwright' | 'chromedp' | 'http'
+    driver_type: 'playwright' | 'chromedp' | 'camoufox' | 'http'
     browser_type: 'chromium' | 'firefox' | 'webkit'
     folder?: string
     tags?: string[]
     executable_path?: string
     cdp_endpoint?: string
     launch_args?: string[]
-    user_agent?: string
-    platform?: string
+    target_os?: 'windows' | 'macos' | 'linux' | 'android' | 'ios'
+    // Camoufox-specific
+    geo_ip?: string
+    virtual_headless?: boolean
+    force_scope_access?: boolean
+    auto_captcha_solve?: boolean
+    block_images?: boolean
+    block_webgl?: boolean
+    humanize?: number
+    include_default_addons?: boolean
+    enable_cache?: boolean
+    user_data_dir?: string
     screen_width: number
     screen_height: number
     timezone?: string
     locale?: string
     languages?: string[]
-    webgl_vendor?: string
-    webgl_renderer?: string
-    canvas_noise?: boolean
-    hardware_concurrency?: number
-    device_memory?: number
-    fonts?: string[]
     do_not_track?: boolean
     disable_webrtc?: boolean
     geolocation_latitude?: number
@@ -101,18 +109,11 @@ export interface BrowserType {
 }
 
 export interface Fingerprint {
-    UserAgent: string
-    Platform: string
     ScreenWidth: number
     ScreenHeight: number
     Timezone: string
     Locale: string
     Languages: string[]
-    WebGLVendor: string
-    WebGLRenderer: string
-    HardwareConcurrency: number
-    DeviceMemory: number
-    Fonts: string[]
 }
 
 export const browserProfilesApi = {

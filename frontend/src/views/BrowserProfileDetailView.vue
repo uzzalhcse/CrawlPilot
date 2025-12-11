@@ -221,19 +221,14 @@ const formatDate = (dateString?: string) => {
             </div>
           </div>
 
-          <!-- User Agent -->
-          <div class="bg-card border rounded-lg p-6">
-            <h3 class="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">User Agent</h3>
-            <div class="font-mono text-xs break-all text-muted-foreground">{{ profile.user_agent }}</div>
-          </div>
         </div>
 
         <!-- Fingerprint Tab -->
         <div v-if="activeTab === 'fingerprint'" class="max-w-6xl">
           <div class="grid gap-6 md:grid-cols-3">
             <div class="bg-card border rounded-lg p-4">
-              <div class="text-xs text-muted-foreground mb-1">Platform</div>
-              <div class="font-medium">{{ profile.platform }}</div>
+              <div class="text-xs text-muted-foreground mb-1">Target OS</div>
+              <div class="font-medium capitalize">{{ profile.target_os || 'Linux' }}</div>
             </div>
             <div class="bg-card border rounded-lg p-4">
               <div class="text-xs text-muted-foreground mb-1">Screen Resolution</div>
@@ -241,33 +236,11 @@ const formatDate = (dateString?: string) => {
             </div>
             <div class="bg-card border rounded-lg p-4">
               <div class="text-xs text-muted-foreground mb-1">Timezone</div>
-              <div class="font-medium">{{ profile.timezone }}</div>
+              <div class="font-medium">{{ profile.timezone || 'Auto' }}</div>
             </div>
             <div class="bg-card border rounded-lg p-4">
               <div class="text-xs text-muted-foreground mb-1">Locale</div>
-              <div class="font-medium">{{ profile.locale }}</div>
-            </div>
-            <div class="bg-card border rounded-lg p-4">
-              <div class="text-xs text-muted-foreground mb-1">CPU Cores</div>
-              <div class="font-medium">{{ profile.hardware_concurrency }}</div>
-            </div>
-            <div class="bg-card border rounded-lg p-4">
-              <div class="text-xs text-muted-foreground mb-1">Memory</div>
-              <div class="font-medium">{{ profile.device_memory }} GB</div>
-            </div>
-            <div class="bg-card border rounded-lg p-4">
-              <div class="text-xs text-muted-foreground mb-1">WebGL Vendor</div>
-              <div class="font-medium text-sm">{{ profile.webgl_vendor }}</div>
-            </div>
-            <div class="bg-card border rounded-lg p-4">
-              <div class="text-xs text-muted-foreground mb-1">WebGL Renderer</div>
-              <div class="font-medium text-sm">{{ profile.webgl_renderer }}</div>
-            </div>
-            <div class="bg-card border rounded-lg p-4">
-              <div class="text-xs text-muted-foreground mb-1">Canvas Noise</div>
-              <Badge :variant="profile.canvas_noise ? 'default' : 'outline'" class="text-xs">
-                {{ profile.canvas_noise ? 'Enabled' : 'Disabled' }}
-              </Badge>
+              <div class="font-medium">{{ profile.locale || 'Auto' }}</div>
             </div>
             <div class="bg-card border rounded-lg p-4">
               <div class="text-xs text-muted-foreground mb-1">WebRTC</div>

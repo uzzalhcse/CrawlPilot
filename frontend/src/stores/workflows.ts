@@ -24,7 +24,7 @@ export const useWorkflowsStore = defineStore('workflows', () => {
   )
 
   // Actions
-  async function fetchWorkflows(params?: { status?: string; limit?: number; offset?: number }) {
+  async function fetchWorkflows(params?: { status?: 'draft' | 'active' | 'inactive'; limit?: number; offset?: number }) {
     loading.value = true
     error.value = null
     try {

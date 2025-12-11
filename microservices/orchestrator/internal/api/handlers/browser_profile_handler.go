@@ -254,55 +254,18 @@ func (h *BrowserProfileHandler) StopProfile(c *fiber.Ctx) error {
 }
 
 // Fingerprint generation data
+// Fingerprint generation data
 type Fingerprint struct {
-	UserAgent           string   `json:"UserAgent"`
-	Platform            string   `json:"Platform"`
-	ScreenWidth         int      `json:"ScreenWidth"`
-	ScreenHeight        int      `json:"ScreenHeight"`
-	Timezone            string   `json:"Timezone"`
-	Locale              string   `json:"Locale"`
-	Languages           []string `json:"Languages"`
-	WebGLVendor         string   `json:"WebGLVendor"`
-	WebGLRenderer       string   `json:"WebGLRenderer"`
-	HardwareConcurrency int      `json:"HardwareConcurrency"`
-	DeviceMemory        int      `json:"DeviceMemory"`
-	Fonts               []string `json:"Fonts"`
+	ScreenWidth  int      `json:"ScreenWidth"`
+	ScreenHeight int      `json:"ScreenHeight"`
+	Timezone     string   `json:"Timezone"`
+	Locale       string   `json:"Locale"`
+	Languages    []string `json:"Languages"`
 }
 
 func generateRandomFingerprint(browserType string) Fingerprint {
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	// User agents per browser type
-	chromiumUAs := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-	}
-
-	firefoxUAs := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
-		"Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
-	}
-
-	webkitUAs := []string{
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
-	}
-
-	// Select user agent based on browser type
-	var userAgents []string
-	switch browserType {
-	case "firefox":
-		userAgents = firefoxUAs
-	case "webkit":
-		userAgents = webkitUAs
-	default:
-		userAgents = chromiumUAs
-	}
-
-	platforms := []string{"Win32", "MacIntel", "Linux x86_64"}
 	resolutions := [][2]int{{1920, 1080}, {1366, 768}, {1440, 900}, {2560, 1440}, {1536, 864}}
 	timezones := []string{
 		"America/New_York", "America/Los_Angeles", "America/Chicago",
@@ -311,41 +274,14 @@ func generateRandomFingerprint(browserType string) Fingerprint {
 	}
 	locales := []string{"en-US", "en-GB", "de-DE", "fr-FR", "es-ES", "ja-JP", "zh-CN"}
 
-	webglVendors := []string{
-		"Intel Inc.", "NVIDIA Corporation", "AMD", "Google Inc. (NVIDIA)",
-		"Google Inc. (Intel)", "Google Inc. (AMD)",
-	}
-
-	webglRenderers := []string{
-		"Intel Iris OpenGL Engine",
-		"Intel(R) UHD Graphics 630",
-		"NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2",
-		"AMD Radeon Pro 5500M OpenGL Engine",
-		"ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER Direct3D11 vs_5_0 ps_5_0)",
-		"ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)",
-	}
-
-	hardwareConcurrencies := []int{4, 6, 8, 12, 16}
-	deviceMemories := []int{4, 8, 16, 32}
-
 	res := resolutions[rnd.Intn(len(resolutions))]
 	locale := locales[rnd.Intn(len(locales))]
 
 	return Fingerprint{
-		UserAgent:           userAgents[rnd.Intn(len(userAgents))],
-		Platform:            platforms[rnd.Intn(len(platforms))],
-		ScreenWidth:         res[0],
-		ScreenHeight:        res[1],
-		Timezone:            timezones[rnd.Intn(len(timezones))],
-		Locale:              locale,
-		Languages:           []string{locale, locale[:2]},
-		WebGLVendor:         webglVendors[rnd.Intn(len(webglVendors))],
-		WebGLRenderer:       webglRenderers[rnd.Intn(len(webglRenderers))],
-		HardwareConcurrency: hardwareConcurrencies[rnd.Intn(len(hardwareConcurrencies))],
-		DeviceMemory:        deviceMemories[rnd.Intn(len(deviceMemories))],
-		Fonts: []string{
-			"Arial", "Arial Black", "Comic Sans MS", "Courier New", "Georgia",
-			"Impact", "Times New Roman", "Trebuchet MS", "Verdana",
-		},
+		ScreenWidth:  res[0],
+		ScreenHeight: res[1],
+		Timezone:     timezones[rnd.Intn(len(timezones))],
+		Locale:       locale,
+		Languages:    []string{locale, locale[:2]},
 	}
 }

@@ -26,24 +26,18 @@ const testing = ref(false)
 const formData = ref({
   name: '',
   description: '',
-  driver_type: 'playwright' as 'playwright' | 'chromedp' | 'http',
+  driver_type: 'playwright' as 'playwright' | 'chromedp' | 'camoufox' | 'http',
   browser_type: 'chromium' as 'chromium' | 'firefox' | 'webkit',
   folder: '',
   tags: [] as string[],
   executable_path: '',
   cdp_endpoint: '',
-  user_agent: '',
-  platform: 'Win32',
+  target_os: 'linux' as 'windows' | 'macos' | 'linux' | 'android' | 'ios',
   screen_width: 1920,
   screen_height: 1080,
   timezone: 'America/New_York',
   locale: 'en-US',
   languages: ['en-US', 'en'],
-  webgl_vendor: 'Intel Inc.',
-  webgl_renderer: 'Intel Iris OpenGL Engine',
-  canvas_noise: true,
-  hardware_concurrency: 4,
-  device_memory: 8,
   do_not_track: false,
   disable_webrtc: false,
   proxy_enabled: false,
@@ -51,12 +45,24 @@ const formData = ref({
   proxy_server: '',
   proxy_username: '',
   proxy_password: '',
-  clear_on_close: true
+  clear_on_close: true,
+  // Camoufox-specific
+  geo_ip: '',
+  virtual_headless: false,
+  force_scope_access: false,
+  auto_captcha_solve: false,
+  block_images: false,
+  block_webgl: false,
+  humanize: 0,
+  include_default_addons: true,
+  enable_cache: false,
+  user_data_dir: ''
 })
 
 // Driver types with browser compatibility info (HTTP excluded - uses inline browser_name)
 const driverTypes = ref([
   { value: 'playwright', label: 'Playwright', description: 'All browsers (Chromium, Firefox, WebKit)', browsers: ['chromium', 'firefox', 'webkit'] },
+  { value: 'camoufox', label: 'Camoufox', description: 'Stealth Firefox (Anti-detect)', browsers: ['firefox'] },
   { value: 'chromedp', label: 'Chromedp', description: 'Chromium only (CDP)', browsers: ['chromium'] }
 ])
 
@@ -66,7 +72,13 @@ const browserTypes = ref([
   { value: 'webkit', label: 'WebKit', icon: Globe, description: 'Safari (macOS/iOS)' }
 ])
 
-const platforms = ['Win32', 'MacIntel', 'Linux x86_64', 'Linux armv7l']
+const platforms = [
+  { value: 'windows', label: 'Windows' },
+  { value: 'macos', label: 'macOS' },
+  { value: 'linux', label: 'Linux' },
+  { value: 'android', label: 'Android' },
+  { value: 'ios', label: 'iOS' }
+]
 const resolutions = [
   { width: 1920, height: 1080, label: '1920x1080 (Full HD)' },
   { width: 1366, height: 768, label: '1366x768' },
@@ -104,17 +116,11 @@ const generateRandomFingerprint = async () => {
   loading.value = true
   try {
     const fingerprint = await profilesStore.generateFingerprint(formData.value.browser_type)
-    formData.value.user_agent = fingerprint.UserAgent
-    formData.value.platform = fingerprint.Platform
     formData.value.screen_width = fingerprint.ScreenWidth
     formData.value.screen_height = fingerprint.ScreenHeight
     formData.value.timezone = fingerprint.Timezone
     formData.value.locale = fingerprint.Locale
     formData.value.languages = fingerprint.Languages
-    formData.value.webgl_vendor = fingerprint.WebGLVendor
-    formData.value.webgl_renderer = fingerprint.WebGLRenderer
-    formData.value.hardware_concurrency = fingerprint.HardwareConcurrency
-    formData.value.device_memory = fingerprint.DeviceMemory
     toast.success('Fingerprint generated successfully')
   } catch (error) {
     toast.error('Failed to generate fingerprint')
@@ -226,7 +232,7 @@ const handleCancel = () => {
                 v-for="driver in driverTypes"
                 :key="driver.value"
                 type="button"
-                @click="formData.driver_type = driver.value as any; if (driver.value === 'chromedp') formData.browser_type = 'chromium'"
+                @click="formData.driver_type = driver.value as any; if (driver.value === 'chromedp') formData.browser_type = 'chromium'; if (driver.value === 'camoufox') formData.browser_type = 'firefox'"
                 :class="[
                   'p-3 border-2 rounded-lg text-left transition-all',
                   formData.driver_type === driver.value 
@@ -256,6 +262,8 @@ const handleCancel = () => {
                     : 'border-border hover:border-primary/50',
                   formData.driver_type === 'chromedp' && browser.value !== 'chromium'
                     ? 'opacity-50 cursor-not-allowed'
+                    : formData.driver_type === 'camoufox' && browser.value !== 'firefox'
+                    ? 'opacity-50 cursor-not-allowed'
                     : ''
                 ]"
               >
@@ -281,6 +289,89 @@ const handleCancel = () => {
           </div>
         </div>
 
+        <!-- Camoufox Settings -->
+        <div v-if="formData.driver_type === 'camoufox'" class="bg-card border rounded-lg p-6 space-y-4">
+          <h3 class="text-lg font-semibold">Camoufox Settings</h3>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <Label>GeoIP (Optional)</Label>
+              <Input v-model="formData.geo_ip" placeholder="IP address or 'auto'" />
+              <p class="text-xs text-muted-foreground">Leave empty or use 'auto' for automatic detection.</p>
+            </div>
+            
+            <div class="space-y-2">
+              <Label>Humanize Mouse (Seconds)</Label>
+              <Input type="number" v-model.number="formData.humanize" min="0" step="0.1" />
+              <p class="text-xs text-muted-foreground">0 to disable. Adds realistic mouse movement delays.</p>
+            </div>
+
+            <div class="space-y-2">
+              <Label>User Data Dir (Optional)</Label>
+              <Input v-model="formData.user_data_dir" placeholder="/path/to/data/dir" />
+              <p class="text-xs text-muted-foreground">Persistent storage for cookies/local storage.</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex items-center justify-between border p-3 rounded-lg">
+              <div class="space-y-0.5">
+                <Label>Virtual Headless</Label>
+                <p class="text-xs text-muted-foreground">Use Xvfb virtual display (Linux only)</p>
+              </div>
+              <Switch v-model="formData.virtual_headless" />
+            </div>
+
+            <div class="flex items-center justify-between border p-3 rounded-lg">
+              <div class="space-y-0.5">
+                <Label>Force Scope Access</Label>
+                <p class="text-xs text-muted-foreground">Access closed Shadow DOM (for CAPTCHA)</p>
+              </div>
+              <Switch v-model="formData.force_scope_access" />
+            </div>
+
+            <div class="flex items-center justify-between border p-3 rounded-lg">
+              <div class="space-y-0.5">
+                <Label>Auto CAPTCHA Solve</Label>
+                <p class="text-xs text-muted-foreground">Enable auto-solving middleware</p>
+              </div>
+              <Switch v-model="formData.auto_captcha_solve" />
+            </div>
+
+            <div class="flex items-center justify-between border p-3 rounded-lg">
+              <div class="space-y-0.5">
+                <Label>Block Images</Label>
+                <p class="text-xs text-muted-foreground">Block image loading for speed</p>
+              </div>
+              <Switch v-model="formData.block_images" />
+            </div>
+
+            <div class="flex items-center justify-between border p-3 rounded-lg">
+              <div class="space-y-0.5">
+                <Label>Block WebGL</Label>
+                <p class="text-xs text-muted-foreground">Disable WebGL (may increase stealth)</p>
+              </div>
+              <Switch v-model="formData.block_webgl" />
+            </div>
+
+            <div class="flex items-center justify-between border p-3 rounded-lg">
+              <div class="space-y-0.5">
+                <Label>Include Default Addons</Label>
+                <p class="text-xs text-muted-foreground">Install uBlock Origin etc.</p>
+              </div>
+              <Switch v-model="formData.include_default_addons" />
+            </div>
+
+            <div class="flex items-center justify-between border p-3 rounded-lg">
+              <div class="space-y-0.5">
+                <Label>Enable Cache</Label>
+                <p class="text-xs text-muted-foreground">Enable browser caching</p>
+              </div>
+              <Switch v-model="formData.enable_cache" />
+            </div>
+          </div>
+        </div>
+
         <!-- Fingerprint Settings -->
         <div class="bg-card border rounded-lg p-6 space-y-4">
           <div class="flex items-center justify-between mb-4">
@@ -291,21 +382,16 @@ const handleCancel = () => {
             </Button>
           </div>
 
-          <div class="space-y-2">
-            <Label for="user_agent">User Agent</Label>
-            <Textarea id="user_agent" v-model="formData.user_agent" rows="2" placeholder="Mozilla/5.0..." />
-          </div>
-
           <div class="grid gap-4 md:grid-cols-3">
             <div class="space-y-2">
-              <Label for="platform">Platform</Label>
-              <Select v-model="formData.platform">
+              <Label for="target_os">Target OS</Label>
+              <Select v-model="formData.target_os">
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem v-for="platform in platforms" :key="platform" :value="platform">
-                    {{ platform }}
+                  <SelectItem v-for="platform in platforms" :key="platform.value" :value="platform.value">
+                    {{ platform.label }}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -323,59 +409,35 @@ const handleCancel = () => {
                   </SelectItem>
                 </SelectContent>
               </Select>
+              <p v-if="formData.geo_ip === 'auto'" class="text-xs text-yellow-500 font-medium">
+                Warning: Overwritten by GeoIP 'auto'
+              </p>
             </div>
 
             <div class="space-y-2">
               <Label for="locale">Locale</Label>
               <Input id="locale" v-model="formData.locale" placeholder="en-US" />
+              <p v-if="formData.geo_ip === 'auto'" class="text-xs text-yellow-500 font-medium">
+                Warning: Overwritten by GeoIP 'auto'
+              </p>
             </div>
           </div>
 
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-2">
-              <Label>Screen Resolution</Label>
-              <Select v-model="formData.screen_width">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="res in resolutions" :key="res.width" :value="res.width">
-                    {{ res.label }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div class="space-y-2">
-                <Label for="hardware">CPU Cores</Label>
-                <Input id="hardware" v-model.number="formData.hardware_concurrency" type="number" min="1" max="64" />
-              </div>
-              <div class="space-y-2">
-                <Label for="memory">Memory (GB)</Label>
-                <Input id="memory" v-model.number="formData.device_memory" type="number" min="1" max="128" />
-              </div>
-            </div>
-          </div>
-
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-2">
-              <Label for="webgl_vendor">WebGL Vendor</Label>
-              <Input id="webgl_vendor" v-model="formData.webgl_vendor" placeholder="Intel Inc." />
-            </div>
-
-            <div class="space-y-2">
-              <Label for="webgl_renderer">WebGL Renderer</Label>
-              <Input id="webgl_renderer" v-model="formData.webgl_renderer" placeholder="Intel Iris OpenGL Engine" />
-            </div>
+          <div class="space-y-2">
+            <Label>Screen Resolution</Label>
+            <Select v-model="formData.screen_width">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="res in resolutions" :key="res.width" :value="res.width">
+                  {{ res.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div class="flex items-center space-x-2 pt-2">
-            <Switch id="canvas_noise" v-model="formData.canvas_noise" />
-            <Label for="canvas_noise" class="cursor-pointer">Enable Canvas Noise</Label>
-          </div>
-
-          <div class="flex items-center space-x-2">
             <Switch id="disable_webrtc" v-model="formData.disable_webrtc" />
             <Label for="disable_webrtc" class="cursor-pointer">Disable WebRTC</Label>
           </div>

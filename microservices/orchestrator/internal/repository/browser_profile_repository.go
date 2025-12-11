@@ -40,38 +40,43 @@ func (r *postgresBrowserProfileRepo) Create(ctx context.Context, profile *models
 	tagsJSON, _ := json.Marshal(profile.Tags)
 	launchArgsJSON, _ := json.Marshal(profile.LaunchArgs)
 	languagesJSON, _ := json.Marshal(profile.Languages)
-	fontsJSON, _ := json.Marshal(profile.Fonts)
 
 	query := `
 		INSERT INTO browser_profiles (
 			id, name, description, status, folder, tags,
 			driver_type, browser_type, executable_path, cdp_endpoint, launch_args,
-			user_agent, platform, screen_width, screen_height, timezone, locale, languages,
-			webgl_vendor, webgl_renderer, canvas_noise, hardware_concurrency, device_memory, fonts,
+			screen_width, screen_height, timezone, locale, languages,
 			do_not_track, disable_webrtc,
 			geolocation_latitude, geolocation_longitude, geolocation_accuracy,
 			proxy_enabled, proxy_type, proxy_server, proxy_username, proxy_password,
+			geo_ip, virtual_headless, force_scope_access, auto_captcha_solve,
+			block_images, block_webgl, humanize, include_default_addons,
+			enable_cache, user_data_dir, target_os,
 			usage_count, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11,
-			$12, $13, $14, $15, $16, $17, $18,
-			$19, $20, $21, $22, $23, $24,
-			$25, $26,
-			$27, $28, $29,
-			$30, $31, $32, $33, $34,
-			$35, $36, $37
+			$12, $13, $14, $15, $16,
+			$17, $18,
+			$19, $20, $21,
+			$22, $23, $24, $25, $26,
+			$27, $28, $29, $30,
+			$31, $32, $33, $34,
+			$35, $36, $37,
+			$38, $39, $40
 		)
 	`
 
 	_, err := r.db.Pool.Exec(ctx, query,
 		profile.ID, profile.Name, profile.Description, profile.Status, profile.Folder, string(tagsJSON),
 		profile.DriverType, profile.BrowserType, profile.ExecutablePath, profile.CDPEndpoint, string(launchArgsJSON),
-		profile.UserAgent, profile.Platform, profile.ScreenWidth, profile.ScreenHeight, profile.Timezone, profile.Locale, string(languagesJSON),
-		profile.WebGLVendor, profile.WebGLRenderer, profile.CanvasNoise, profile.HardwareConcurrency, profile.DeviceMemory, string(fontsJSON),
+		profile.ScreenWidth, profile.ScreenHeight, profile.Timezone, profile.Locale, string(languagesJSON),
 		profile.DoNotTrack, profile.DisableWebRTC,
 		profile.GeolocationLatitude, profile.GeolocationLongitude, profile.GeolocationAccuracy,
 		profile.ProxyEnabled, profile.ProxyType, profile.ProxyServer, profile.ProxyUsername, profile.ProxyPassword,
+		profile.GeoIP, profile.VirtualHeadless, profile.ForceScopeAccess, profile.AutoCaptchaSolve,
+		profile.BlockImages, profile.BlockWebGL, profile.Humanize, profile.IncludeDefaultAddons,
+		profile.EnableCache, profile.UserDataDir, profile.TargetOS,
 		profile.UsageCount, profile.CreatedAt, profile.UpdatedAt,
 	)
 
@@ -86,29 +91,34 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 	query := `
 		SELECT id, name, description, status, folder, tags,
 			driver_type, browser_type, executable_path, cdp_endpoint, launch_args,
-			user_agent, platform, screen_width, screen_height, timezone, locale, languages,
-			webgl_vendor, webgl_renderer, canvas_noise, hardware_concurrency, device_memory, fonts,
+			screen_width, screen_height, timezone, locale, languages,
 			do_not_track, disable_webrtc,
 			geolocation_latitude, geolocation_longitude, geolocation_accuracy,
 			proxy_enabled, proxy_type, proxy_server, proxy_username, proxy_password,
+			geo_ip, virtual_headless, force_scope_access, auto_captcha_solve,
+			block_images, block_webgl, humanize, include_default_addons,
+			enable_cache, user_data_dir, target_os,
 			usage_count, last_used_at, created_at, updated_at
 		FROM browser_profiles
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	var profile models.BrowserProfile
-	var tagsJSON, launchArgsJSON, languagesJSON, fontsJSON []byte
-	var folder, description, executablePath, cdpEndpoint, timezone, locale, webglVendor, webglRenderer *string
+	var tagsJSON, launchArgsJSON, languagesJSON []byte
+	var folder, description, executablePath, cdpEndpoint, timezone, locale *string
 	var proxyType, proxyServer, proxyUsername, proxyPassword *string
+	var geoIP, userDataDir, targetOS *string
 
 	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
 		&profile.ID, &profile.Name, &description, &profile.Status, &folder, &tagsJSON,
 		&profile.DriverType, &profile.BrowserType, &executablePath, &cdpEndpoint, &launchArgsJSON,
-		&profile.UserAgent, &profile.Platform, &profile.ScreenWidth, &profile.ScreenHeight, &timezone, &locale, &languagesJSON,
-		&webglVendor, &webglRenderer, &profile.CanvasNoise, &profile.HardwareConcurrency, &profile.DeviceMemory, &fontsJSON,
+		&profile.ScreenWidth, &profile.ScreenHeight, &timezone, &locale, &languagesJSON,
 		&profile.DoNotTrack, &profile.DisableWebRTC,
 		&profile.GeolocationLatitude, &profile.GeolocationLongitude, &profile.GeolocationAccuracy,
 		&profile.ProxyEnabled, &proxyType, &proxyServer, &proxyUsername, &proxyPassword,
+		&geoIP, &profile.VirtualHeadless, &profile.ForceScopeAccess, &profile.AutoCaptchaSolve,
+		&profile.BlockImages, &profile.BlockWebGL, &profile.Humanize, &profile.IncludeDefaultAddons,
+		&profile.EnableCache, &userDataDir, &targetOS,
 		&profile.UsageCount, &profile.LastUsedAt, &profile.CreatedAt, &profile.UpdatedAt,
 	)
 
@@ -138,12 +148,6 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 	if locale != nil {
 		profile.Locale = *locale
 	}
-	if webglVendor != nil {
-		profile.WebGLVendor = *webglVendor
-	}
-	if webglRenderer != nil {
-		profile.WebGLRenderer = *webglRenderer
-	}
 	if proxyType != nil {
 		profile.ProxyType = *proxyType
 	}
@@ -156,6 +160,15 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 	if proxyPassword != nil {
 		profile.ProxyPassword = *proxyPassword
 	}
+	if geoIP != nil {
+		profile.GeoIP = *geoIP
+	}
+	if userDataDir != nil {
+		profile.UserDataDir = *userDataDir
+	}
+	if targetOS != nil {
+		profile.TargetOS = *targetOS
+	}
 
 	// Unmarshal JSON fields
 	if len(tagsJSON) > 0 {
@@ -167,9 +180,6 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 	if len(languagesJSON) > 0 {
 		json.Unmarshal(languagesJSON, &profile.Languages)
 	}
-	if len(fontsJSON) > 0 {
-		json.Unmarshal(fontsJSON, &profile.Fonts)
-	}
 
 	return &profile, nil
 }
@@ -178,11 +188,13 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 	query := `
 		SELECT id, name, description, status, folder, tags,
 			driver_type, browser_type, executable_path, cdp_endpoint, launch_args,
-			user_agent, platform, screen_width, screen_height, timezone, locale, languages,
-			webgl_vendor, webgl_renderer, canvas_noise, hardware_concurrency, device_memory, fonts,
+			screen_width, screen_height, timezone, locale, languages,
 			do_not_track, disable_webrtc,
 			geolocation_latitude, geolocation_longitude, geolocation_accuracy,
 			proxy_enabled, proxy_type, proxy_server, proxy_username, proxy_password,
+			geo_ip, virtual_headless, force_scope_access, auto_captcha_solve,
+			block_images, block_webgl, humanize, include_default_addons,
+			enable_cache, user_data_dir, target_os,
 			usage_count, last_used_at, created_at, updated_at
 		FROM browser_profiles
 		WHERE deleted_at IS NULL
@@ -232,18 +244,21 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 
 	for rows.Next() {
 		var profile models.BrowserProfile
-		var tagsJSON, launchArgsJSON, languagesJSON, fontsJSON []byte
-		var folder, description, executablePath, cdpEndpoint, timezone, locale, webglVendor, webglRenderer *string
+		var tagsJSON, launchArgsJSON, languagesJSON []byte
+		var folder, description, executablePath, cdpEndpoint, timezone, locale *string
 		var proxyType, proxyServer, proxyUsername, proxyPassword *string
+		var geoIP, userDataDir, targetOS *string
 
 		err := rows.Scan(
 			&profile.ID, &profile.Name, &description, &profile.Status, &folder, &tagsJSON,
 			&profile.DriverType, &profile.BrowserType, &executablePath, &cdpEndpoint, &launchArgsJSON,
-			&profile.UserAgent, &profile.Platform, &profile.ScreenWidth, &profile.ScreenHeight, &timezone, &locale, &languagesJSON,
-			&webglVendor, &webglRenderer, &profile.CanvasNoise, &profile.HardwareConcurrency, &profile.DeviceMemory, &fontsJSON,
+			&profile.ScreenWidth, &profile.ScreenHeight, &timezone, &locale, &languagesJSON,
 			&profile.DoNotTrack, &profile.DisableWebRTC,
 			&profile.GeolocationLatitude, &profile.GeolocationLongitude, &profile.GeolocationAccuracy,
 			&profile.ProxyEnabled, &proxyType, &proxyServer, &proxyUsername, &proxyPassword,
+			&geoIP, &profile.VirtualHeadless, &profile.ForceScopeAccess, &profile.AutoCaptchaSolve,
+			&profile.BlockImages, &profile.BlockWebGL, &profile.Humanize, &profile.IncludeDefaultAddons,
+			&profile.EnableCache, &userDataDir, &targetOS,
 			&profile.UsageCount, &profile.LastUsedAt, &profile.CreatedAt, &profile.UpdatedAt,
 		)
 		if err != nil {
@@ -269,12 +284,6 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 		if locale != nil {
 			profile.Locale = *locale
 		}
-		if webglVendor != nil {
-			profile.WebGLVendor = *webglVendor
-		}
-		if webglRenderer != nil {
-			profile.WebGLRenderer = *webglRenderer
-		}
 		if proxyType != nil {
 			profile.ProxyType = *proxyType
 		}
@@ -287,6 +296,15 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 		if proxyPassword != nil {
 			profile.ProxyPassword = *proxyPassword
 		}
+		if geoIP != nil {
+			profile.GeoIP = *geoIP
+		}
+		if userDataDir != nil {
+			profile.UserDataDir = *userDataDir
+		}
+		if targetOS != nil {
+			profile.TargetOS = *targetOS
+		}
 
 		// Unmarshal JSON fields
 		if len(tagsJSON) > 0 {
@@ -297,9 +315,6 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 		}
 		if len(languagesJSON) > 0 {
 			json.Unmarshal(languagesJSON, &profile.Languages)
-		}
-		if len(fontsJSON) > 0 {
-			json.Unmarshal(fontsJSON, &profile.Fonts)
 		}
 
 		profiles = append(profiles, &profile)
@@ -319,29 +334,32 @@ func (r *postgresBrowserProfileRepo) Update(ctx context.Context, profile *models
 	tagsJSON, _ := json.Marshal(profile.Tags)
 	launchArgsJSON, _ := json.Marshal(profile.LaunchArgs)
 	languagesJSON, _ := json.Marshal(profile.Languages)
-	fontsJSON, _ := json.Marshal(profile.Fonts)
 
 	query := `
 		UPDATE browser_profiles SET
 			name = $2, description = $3, status = $4, folder = $5, tags = $6,
 			driver_type = $7, browser_type = $8, executable_path = $9, cdp_endpoint = $10, launch_args = $11,
-			user_agent = $12, platform = $13, screen_width = $14, screen_height = $15, timezone = $16, locale = $17, languages = $18,
-			webgl_vendor = $19, webgl_renderer = $20, canvas_noise = $21, hardware_concurrency = $22, device_memory = $23, fonts = $24,
-			do_not_track = $25, disable_webrtc = $26,
-			geolocation_latitude = $27, geolocation_longitude = $28, geolocation_accuracy = $29,
-			proxy_enabled = $30, proxy_type = $31, proxy_server = $32, proxy_username = $33, proxy_password = $34,
-			updated_at = $35
+			screen_width = $12, screen_height = $13, timezone = $14, locale = $15, languages = $16,
+			do_not_track = $17, disable_webrtc = $18,
+			geolocation_latitude = $19, geolocation_longitude = $20, geolocation_accuracy = $21,
+			proxy_enabled = $22, proxy_type = $23, proxy_server = $24, proxy_username = $25, proxy_password = $26,
+			geo_ip = $27, virtual_headless = $28, force_scope_access = $29, auto_captcha_solve = $30,
+			block_images = $31, block_webgl = $32, humanize = $33, include_default_addons = $34,
+			enable_cache = $35, user_data_dir = $36, target_os = $37,
+			updated_at = $38
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
 		profile.ID, profile.Name, profile.Description, profile.Status, profile.Folder, string(tagsJSON),
 		profile.DriverType, profile.BrowserType, profile.ExecutablePath, profile.CDPEndpoint, string(launchArgsJSON),
-		profile.UserAgent, profile.Platform, profile.ScreenWidth, profile.ScreenHeight, profile.Timezone, profile.Locale, string(languagesJSON),
-		profile.WebGLVendor, profile.WebGLRenderer, profile.CanvasNoise, profile.HardwareConcurrency, profile.DeviceMemory, string(fontsJSON),
+		profile.ScreenWidth, profile.ScreenHeight, profile.Timezone, profile.Locale, string(languagesJSON),
 		profile.DoNotTrack, profile.DisableWebRTC,
 		profile.GeolocationLatitude, profile.GeolocationLongitude, profile.GeolocationAccuracy,
 		profile.ProxyEnabled, profile.ProxyType, profile.ProxyServer, profile.ProxyUsername, profile.ProxyPassword,
+		profile.GeoIP, profile.VirtualHeadless, profile.ForceScopeAccess, profile.AutoCaptchaSolve,
+		profile.BlockImages, profile.BlockWebGL, profile.Humanize, profile.IncludeDefaultAddons,
+		profile.EnableCache, profile.UserDataDir, profile.TargetOS,
 		profile.UpdatedAt,
 	)
 

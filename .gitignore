@@ -62,3 +62,5 @@ internal/browser/dist/selector-overlay.js
 selector-overlay-app/node_modules/
 selector-overlay-app/dist/
 microservices/worker/snapshots/*
+
+camoufox-go/test_results/*

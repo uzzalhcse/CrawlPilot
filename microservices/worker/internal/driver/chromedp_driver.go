@@ -61,11 +61,6 @@ func NewChromedpDriverWithProfile(cfg *config.BrowserConfig, profile *models.Bro
 		opts = append(opts, chromedp.ExecPath(profile.ExecutablePath))
 	}
 
-	// User agent from profile
-	if profile.UserAgent != "" {
-		opts = append(opts, chromedp.UserAgent(profile.UserAgent))
-	}
-
 	// Screen size
 	if profile.ScreenWidth > 0 && profile.ScreenHeight > 0 {
 		opts = append(opts, chromedp.WindowSize(profile.ScreenWidth, profile.ScreenHeight))

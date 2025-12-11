@@ -12,7 +12,12 @@ require (
 	go.uber.org/zap v1.27.0
 )
 
-require github.com/uzzalhcse/crawlify/microservices/shared v0.0.0
+require (
+	github.com/playwright-community/playwright-go v0.5200.1
+	github.com/robfig/cron/v3 v3.0.1
+	github.com/uzzalhcse/camoufox-go v0.0.0-00010101000000-000000000000
+	github.com/uzzalhcse/crawlify/microservices/shared v0.0.0
+)
 
 require (
 	cloud.google.com/go v0.116.0 // indirect
@@ -42,10 +47,11 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/mattn/go-sqlite3 v1.14.32 // indirect
+	github.com/oschwald/geoip2-golang v1.13.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
-	github.com/playwright-community/playwright-go v0.5200.1 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
@@ -79,3 +85,5 @@ require (
 )
 
 replace github.com/uzzalhcse/crawlify/microservices/shared => ../shared
+
+replace github.com/uzzalhcse/camoufox-go => ../../camoufox-go
