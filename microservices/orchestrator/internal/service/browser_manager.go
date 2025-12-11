@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -42,21 +40,7 @@ func NewBrowserManager(profileRepo repository.BrowserProfileRepository) *Browser
 	}
 }
 
-func ensureScheme(rawUrl string) (string, error) {
-	// Check if the URL starts with a scheme (http://, https://, etc.)
-	if !strings.Contains(rawUrl, "://") {
-		// If there is no scheme, default to http
-		rawUrl = "http://" + rawUrl
-	}
-
-	// Now parse the URL
-	parsedUrl, err := url.Parse(rawUrl)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	return parsedUrl.String(), nil
-}
+// Note: ensureScheme has been moved to shared/services/browser_factory.go as services.EnsureScheme
 
 // Launch launches a browser for the given profile
 func (m *BrowserManager) Launch(ctx context.Context, profileID string) error {
@@ -80,49 +64,14 @@ func (m *BrowserManager) Launch(ctx context.Context, profileID string) error {
 	var cam *camoufox.Camoufox
 
 	if profile.DriverType == "camoufox" {
-		// Configure Camoufox options
-		opts := camoufox.Options{
-			Debug:                true,
-			Headless:             false, // Always headed for manual interaction
-			Humanize:             profile.Humanize,
-			VirtualHeadless:      profile.VirtualHeadless,
-			BlockImages:          profile.BlockImages,
-			BlockWebGL:           profile.BlockWebGL,
-			OS:                   profile.TargetOS,
-			GeoIP:                profile.GeoIP,
-			BlockWebRTC:          profile.DisableWebRTC,
-			ForceScopeAccess:     profile.ForceScopeAccess,
-			IncludeDefaultAddons: profile.IncludeDefaultAddons,
-			EnableCache:          profile.EnableCache,
-			UserDataDir:          profile.UserDataDir,
+		// Use shared browser factory for consistent configuration (includes proxy validation)
+		opts, err := services.BuildCamoufoxOptions(profile, false /* headless - always headed for manual interaction */)
+		if err != nil {
+			return fmt.Errorf("failed to build camoufox options: %w", err)
 		}
+		opts.Debug = true // Enable debug for orchestrator
 
-		// Configure Screen constraints if specified
-		if profile.ScreenWidth > 0 && profile.ScreenHeight > 0 {
-			opts.Screen = &camoufox.Screen{
-				MinWidth:  profile.ScreenWidth,
-				MaxWidth:  profile.ScreenWidth,
-				MinHeight: profile.ScreenHeight,
-				MaxHeight: profile.ScreenHeight,
-			}
-		}
-
-		// Configure Proxy
-		if profile.ProxyEnabled && profile.ProxyServer != "" {
-			proxyURL, err := ensureScheme(profile.ProxyServer)
-			if err != nil {
-				return fmt.Errorf("invalid proxy server URL: %w", err)
-			}
-
-			opts.Proxy = &camoufox.ProxyConfig{
-				Server:   proxyURL,
-				Username: profile.ProxyUsername,
-				Password: profile.ProxyPassword,
-			}
-		}
-
-		// Launch Camoufox
-		var err error
+		// Launch Camoufox using shared factory options
 		cam, err = camoufox.NewBrowser(opts)
 		if err != nil {
 			return fmt.Errorf("failed to launch camoufox: %w", err)
@@ -136,30 +85,9 @@ func (m *BrowserManager) Launch(ctx context.Context, profileID string) error {
 			return fmt.Errorf("failed to start playwright: %w", err)
 		}
 
-		// Determine browser type
-		browserType := profile.BrowserType
-		if browserType == "" {
-			browserType = "chromium"
-		}
-
-		// Launch options
-		launchOpts := playwright.BrowserTypeLaunchOptions{
-			Headless: playwright.Bool(false), // Always headed for manual interaction
-			Args: []string{
-				"--no-sandbox",
-				"--disable-setuid-sandbox",
-				"--disable-dev-shm-usage",
-				"--disable-gpu",
-			},
-		}
-
-		if profile.ExecutablePath != "" {
-			launchOpts.ExecutablePath = playwright.String(profile.ExecutablePath)
-		}
-
-		if len(profile.LaunchArgs) > 0 {
-			launchOpts.Args = append(launchOpts.Args, profile.LaunchArgs...)
-		}
+		// Use shared browser factory for launch options
+		browserType := services.GetPlaywrightBrowserType(profile)
+		launchOpts := services.BuildPlaywrightLaunchOptions(profile, false /* headless - always headed for manual interaction */)
 
 		// Standard Playwright launch
 		switch browserType {
@@ -176,29 +104,31 @@ func (m *BrowserManager) Launch(ctx context.Context, profileID string) error {
 		}
 	}
 
-	// Create context options with fingerprint
-	contextOpts := playwright.BrowserNewContextOptions{
-		IgnoreHttpsErrors: playwright.Bool(true),
-		JavaScriptEnabled: playwright.Bool(true),
-	}
-
-	// Apply fingerprint settings (only for non-Camoufox)
+	// Create context options using shared browser factory (only for Playwright, not Camoufox)
+	var contextOpts playwright.BrowserNewContextOptions
 	var fingerprint *services.Fingerprint
 	if cam == nil {
-		// Generate BrowserForge fingerprint
-		fpService, err := services.GetFingerprintService()
-		if err == nil {
+		// Get fingerprint service for init script injection
+		fpService, _ := services.GetFingerprintService()
+
+		// Use shared browser factory for context options (includes fingerprint and proxy validation)
+		var err error
+		contextOpts, err = services.BuildPlaywrightContextOptions(profile, fpService)
+		if err != nil {
+			browser.Close()
+			if pw != nil {
+				pw.Stop()
+			}
+			return fmt.Errorf("failed to build context options: %w", err)
+		}
+
+		// Get fingerprint for init script (if needed)
+		if fpService != nil {
+			browserType := services.GetPlaywrightBrowserType(profile)
 			targetOS := "linux"
 			if profile.TargetOS != "" {
 				targetOS = profile.TargetOS
 			}
-
-			// Use browser type for fingerprint to match UA with actual browser
-			browserType := profile.BrowserType
-			if browserType == "" {
-				browserType = "chromium"
-			}
-
 			maxWidth := profile.ScreenWidth
 			if maxWidth == 0 {
 				maxWidth = 1920
@@ -207,67 +137,7 @@ func (m *BrowserManager) Launch(ctx context.Context, profileID string) error {
 			if maxHeight == 0 {
 				maxHeight = 1080
 			}
-
 			fingerprint, _ = fpService.GenerateFingerprintWithBrowser(targetOS, browserType, maxWidth, maxHeight)
-		}
-
-		// Apply fingerprint settings
-		if fingerprint != nil {
-			contextOpts.UserAgent = playwright.String(fingerprint.Navigator.UserAgent)
-
-			if fingerprint.Screen.Width > 0 && fingerprint.Screen.Height > 0 {
-				contextOpts.Screen = &playwright.Size{
-					Width:  fingerprint.Screen.Width,
-					Height: fingerprint.Screen.Height,
-				}
-				contextOpts.Viewport = &playwright.Size{
-					Width:  fingerprint.Screen.InnerWidth,
-					Height: fingerprint.Screen.InnerHeight,
-				}
-			}
-
-			if fingerprint.Navigator.Language != "" {
-				contextOpts.Locale = playwright.String(fingerprint.Navigator.Language)
-			}
-		}
-	}
-
-	if profile.ScreenWidth > 0 && profile.ScreenHeight > 0 {
-		contextOpts.Screen = &playwright.Size{
-			Width:  profile.ScreenWidth,
-			Height: profile.ScreenHeight,
-		}
-		contextOpts.Viewport = &playwright.Size{
-			Width:  profile.ScreenWidth,
-			Height: profile.ScreenHeight,
-		}
-	}
-	if profile.Locale != "" {
-		contextOpts.Locale = playwright.String(profile.Locale)
-	}
-	if profile.Timezone != "" {
-		contextOpts.TimezoneId = playwright.String(profile.Timezone)
-	}
-	if profile.GeolocationLatitude != nil && profile.GeolocationLongitude != nil {
-		contextOpts.Geolocation = &playwright.Geolocation{
-			Latitude:  *profile.GeolocationLatitude,
-			Longitude: *profile.GeolocationLongitude,
-		}
-		contextOpts.Permissions = []string{"geolocation"}
-	}
-
-	// Proxy configuration
-	if profile.ProxyEnabled && profile.ProxyServer != "" {
-		proxyURL := profile.ProxyServer
-		if profile.ProxyType != "" && profile.ProxyType != "http" {
-			proxyURL = profile.ProxyType + "://" + proxyURL
-		}
-		contextOpts.Proxy = &playwright.Proxy{
-			Server: proxyURL,
-		}
-		if profile.ProxyUsername != "" {
-			contextOpts.Proxy.Username = playwright.String(profile.ProxyUsername)
-			contextOpts.Proxy.Password = playwright.String(profile.ProxyPassword)
 		}
 	}
 

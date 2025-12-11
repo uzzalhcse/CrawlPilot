@@ -61,19 +61,13 @@ func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) 
 	var browserType string = "camoufox"
 
 	if profile != nil && profile.DriverType == "camoufox" {
-		// Configure Camoufox options
-		opts := camoufox.Options{
-			Headless:        cfg.Headless,
-			Humanize:        profile.Humanize,
-			VirtualHeadless: profile.VirtualHeadless,
-			BlockImages:     profile.BlockImages,
-			BlockWebGL:      profile.BlockWebGL,
-			OS:              profile.TargetOS,
-			GeoIP:           profile.GeoIP,
+		// Use shared browser factory for consistent Camoufox configuration
+		opts, err := services.BuildCamoufoxOptions(profile, cfg.Headless)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build camoufox options: %w", err)
 		}
 
 		// Launch Camoufox
-		var err error
 		cam, err = camoufox.NewBrowser(opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to launch camoufox: %w", err)
@@ -87,32 +81,9 @@ func newPoolInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) 
 			return nil, fmt.Errorf("failed to start playwright: %w", err)
 		}
 
-		// Determine browser type from profile or default to Chromium
-		browserType = "chromium"
-		if profile != nil && profile.BrowserType != "" {
-			browserType = profile.BrowserType
-		}
-
-		// Build launch options
-		launchOpts := playwright.BrowserTypeLaunchOptions{
-			Headless: playwright.Bool(cfg.Headless),
-			Args: []string{
-				"--no-sandbox",
-				"--disable-setuid-sandbox",
-				"--disable-dev-shm-usage",
-				"--disable-gpu",
-			},
-		}
-
-		// Add custom executable path from profile
-		if profile != nil && profile.ExecutablePath != "" {
-			launchOpts.ExecutablePath = playwright.String(profile.ExecutablePath)
-		}
-
-		// Add extra launch args from profile
-		if profile != nil && len(profile.LaunchArgs) > 0 {
-			launchOpts.Args = append(launchOpts.Args, profile.LaunchArgs...)
-		}
+		// Use shared browser factory for browser type and launch options
+		browserType = services.GetPlaywrightBrowserType(profile)
+		launchOpts := services.BuildPlaywrightLaunchOptions(profile, cfg.Headless)
 
 		// Standard Playwright launch
 		switch browserType {
@@ -176,37 +147,36 @@ func (p *Pool) createContext(proxy *ProxyConfig) (playwright.BrowserContext, err
 
 // createContextWithProfile creates a new browser context with profile fingerprint settings
 func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserContext, error) {
-	// Generate BrowserForge fingerprint
 	var fingerprint *services.Fingerprint
-	if p.profile != nil {
-		fpService, err := services.GetFingerprintService()
-		if err == nil {
-			targetOS := "linux"
-			if p.profile.TargetOS != "" {
-				targetOS = p.profile.TargetOS
-			}
 
-			maxWidth := p.profile.ScreenWidth
-			if maxWidth == 0 {
-				maxWidth = 1920
-			}
-			maxHeight := p.profile.ScreenHeight
-			if maxHeight == 0 {
-				maxHeight = 1080
-			}
+	// Use shared browser factory for context options (includes fingerprints and proxy validation)
+	fpService, _ := services.GetFingerprintService()
 
-			fingerprint, _ = fpService.GenerateFingerprint(targetOS, maxWidth, maxHeight)
+	opts, err := services.BuildPlaywrightContextOptions(p.profile, fpService)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build context options: %w", err)
+	}
+
+	// Get fingerprint for init script injection (if using standard Playwright, not Camoufox)
+	if p.cam == nil && fpService != nil && p.profile != nil {
+		browserType := services.GetPlaywrightBrowserType(p.profile)
+		targetOS := "linux"
+		if p.profile.TargetOS != "" {
+			targetOS = p.profile.TargetOS
 		}
+		maxWidth := p.profile.ScreenWidth
+		if maxWidth == 0 {
+			maxWidth = 1920
+		}
+		maxHeight := p.profile.ScreenHeight
+		if maxHeight == 0 {
+			maxHeight = 1080
+		}
+		fingerprint, _ = fpService.GenerateFingerprintWithBrowser(targetOS, browserType, maxWidth, maxHeight)
 	}
 
-	opts := playwright.BrowserNewContextOptions{
-		IgnoreHttpsErrors: playwright.Bool(true),
-		JavaScriptEnabled: playwright.Bool(true),
-	}
-
-	// Apply BrowserForge fingerprint
+	// Apply Camoufox fingerprint (overrides factory opts for Camoufox)
 	if p.cam != nil {
-		// Use Camoufox fingerprint
 		fp := p.cam.Fingerprint()
 		if fp != nil {
 			opts.UserAgent = playwright.String(fp.Navigator.UserAgent)
@@ -224,77 +194,25 @@ func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserC
 				opts.Locale = playwright.String(fp.Navigator.Language)
 			}
 		}
-	} else if fingerprint != nil {
-		// Use standard BrowserForge fingerprint
-		opts.UserAgent = playwright.String(fingerprint.Navigator.UserAgent)
+	}
 
-		if fingerprint.Screen.Width > 0 && fingerprint.Screen.Height > 0 {
-			opts.Screen = &playwright.Size{
-				Width:  fingerprint.Screen.Width,
-				Height: fingerprint.Screen.Height,
-			}
-			opts.Viewport = &playwright.Size{
-				Width:  fingerprint.Screen.InnerWidth,
-				Height: fingerprint.Screen.InnerHeight,
-			}
-		}
-
-		if fingerprint.Navigator.Language != "" {
-			opts.Locale = playwright.String(fingerprint.Navigator.Language)
+	// Do Not Track (from profile, not in shared factory)
+	if p.profile != nil && p.profile.DoNotTrack {
+		opts.ExtraHttpHeaders = map[string]string{
+			"DNT": "1",
 		}
 	}
 
-	// Apply user-configurable settings from profile (can override fingerprint)
-	if p.profile != nil {
-		// Timezone override
-		if p.profile.Timezone != "" {
-			opts.TimezoneId = playwright.String(p.profile.Timezone)
-		}
-
-		// Locale override
-		if p.profile.Locale != "" {
-			opts.Locale = playwright.String(p.profile.Locale)
-		}
-
-		// Geolocation
-		if p.profile.GeolocationLatitude != nil && p.profile.GeolocationLongitude != nil {
-			opts.Geolocation = &playwright.Geolocation{
-				Latitude:  *p.profile.GeolocationLatitude,
-				Longitude: *p.profile.GeolocationLongitude,
-			}
-			if p.profile.GeolocationAccuracy != nil {
-				opts.Geolocation.Accuracy = playwright.Float(float64(*p.profile.GeolocationAccuracy))
-			}
-			opts.Permissions = []string{"geolocation"}
-		}
-
-		// Do Not Track
-		if p.profile.DoNotTrack {
-			opts.ExtraHttpHeaders = map[string]string{
-				"DNT": "1",
-			}
-		}
-
-		// Proxy from profile (if not overridden by proxy parameter)
-		if proxy == nil && p.profile.ProxyEnabled && p.profile.ProxyServer != "" {
-			proxyURL := p.profile.ProxyServer
-			if p.profile.ProxyType != "" && p.profile.ProxyType != "http" {
-				proxyURL = p.profile.ProxyType + "://" + proxyURL
-			}
-			opts.Proxy = &playwright.Proxy{
-				Server: proxyURL,
-			}
-			if p.profile.ProxyUsername != "" {
-				opts.Proxy.Username = playwright.String(p.profile.ProxyUsername)
-				opts.Proxy.Password = playwright.String(p.profile.ProxyPassword)
-			}
-		}
+	// Geolocation accuracy (from profile, not in shared factory)
+	if p.profile != nil && opts.Geolocation != nil && p.profile.GeolocationAccuracy != nil {
+		opts.Geolocation.Accuracy = playwright.Float(float64(*p.profile.GeolocationAccuracy))
 	}
 
 	// Add proxy if provided (overrides profile proxy)
 	if proxy != nil && proxy.Server != "" {
+		proxyURL, _ := services.EnsureScheme(proxy.Server)
 		opts.Proxy = &playwright.Proxy{
-			Server: proxy.Server,
+			Server: proxyURL,
 		}
 		if proxy.Username != "" {
 			opts.Proxy.Username = playwright.String(proxy.Username)

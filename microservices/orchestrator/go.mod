@@ -15,7 +15,7 @@ require (
 require (
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/uzzalhcse/camoufox-go v0.0.0-00010101000000-000000000000
+	github.com/uzzalhcse/camoufox-go v0.0.0
 	github.com/uzzalhcse/crawlify/microservices/shared v0.0.0
 )
 

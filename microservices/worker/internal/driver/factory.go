@@ -52,7 +52,7 @@ func (f *Factory) CreateDriverFromProfile(profile *models.BrowserProfile) (Drive
 		return NewHttpDriver(), nil
 	case "chromedp":
 		// Chromedp only supports Chromium - validation done by profile.Validate()
-		return NewChromedpDriverWithProfile(f.config, profile), nil
+		return NewChromedpDriverWithProfile(f.config, profile)
 	case "playwright", "":
 		// Playwright supports all browser types
 		return NewPlaywrightDriverWithProfile(f.config, profile)

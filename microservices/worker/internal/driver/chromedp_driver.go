@@ -16,6 +16,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/shared/services"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 )
 
@@ -45,47 +46,49 @@ func NewChromedpDriver(cfg *config.BrowserConfig) *ChromedpDriver {
 }
 
 // NewChromedpDriverWithProfile creates a ChromedpDriver using browser profile settings
-func NewChromedpDriverWithProfile(cfg *config.BrowserConfig, profile *models.BrowserProfile) *ChromedpDriver {
+func NewChromedpDriverWithProfile(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*ChromedpDriver, error) {
+	// Use shared browser factory for consistent configuration
+	factoryOpts, err := services.BuildChromedpOptions(profile, cfg.Headless)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build chromedp options: %w", err)
+	}
+
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 
-	// Apply profile settings
+	// Apply settings from shared factory
 	opts = append(opts,
-		chromedp.Flag("headless", cfg.Headless),
+		chromedp.Flag("headless", factoryOpts.Headless),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 	)
 
-	// Custom executable path from profile
-	if profile.ExecutablePath != "" {
-		opts = append(opts, chromedp.ExecPath(profile.ExecutablePath))
+	// Screen dimensions from factory
+	if factoryOpts.WindowWidth > 0 && factoryOpts.WindowHeight > 0 {
+		opts = append(opts, chromedp.WindowSize(factoryOpts.WindowWidth, factoryOpts.WindowHeight))
 	}
 
-	// Screen size
-	if profile.ScreenWidth > 0 && profile.ScreenHeight > 0 {
-		opts = append(opts, chromedp.WindowSize(profile.ScreenWidth, profile.ScreenHeight))
+	// Proxy from factory (already validated by EnsureScheme)
+	if factoryOpts.ProxyServer != "" {
+		opts = append(opts, chromedp.ProxyServer(factoryOpts.ProxyServer))
 	}
 
-	// Proxy from profile
-	if profile.ProxyEnabled && profile.ProxyServer != "" {
-		proxyURL := profile.ProxyServer
-		if profile.ProxyType != "" {
-			proxyURL = profile.ProxyType + "://" + proxyURL
-		}
-		opts = append(opts, chromedp.ProxyServer(proxyURL))
+	// Executable path from factory
+	if factoryOpts.ExecPath != "" {
+		opts = append(opts, chromedp.ExecPath(factoryOpts.ExecPath))
 	}
 
-	// WebRTC leak prevention
-	if profile.DisableWebRTC {
+	// Extra args from factory
+	for _, arg := range factoryOpts.ExtraArgs {
+		opts = append(opts, chromedp.Flag(arg, true))
+	}
+
+	// WebRTC leak prevention (from profile)
+	if profile != nil && profile.DisableWebRTC {
 		opts = append(opts,
 			chromedp.Flag("disable-webrtc", true),
 			chromedp.Flag("enforce-webrtc-ip-permission-check", true),
 		)
-	}
-
-	// Extra launch args from profile
-	for _, arg := range profile.LaunchArgs {
-		opts = append(opts, chromedp.Flag(arg, true))
 	}
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -94,7 +97,7 @@ func NewChromedpDriverWithProfile(cfg *config.BrowserConfig, profile *models.Bro
 		cfg:         cfg,
 		allocCtx:    allocCtx,
 		cancelAlloc: cancelAlloc,
-	}
+	}, nil
 }
 
 func (d *ChromedpDriver) NewPage(ctx context.Context) (Page, error) {

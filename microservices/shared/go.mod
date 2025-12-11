@@ -5,13 +5,17 @@ go 1.24.0
 require (
 	cloud.google.com/go/pubsub v1.45.3
 	github.com/jackc/pgx/v5 v5.7.6
+	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/spf13/viper v1.21.0
 	github.com/uzzalhcse/browserforge-go v0.0.0
+	github.com/uzzalhcse/camoufox-go v0.0.0
 	go.uber.org/zap v1.27.0
 )
 
 replace github.com/uzzalhcse/browserforge-go => ../../browserforge-go
+
+replace github.com/uzzalhcse/camoufox-go => ../../camoufox-go
 
 require (
 	cloud.google.com/go v0.116.0 // indirect
@@ -20,11 +24,14 @@ require (
 	cloud.google.com/go/compute/metadata v0.5.2 // indirect
 	cloud.google.com/go/iam v1.2.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
@@ -34,6 +41,9 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/mattn/go-sqlite3 v1.14.32 // indirect
+	github.com/oschwald/geoip2-golang v1.13.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect

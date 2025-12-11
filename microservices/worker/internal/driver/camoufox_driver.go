@@ -13,6 +13,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/shared/services"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 	"go.uber.org/zap"
 )
@@ -48,7 +49,11 @@ func NewCamoufoxDriverWithProfile(cfg *config.BrowserConfig, profile *models.Bro
 
 // newCamoufoxDriverInternal creates the driver with optional profile
 func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.BrowserProfile) (*CamoufoxDriver, error) {
-	opts := buildCamoufoxOptions(cfg, profile)
+	// Use shared browser factory for consistent configuration with orchestrator (includes proxy validation)
+	opts, err := services.BuildCamoufoxOptions(profile, cfg.Headless)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build camoufox options: %w", err)
+	}
 
 	cam, err := camoufox.NewBrowser(opts)
 	if err != nil {
@@ -76,107 +81,8 @@ func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.Browse
 	}, nil
 }
 
-// buildCamoufoxOptions maps config and profile to camoufox.Options
-func buildCamoufoxOptions(cfg *config.BrowserConfig, profile *models.BrowserProfile) camoufox.Options {
-	opts := camoufox.Options{
-		OS:                   "linux", // Default to linux for server environments
-		Headless:             cfg.Headless,
-		ForceScopeAccess:     true, // Required for CAPTCHA solving
-		DisableCOOP:          true, // Required for cross-origin iframe access
-		Humanize:             1.0,  // Default: enable human-like mouse movement (1 second max)
-		IncludeDefaultAddons: true, // Default: include uBlock Origin
-	}
-
-	if profile == nil {
-		return opts
-	}
-
-	// Target OS for fingerprint
-	if profile.TargetOS != "" {
-		opts.OS = profile.TargetOS
-	}
-
-	// Map profile fields to camoufox options
-	if profile.GeoIP != "" {
-		opts.GeoIP = profile.GeoIP
-	}
-
-	if profile.VirtualHeadless {
-		opts.VirtualHeadless = true
-		opts.Headless = false // Virtual headless runs as headed in Xvfb
-	}
-
-	if !profile.ForceScopeAccess {
-		opts.ForceScopeAccess = false
-	}
-
-	if profile.BlockImages {
-		opts.BlockImages = true
-	}
-
-	if profile.BlockWebGL {
-		opts.BlockWebGL = true
-	}
-
-	if profile.DisableWebRTC {
-		opts.BlockWebRTC = true
-	}
-
-	// Humanize setting (0 = disabled, > 0 = max duration in seconds)
-	if profile.Humanize > 0 {
-		opts.Humanize = profile.Humanize
-	} else if profile.Humanize == 0 {
-		// Explicit 0 means disabled - but we default to 1.0 unless explicitly set to 0
-		// Since Go zero value is 0, we check if it's been explicitly set via DB
-		// For now, keep the default enabled
-	}
-
-	// Include default addons (uBlock Origin) - default true
-	opts.IncludeDefaultAddons = profile.IncludeDefaultAddons
-
-	// Enable browser caching
-	if profile.EnableCache {
-		opts.EnableCache = true
-	}
-
-	// User data directory for persistent sessions
-	if profile.UserDataDir != "" {
-		opts.UserDataDir = profile.UserDataDir
-	}
-
-	// Screen dimensions
-	if profile.ScreenWidth > 0 && profile.ScreenHeight > 0 {
-		opts.Screen = &camoufox.Screen{
-			MinWidth:  profile.ScreenWidth - 100,
-			MaxWidth:  profile.ScreenWidth + 100,
-			MinHeight: profile.ScreenHeight - 100,
-			MaxHeight: profile.ScreenHeight + 100,
-		}
-	}
-
-	// Timezone
-	if profile.Timezone != "" {
-		opts.Timezone = profile.Timezone
-	}
-
-	// Locale
-	if profile.Locale != "" {
-		opts.Locale = []string{profile.Locale}
-	} else if len(profile.Languages) > 0 {
-		opts.Locale = profile.Languages
-	}
-
-	// Proxy configuration
-	if profile.ProxyEnabled && profile.ProxyServer != "" {
-		opts.Proxy = &camoufox.ProxyConfig{
-			Server:   profile.ProxyServer,
-			Username: profile.ProxyUsername,
-			Password: profile.ProxyPassword,
-		}
-	}
-
-	return opts
-}
+// Note: buildCamoufoxOptions has been moved to shared/services/browser_factory.go
+// as services.BuildCamoufoxOptions for unified configuration across orchestrator and worker
 
 func (d *CamoufoxDriver) NewPage(ctx context.Context) (Page, error) {
 	// Check for proxy override in context
