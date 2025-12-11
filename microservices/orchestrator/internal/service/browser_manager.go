@@ -193,6 +193,12 @@ func (m *BrowserManager) Launch(ctx context.Context, profileID string) error {
 				targetOS = profile.TargetOS
 			}
 
+			// Use browser type for fingerprint to match UA with actual browser
+			browserType := profile.BrowserType
+			if browserType == "" {
+				browserType = "chromium"
+			}
+
 			maxWidth := profile.ScreenWidth
 			if maxWidth == 0 {
 				maxWidth = 1920
@@ -202,7 +208,7 @@ func (m *BrowserManager) Launch(ctx context.Context, profileID string) error {
 				maxHeight = 1080
 			}
 
-			fingerprint, _ = fpService.GenerateFingerprint(targetOS, maxWidth, maxHeight)
+			fingerprint, _ = fpService.GenerateFingerprintWithBrowser(targetOS, browserType, maxWidth, maxHeight)
 		}
 
 		// Apply fingerprint settings

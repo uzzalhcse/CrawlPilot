@@ -1,14 +1,11 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strconv"
 	"sync"
 	"time"
+
+	bffingerprints "github.com/uzzalhcse/browserforge-go/fingerprints"
 )
 
 // Fingerprint represents a BrowserForge-generated browser fingerprint
@@ -71,9 +68,9 @@ type BatteryFingerprint struct {
 
 // FingerprintService manages BrowserForge fingerprint generation
 type FingerprintService struct {
-	scriptPath string
-	cache      map[string]*cachedFingerprint
-	mu         sync.RWMutex
+	generator *bffingerprints.FingerprintGenerator
+	cache     map[string]*cachedFingerprint
+	mu        sync.RWMutex
 }
 
 type cachedFingerprint struct {
@@ -90,23 +87,28 @@ var (
 func GetFingerprintService() (*FingerprintService, error) {
 	var err error
 	once.Do(func() {
-		scriptPath, scriptErr := getFingerprintScriptPath()
-		if scriptErr != nil {
-			err = scriptErr
+		generator, genErr := bffingerprints.NewFingerprintGenerator(nil)
+		if genErr != nil {
+			err = fmt.Errorf("failed to create fingerprint generator: %w", genErr)
 			return
 		}
 		instance = &FingerprintService{
-			scriptPath: scriptPath,
-			cache:      make(map[string]*cachedFingerprint),
+			generator: generator,
+			cache:     make(map[string]*cachedFingerprint),
 		}
 	})
 	return instance, err
 }
 
-// GenerateFingerprint generates a browser fingerprint using BrowserForge
-// Results are cached for 5 minutes to avoid repeated Python calls
+// GenerateFingerprint generates a browser fingerprint using browserforge-go
+// Results are cached for 5 minutes to avoid repeated generation overhead
 func (s *FingerprintService) GenerateFingerprint(os string, maxWidth, maxHeight int) (*Fingerprint, error) {
-	cacheKey := fmt.Sprintf("%s-%d-%d", os, maxWidth, maxHeight)
+	return s.GenerateFingerprintWithBrowser(os, "", maxWidth, maxHeight)
+}
+
+// GenerateFingerprintWithBrowser generates a browser fingerprint for a specific browser type
+func (s *FingerprintService) GenerateFingerprintWithBrowser(os, browserType string, maxWidth, maxHeight int) (*Fingerprint, error) {
+	cacheKey := fmt.Sprintf("%s-%s-%d-%d", os, browserType, maxWidth, maxHeight)
 
 	// Check cache
 	s.mu.RLock()
@@ -118,55 +120,121 @@ func (s *FingerprintService) GenerateFingerprint(os string, maxWidth, maxHeight 
 	}
 	s.mu.RUnlock()
 
-	// Generate new fingerprint
-	args := []string{s.scriptPath}
+	// Build generation options
+	opts := &bffingerprints.GenerateFingerprintOptions{}
+
+	// Set browser type constraint to match actual browser
+	if browserType != "" {
+		switch browserType {
+		case "chromium", "chrome":
+			opts.Browsers = []interface{}{"chrome"}
+		case "firefox":
+			opts.Browsers = []interface{}{"firefox"}
+		case "webkit", "safari":
+			opts.Browsers = []interface{}{"safari"}
+		case "edge":
+			opts.Browsers = []interface{}{"edge"}
+		}
+	}
+
+	// Map OS string to browserforge-go format
 	if os != "" {
-		args = append(args, os)
-	} else {
-		args = append(args, "linux")
+		switch os {
+		case "windows", "win", "win32", "win64":
+			opts.OS = []string{"windows"}
+		case "macos", "mac", "darwin", "osx":
+			opts.OS = []string{"macos"}
+		case "linux":
+			opts.OS = []string{"linux"}
+		case "android":
+			opts.OS = []string{"android"}
+		case "ios":
+			opts.OS = []string{"ios"}
+		default:
+			opts.OS = []string{os}
+		}
 	}
 
-	if maxWidth > 0 {
-		args = append(args, strconv.Itoa(maxWidth))
+	// Apply screen constraints
+	if maxWidth > 0 || maxHeight > 0 {
+		screen := &bffingerprints.Screen{}
+		if maxWidth > 0 {
+			screen.MaxWidth = &maxWidth
+		}
 		if maxHeight > 0 {
-			args = append(args, strconv.Itoa(maxHeight))
+			screen.MaxHeight = &maxHeight
 		}
+		opts.Screen = screen
 	}
 
-	cmd := exec.Command("python3", args...)
-	output, err := cmd.Output()
+	// Generate fingerprint
+	bfFp, err := s.generator.Generate(opts)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("fingerprint generation failed: %s", string(exitErr.Stderr))
-		}
-		return nil, fmt.Errorf("failed to execute fingerprint script: %w", err)
+		return nil, fmt.Errorf("failed to generate fingerprint: %w", err)
 	}
 
-	var fp Fingerprint
-	if err := json.Unmarshal(output, &fp); err != nil {
-		return nil, fmt.Errorf("failed to parse fingerprint JSON: %w", err)
+	// Convert to service fingerprint type
+	fp := &Fingerprint{
+		Navigator: NavigatorFingerprint{
+			UserAgent:           bfFp.Navigator.UserAgent,
+			AppCodeName:         bfFp.Navigator.AppCodeName,
+			AppName:             bfFp.Navigator.AppName,
+			AppVersion:          bfFp.Navigator.AppVersion,
+			Platform:            bfFp.Navigator.Platform,
+			OsCPU:               bfFp.Navigator.Oscpu,
+			Language:            bfFp.Navigator.Language,
+			Languages:           bfFp.Navigator.Languages,
+			HardwareConcurrency: bfFp.Navigator.HardwareConcurrency,
+			MaxTouchPoints:      bfFp.Navigator.MaxTouchPoints,
+			Product:             bfFp.Navigator.Product,
+			DoNotTrack:          bfFp.Navigator.DoNotTrack,
+		},
+		Screen: ScreenFingerprint{
+			Width:       bfFp.Screen.Width,
+			Height:      bfFp.Screen.Height,
+			AvailWidth:  bfFp.Screen.AvailWidth,
+			AvailHeight: bfFp.Screen.AvailHeight,
+			AvailLeft:   bfFp.Screen.AvailLeft,
+			AvailTop:    bfFp.Screen.AvailTop,
+			ColorDepth:  bfFp.Screen.ColorDepth,
+			PixelDepth:  bfFp.Screen.PixelDepth,
+			OuterWidth:  bfFp.Screen.OuterWidth,
+			OuterHeight: bfFp.Screen.OuterHeight,
+			InnerWidth:  bfFp.Screen.InnerWidth,
+			InnerHeight: bfFp.Screen.InnerHeight,
+			ScreenX:     bfFp.Screen.ScreenX,
+			PageXOffset: bfFp.Screen.PageXOffset,
+			PageYOffset: bfFp.Screen.PageYOffset,
+		},
+	}
+
+	// Extract Accept-Encoding from headers if available
+	if acceptEncoding, ok := bfFp.Headers["Accept-Encoding"]; ok {
+		fp.Headers = HeadersFingerprint{
+			AcceptEncoding: acceptEncoding,
+		}
+	}
+
+	// Extract battery if available
+	if bfFp.Battery != nil {
+		if charging, ok := bfFp.Battery["charging"].(bool); ok {
+			fp.Battery.Charging = charging
+		}
+		if level, ok := bfFp.Battery["level"].(float64); ok {
+			fp.Battery.Level = level
+		}
+		if chargingTime, ok := bfFp.Battery["chargingTime"].(float64); ok {
+			fp.Battery.ChargingTime = chargingTime
+		}
 	}
 
 	// Cache the result
 	s.mu.Lock()
 	s.cache[cacheKey] = &cachedFingerprint{
-		fingerprint: &fp,
+		fingerprint: fp,
 		createdAt:   time.Now(),
 	}
 	s.mu.Unlock()
 
-	return &fp, nil
-}
-
-// getFingerprintScriptPath returns the path to the fingerprint generation script
-func getFingerprintScriptPath() (string, error) {
-	// Get the directory of this Go file
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("unable to get current file path")
-	}
-
-	// Navigate to the shared location: microservices/shared/scripts/generate_fingerprint.py
-	scriptPath := filepath.Join(filepath.Dir(filename), "..", "scripts", "generate_fingerprint.py")
-	return scriptPath, nil
+	return fp, nil
 }

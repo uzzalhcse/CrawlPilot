@@ -6,6 +6,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/playwright-community/playwright-go v0.5200.1
+	github.com/uzzalhcse/browserforge-go v0.0.0
 )
 
 require (
@@ -15,3 +16,5 @@ require (
 	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 )
+
+replace github.com/uzzalhcse/browserforge-go => ../browserforge-go

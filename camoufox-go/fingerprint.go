@@ -3,10 +3,8 @@ package camoufox
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strconv"
+
+	bffingerprints "github.com/uzzalhcse/browserforge-go/fingerprints"
 )
 
 // Fingerprint represents a BrowserForge-generated browser fingerprint
@@ -67,98 +65,143 @@ type BatteryFingerprint struct {
 	Level           float64  `json:"level,omitempty"`
 }
 
-// GenerateFingerprint generates a browser fingerprint using BrowserForge via Python script.
-// It calls the bundled Python script which uses browserforge to generate realistic fingerprints.
-// If browserforge is not installed, it will automatically install it.
+// fingerprintGenerator is a cached fingerprint generator instance
+var fingerprintGenerator *bffingerprints.FingerprintGenerator
+
+// getFingerprintGenerator returns a cached fingerprint generator
+func getFingerprintGenerator() (*bffingerprints.FingerprintGenerator, error) {
+	if fingerprintGenerator != nil {
+		return fingerprintGenerator, nil
+	}
+
+	gen, err := bffingerprints.NewFingerprintGenerator(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fingerprint generator: %w", err)
+	}
+	fingerprintGenerator = gen
+	return gen, nil
+}
+
+// GenerateFingerprint generates a browser fingerprint using browserforge-go.
+// This is a pure Go implementation - no Python dependency required.
 func GenerateFingerprint(os string, screen *Screen) (*Fingerprint, error) {
-	// Ensure browserforge is installed
-	if err := ensureBrowserForgeInstalled(); err != nil {
-		return nil, fmt.Errorf("failed to setup browserforge: %w", err)
-	}
-
-	scriptPath, err := getScriptPath()
+	gen, err := getFingerprintGenerator()
 	if err != nil {
-		return nil, fmt.Errorf("fingerprint script not found: %w", err)
+		return nil, err
 	}
 
-	// Build arguments
-	args := []string{scriptPath}
+	// Build generation options
+	opts := &bffingerprints.GenerateFingerprintOptions{}
+
+	// Force Firefox browser since Camoufox is Firefox-based
+	// This ensures the user-agent matches the actual browser engine
+	opts.Browsers = []interface{}{"firefox"}
+
+	// Map OS string to browserforge-go format
 	if os != "" {
-		args = append(args, os)
-	} else {
-		args = append(args, "linux")
+		switch os {
+		case "windows", "win", "win32", "win64":
+			opts.OS = []string{"windows"}
+		case "macos", "mac", "darwin", "osx":
+			opts.OS = []string{"macos"}
+		case "linux":
+			opts.OS = []string{"linux"}
+		case "android":
+			opts.OS = []string{"android"}
+		case "ios":
+			opts.OS = []string{"ios"}
+		default:
+			opts.OS = []string{os}
+		}
 	}
 
-	if screen != nil && screen.MaxWidth > 0 {
-		args = append(args, strconv.Itoa(screen.MaxWidth))
+	// Apply screen constraints
+	if screen != nil {
+		bfScreen := &bffingerprints.Screen{}
+		if screen.MinWidth > 0 {
+			bfScreen.MinWidth = &screen.MinWidth
+		}
+		if screen.MaxWidth > 0 {
+			bfScreen.MaxWidth = &screen.MaxWidth
+		}
+		if screen.MinHeight > 0 {
+			bfScreen.MinHeight = &screen.MinHeight
+		}
 		if screen.MaxHeight > 0 {
-			args = append(args, strconv.Itoa(screen.MaxHeight))
+			bfScreen.MaxHeight = &screen.MaxHeight
+		}
+		if bfScreen.MinWidth != nil || bfScreen.MaxWidth != nil ||
+			bfScreen.MinHeight != nil || bfScreen.MaxHeight != nil {
+			opts.Screen = bfScreen
 		}
 	}
 
-	// Execute Python script
-	cmd := exec.Command("python3", args...)
-	output, err := cmd.Output()
+	// Generate fingerprint using browserforge-go
+	bfFp, err := gen.Generate(opts)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("fingerprint generation failed: %s", string(exitErr.Stderr))
+		return nil, fmt.Errorf("failed to generate fingerprint: %w", err)
+	}
+
+	// Convert to camoufox Fingerprint type
+	fp := &Fingerprint{
+		Navigator: NavigatorFingerprint{
+			UserAgent:           bfFp.Navigator.UserAgent,
+			AppCodeName:         bfFp.Navigator.AppCodeName,
+			AppName:             bfFp.Navigator.AppName,
+			AppVersion:          bfFp.Navigator.AppVersion,
+			Platform:            bfFp.Navigator.Platform,
+			OsCPU:               bfFp.Navigator.Oscpu,
+			Language:            bfFp.Navigator.Language,
+			Languages:           bfFp.Navigator.Languages,
+			HardwareConcurrency: bfFp.Navigator.HardwareConcurrency,
+			MaxTouchPoints:      bfFp.Navigator.MaxTouchPoints,
+			Product:             bfFp.Navigator.Product,
+			DoNotTrack:          bfFp.Navigator.DoNotTrack,
+		},
+		Screen: ScreenFingerprint{
+			Width:       bfFp.Screen.Width,
+			Height:      bfFp.Screen.Height,
+			AvailWidth:  bfFp.Screen.AvailWidth,
+			AvailHeight: bfFp.Screen.AvailHeight,
+			AvailLeft:   bfFp.Screen.AvailLeft,
+			AvailTop:    bfFp.Screen.AvailTop,
+			ColorDepth:  bfFp.Screen.ColorDepth,
+			PixelDepth:  bfFp.Screen.PixelDepth,
+			OuterWidth:  bfFp.Screen.OuterWidth,
+			OuterHeight: bfFp.Screen.OuterHeight,
+			InnerWidth:  bfFp.Screen.InnerWidth,
+			InnerHeight: bfFp.Screen.InnerHeight,
+			ScreenX:     bfFp.Screen.ScreenX,
+			PageXOffset: bfFp.Screen.PageXOffset,
+			PageYOffset: bfFp.Screen.PageYOffset,
+		},
+	}
+
+	// Extract Accept-Encoding from headers if available
+	if acceptEncoding, ok := bfFp.Headers["Accept-Encoding"]; ok {
+		fp.Headers = HeadersFingerprint{
+			AcceptEncoding: acceptEncoding,
 		}
-		return nil, fmt.Errorf("failed to execute fingerprint script: %w", err)
 	}
 
-	// Parse JSON output
-	var fp Fingerprint
-	if err := json.Unmarshal(output, &fp); err != nil {
-		return nil, fmt.Errorf("failed to parse fingerprint JSON: %w", err)
-	}
-
-	return &fp, nil
-}
-
-// ensureBrowserForgeInstalled checks if browserforge is installed and installs it if not
-func ensureBrowserForgeInstalled() error {
-	// Check if browserforge is already installed
-	checkCmd := exec.Command("python3", "-c", "import browserforge")
-	if err := checkCmd.Run(); err != nil {
-		fmt.Println("📦 Installing browserforge (required for fingerprint generation)...")
-
-		// Try pip first, then pip3
-		pipCmd := "pip"
-		if _, err := exec.LookPath("pip"); err != nil {
-			pipCmd = "pip3"
+	// Extract battery if available
+	if bfFp.Battery != nil {
+		if charging, ok := bfFp.Battery["charging"].(bool); ok {
+			fp.Battery.Charging = charging
 		}
-
-		// Try without --break-system-packages first
-		installCmd := exec.Command(pipCmd, "install", "browserforge")
-		if err := installCmd.Run(); err != nil {
-			// Try with --break-system-packages for PEP 668 systems
-			installCmd = exec.Command(pipCmd, "install", "--break-system-packages", "browserforge")
-			if err := installCmd.Run(); err != nil {
-				// Try with --user flag
-				installCmd = exec.Command(pipCmd, "install", "--user", "browserforge")
-				if err := installCmd.Run(); err != nil {
-					return fmt.Errorf("failed to install browserforge. Please run manually: pip install browserforge")
-				}
-			}
+		if level, ok := bfFp.Battery["level"].(float64); ok {
+			fp.Battery.Level = level
 		}
-		fmt.Println("✅ browserforge installed successfully")
-	}
-	return nil
-}
-
-// getScriptPath returns the path to the fingerprint generation script
-func getScriptPath() (string, error) {
-	// Get the directory of this Go file
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("unable to get current file path")
+		if chargingTime, ok := bfFp.Battery["chargingTime"].(float64); ok {
+			fp.Battery.ChargingTime = chargingTime
+		}
 	}
 
-	scriptPath := filepath.Join(filepath.Dir(filename), "scripts", "generate_fingerprint.py")
-	return scriptPath, nil
+	return fp, nil
 }
 
 // GenerateFingerprintFromJSON creates a Fingerprint from raw JSON
+// (kept for backwards compatibility)
 func GenerateFingerprintFromJSON(data []byte) (*Fingerprint, error) {
 	var fp Fingerprint
 	if err := json.Unmarshal(data, &fp); err != nil {

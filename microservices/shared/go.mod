@@ -7,8 +7,11 @@ require (
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/spf13/viper v1.21.0
+	github.com/uzzalhcse/browserforge-go v0.0.0
 	go.uber.org/zap v1.27.0
 )
+
+replace github.com/uzzalhcse/browserforge-go => ../../browserforge-go
 
 require (
 	cloud.google.com/go v0.116.0 // indirect
