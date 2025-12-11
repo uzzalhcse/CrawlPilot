@@ -73,8 +73,12 @@ func BuildCamoufoxOptions(profile *models.BrowserProfile, headless bool) (camouf
 		opts.Headless = false // Virtual headless runs as headed in Xvfb
 	}
 
-	// Force scope access for CAPTCHA
-	if !profile.ForceScopeAccess {
+	// Force scope access for CAPTCHA - enforce if AutoCaptchaSolve is enabled
+	// ForceScopeAccess and DisableCOOP are REQUIRED for CAPTCHA solving
+	if profile.AutoCaptchaSolve {
+		opts.ForceScopeAccess = true
+		opts.DisableCOOP = true
+	} else if !profile.ForceScopeAccess {
 		opts.ForceScopeAccess = false
 	}
 

@@ -350,6 +350,17 @@ func (p *HttpPage) setCookiesByDomain(cookies []*http.Cookie) error {
 	return nil
 }
 
+// SolveCaptcha is a stub implementation for HTTP driver.
+// HTTP driver has no browser context and cannot solve CAPTCHAs.
+func (p *HttpPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
+	return false, ErrNotSupported
+}
+
+// SupportsCaptchaSolving returns false as HTTP driver has no browser context.
+func (p *HttpPage) SupportsCaptchaSolving() bool {
+	return false
+}
+
 // HttpElement implements the Element interface
 type HttpElement struct {
 	sel *goquery.Selection

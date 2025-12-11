@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"github.com/playwright-community/playwright-go"
+	captcha "github.com/uzzalhcse/camoufox-captcha-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
+	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
+	"go.uber.org/zap"
 )
 
 // ProxyKey is now defined in options.go
@@ -401,6 +404,54 @@ func (p *PlaywrightPage) SetCookies(cookies []*http.Cookie) error {
 		}
 	}
 	return p.browserCtx.AddCookies(pwCookies)
+}
+
+// SolveCaptcha attempts to detect and solve CAPTCHA challenges on the current page.
+// Implements the CaptchaSolver interface.
+// Note: Standard Playwright has limited support for closed Shadow DOM elements,
+// so this may not work for all Cloudflare challenges. Use Camoufox for full support.
+func (p *PlaywrightPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
+	// Convert to captcha package options
+	captchaOpts := captcha.SolveOptions{
+		CaptchaType:             captcha.CaptchaCloudflare,
+		ExpectedContentSelector: opts.ExpectedContentSelector,
+		Debug:                   opts.Debug,
+	}
+
+	// Map challenge type
+	switch opts.ChallengeType {
+	case "turnstile":
+		captchaOpts.ChallengeType = captcha.ChallengeTurnstile
+	default:
+		captchaOpts.ChallengeType = captcha.ChallengeInterstitial
+	}
+
+	// Set solve attempts if specified
+	if opts.SolveAttempts > 0 {
+		captchaOpts.SolveAttempts = opts.SolveAttempts
+	}
+
+	success, err := captcha.SolveCaptchaPage(p.page, captchaOpts)
+	if err != nil {
+		logger.Warn("CAPTCHA solving failed in Playwright driver",
+			zap.Error(err),
+			zap.String("note", "Standard Playwright lacks shadow DOM access; consider using Camoufox"),
+		)
+		return false, err
+	}
+
+	if success {
+		logger.Info("CAPTCHA solved successfully via Playwright driver")
+	}
+
+	return success, nil
+}
+
+// SupportsCaptchaSolving returns true but with limited support.
+// Standard Playwright cannot access closed Shadow DOM elements,
+// so Cloudflare challenges may not be solvable.
+func (p *PlaywrightPage) SupportsCaptchaSolving() bool {
+	return true // Limited support
 }
 
 // PlaywrightElement implements the Element interface

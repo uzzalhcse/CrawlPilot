@@ -55,6 +55,12 @@ func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.Browse
 		return nil, fmt.Errorf("failed to build camoufox options: %w", err)
 	}
 
+	// CRITICAL: These options MUST be true for CAPTCHA solving to work
+	// ForceScopeAccess enables shadowRootUnl for closed Shadow DOM access
+	// DisableCOOP enables cross-origin iframe access
+	opts.ForceScopeAccess = true
+	opts.DisableCOOP = true
+
 	cam, err := camoufox.NewBrowser(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create camoufox browser: %w", err)
@@ -69,6 +75,8 @@ func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.Browse
 	logger.Info("Camoufox driver initialized",
 		zap.Bool("headless", cfg.Headless),
 		zap.Bool("auto_captcha", autoCaptcha),
+		zap.Bool("force_scope_access", opts.ForceScopeAccess),
+		zap.Bool("disable_coop", opts.DisableCOOP),
 		zap.Bool("virtual_headless", opts.VirtualHeadless),
 		zap.String("geo_ip", opts.GeoIP),
 	)
@@ -183,60 +191,167 @@ func (p *CamoufoxPage) Goto(url string, options ...PageOption) error {
 	return nil
 }
 
-// trySolveCaptcha detects and attempts to solve CAPTCHA challenges
-func (p *CamoufoxPage) trySolveCaptcha() error {
-	// Wait a bit for page to stabilize
+// SolveCaptcha attempts to detect and solve CAPTCHA challenges on the current page.
+// Implements the CaptchaSolver interface.
+func (p *CamoufoxPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
+	// Quick detection FIRST - avoid waiting if no CAPTCHA present
+	challengeType := p.detectCloudflareChallenge()
+	if challengeType == "" {
+		return false, nil // No CAPTCHA detected - no delay incurred
+	}
+
+	logger.Info("Cloudflare challenge detected, attempting to solve",
+		zap.String("detected_type", challengeType),
+	)
+
+	// Wait a bit for page to stabilize only AFTER detection
 	time.Sleep(500 * time.Millisecond)
 
-	// Detect Cloudflare challenge
-	if p.detectCloudflareChallenge() {
-		logger.Info("Cloudflare challenge detected, attempting to solve")
+	// Convert to captcha package options
+	captchaOpts := captcha.SolveOptions{
+		CaptchaType:             captcha.CaptchaCloudflare,
+		ExpectedContentSelector: opts.ExpectedContentSelector,
+		Debug:                   opts.Debug,
+	}
 
-		success, err := captcha.SolveCaptchaPage(p.page, captcha.SolveOptions{
-			CaptchaType:   captcha.CaptchaCloudflare,
-			ChallengeType: captcha.ChallengeInterstitial,
-			Debug:         false,
-		})
-
-		if err != nil {
-			return fmt.Errorf("captcha solve error: %w", err)
+	// Determine challenge type - use auto-detected if not specified
+	if opts.ChallengeType != "" {
+		// User specified a type
+		switch opts.ChallengeType {
+		case "turnstile":
+			captchaOpts.ChallengeType = captcha.ChallengeTurnstile
+		default:
+			captchaOpts.ChallengeType = captcha.ChallengeInterstitial
 		}
-
-		if success {
-			logger.Info("Cloudflare challenge solved successfully")
-		} else {
-			logger.Warn("Cloudflare challenge not solved")
+	} else {
+		// Auto-detected type
+		switch challengeType {
+		case "turnstile":
+			captchaOpts.ChallengeType = captcha.ChallengeTurnstile
+		default:
+			captchaOpts.ChallengeType = captcha.ChallengeInterstitial
 		}
 	}
 
-	return nil
+	// Set solve attempts if specified
+	if opts.SolveAttempts > 0 {
+		captchaOpts.SolveAttempts = opts.SolveAttempts
+	}
+
+	logger.Debug("Attempting CAPTCHA solve",
+		zap.String("challenge_type", string(captchaOpts.ChallengeType)),
+	)
+
+	success, err := captcha.SolveCaptchaPage(p.page, captchaOpts)
+	if err != nil {
+		return false, fmt.Errorf("captcha solve error: %w", err)
+	}
+
+	// If first attempt failed and we auto-detected, try the other type
+	if !success && opts.ChallengeType == "" {
+		var alternateType captcha.ChallengeType
+		if captchaOpts.ChallengeType == captcha.ChallengeInterstitial {
+			alternateType = captcha.ChallengeTurnstile
+		} else {
+			alternateType = captcha.ChallengeInterstitial
+		}
+
+		logger.Debug("First attempt failed, trying alternate challenge type",
+			zap.String("alternate_type", string(alternateType)),
+		)
+
+		captchaOpts.ChallengeType = alternateType
+		success, err = captcha.SolveCaptchaPage(p.page, captchaOpts)
+		if err != nil {
+			return false, fmt.Errorf("captcha solve error (alternate): %w", err)
+		}
+	}
+
+	if success {
+		logger.Info("Cloudflare challenge solved successfully")
+	} else {
+		logger.Warn("Cloudflare challenge not solved")
+	}
+
+	return success, nil
+}
+
+// SupportsCaptchaSolving returns true as Camoufox has full CAPTCHA solving support
+// via shadowRootUnl for accessing closed Shadow DOM elements.
+func (p *CamoufoxPage) SupportsCaptchaSolving() bool {
+	return true
+}
+
+// trySolveCaptcha is an internal wrapper for auto CAPTCHA solving during navigation.
+// Uses default options with auto-detection for backward compatibility.
+func (p *CamoufoxPage) trySolveCaptcha() error {
+	// Use empty ChallengeType to trigger auto-detection
+	// Enable Debug to see detailed solver logs
+	_, err := p.SolveCaptcha(CaptchaSolveOptions{
+		CaptchaType:   "cloudflare",
+		ChallengeType: "", // Auto-detect
+		SolveAttempts: 3,
+		Debug:         true, // Enable debug logging to see solver details
+	})
+	return err
 }
 
 // detectCloudflareChallenge checks if the page has a Cloudflare challenge
-func (p *CamoufoxPage) detectCloudflareChallenge() bool {
-	// Check for common Cloudflare indicators
-	content, err := p.page.Content()
-	if err != nil {
-		return false
+// Returns the detected challenge type: "turnstile", "interstitial", or "" if none
+// Detection logic based on playwright-captcha Python repo
+func (p *CamoufoxPage) detectCloudflareChallenge() string {
+	// Use CSS selector-based detection for reliability (from playwright-captcha)
+
+	// Check for INTERSTITIAL first (full-page challenge) - this is the more common case
+	// Key selector: script[src*="/cdn-cgi/challenge-platform/"]
+	interstitialSelectors := []string{
+		`script[src*="/cdn-cgi/challenge-platform/"]`,
+	}
+	for _, selector := range interstitialSelectors {
+		el, err := p.page.QuerySelector(selector)
+		if err == nil && el != nil {
+			return "interstitial"
+		}
 	}
 
-	// Check for Cloudflare challenge markers
-	indicators := []string{
-		"cf-turnstile",
+	// Check for TURNSTILE (embedded widget captcha)
+	// Key selectors from playwright-captcha
+	turnstileSelectors := []string{
+		`input[name="cf-turnstile-response"]`,
+		`script[src*="challenges.cloudflare.com/turnstile"]`,
+	}
+	for _, selector := range turnstileSelectors {
+		el, err := p.page.QuerySelector(selector)
+		if err == nil && el != nil {
+			return "turnstile"
+		}
+	}
+
+	// Fallback: Check page content for additional indicators
+	content, err := p.page.Content()
+	if err != nil {
+		return ""
+	}
+
+	// Additional interstitial indicators (text-based fallback)
+	interstitialIndicators := []string{
 		"cf_chl_opt",
 		"challenge-running",
 		"Just a moment",
 		"Checking your browser",
-		"cf-challenge",
 	}
-
-	for _, indicator := range indicators {
+	for _, indicator := range interstitialIndicators {
 		if containsString(content, indicator) {
-			return true
+			return "interstitial"
 		}
 	}
 
-	return false
+	// Additional turnstile indicators (text-based fallback)
+	if containsString(content, "cf-turnstile") {
+		return "turnstile"
+	}
+
+	return ""
 }
 
 // containsString is a simple substring check

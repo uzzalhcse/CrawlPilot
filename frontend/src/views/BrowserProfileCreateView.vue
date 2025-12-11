@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useBrowserProfilesStore } from '@/stores/browserProfiles'
 import { browserProfilesApi } from '@/api/browserProfiles'
@@ -128,6 +128,14 @@ const generateRandomFingerprint = async () => {
     loading.value = false
   }
 }
+
+// Auto-enable force_scope_access when auto_captcha_solve is enabled
+// force_scope_access is REQUIRED for CAPTCHA solving to work
+watch(() => formData.value.auto_captcha_solve, (newVal) => {
+  if (newVal) {
+    formData.value.force_scope_access = true
+  }
+})
 
 const testBrowserConfig = async () => {
   testing.value = true
@@ -322,12 +330,16 @@ const handleCancel = () => {
               <Switch v-model="formData.virtual_headless" />
             </div>
 
-            <div class="flex items-center justify-between border p-3 rounded-lg">
+            <div class="flex items-center justify-between border p-3 rounded-lg" :class="{ 'opacity-60': formData.auto_captcha_solve }">
               <div class="space-y-0.5">
                 <Label>Force Scope Access</Label>
-                <p class="text-xs text-muted-foreground">Access closed Shadow DOM (for CAPTCHA)</p>
+                <p class="text-xs text-muted-foreground">
+                  {{ formData.auto_captcha_solve 
+                    ? 'Required for Auto CAPTCHA Solve (auto-enabled)' 
+                    : 'Access closed Shadow DOM (for CAPTCHA)' }}
+                </p>
               </div>
-              <Switch v-model="formData.force_scope_access" />
+              <Switch v-model="formData.force_scope_access" :disabled="formData.auto_captcha_solve" />
             </div>
 
             <div class="flex items-center justify-between border p-3 rounded-lg">

@@ -677,6 +677,19 @@ func (p *ChromedpPage) SetCookies(cookies []*http.Cookie) error {
 	}))
 }
 
+// SolveCaptcha is a stub implementation for ChromeDP.
+// ChromeDP / CDP lacks the shadow DOM APIs (shadowRootUnl) required for reliable
+// Cloudflare CAPTCHA solving. For CAPTCHA support, use the Camoufox driver.
+func (p *ChromedpPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
+	return false, ErrNotSupported
+}
+
+// SupportsCaptchaSolving returns false as ChromeDP cannot reliably solve CAPTCHAs.
+// CDP lacks access to closed Shadow DOM elements which are used by Cloudflare.
+func (p *ChromedpPage) SupportsCaptchaSolving() bool {
+	return false
+}
+
 // ChromedpElement implements the Element interface
 type ChromedpElement struct {
 	ctx  context.Context
