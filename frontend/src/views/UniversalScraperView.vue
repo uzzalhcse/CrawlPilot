@@ -24,18 +24,19 @@ import {
 } from '@/api/scraper'
 
 // State
-const url = ref('https://example.com/products')
+const url = ref('https://aqua-has.com/product/dms10a/')
 const advancedSettingsOpen = ref(false)
 const selectedOutputFormat = ref('html')
 const isRunning = ref(false)
 const hasResult = ref(false)
 const timeout = ref(30)
 const waitForSelector = ref('')
+const headless = ref(true)
 const error = ref('')
 
 // Check if any advanced settings are modified from defaults
 const hasAdvancedSettings = computed(() => {
-  return timeout.value !== 30 || waitForSelector.value !== ''
+  return timeout.value !== 30 || waitForSelector.value !== '' || !headless.value
 })
 
 // Driver & Profile selection
@@ -119,7 +120,8 @@ const runScraper = async () => {
       profile_id: selectedProfile.value || undefined,
       output_format: selectedOutputFormat.value,
       timeout: timeout.value,
-      wait_for_selector: waitForSelector.value || undefined
+      wait_for_selector: waitForSelector.value || undefined,
+      headless: selectedDriver.value !== 'http' ? headless.value : undefined
     })
 
     // Poll for result
@@ -296,6 +298,19 @@ const runScraper = async () => {
                     class="w-full px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-xs"
                   />
                   <p class="text-[10px] text-muted-foreground/70 mt-1">Wait for element before extracting content</p>
+                  
+                  <!-- Headless Toggle -->
+                  <label class="flex items-center gap-3 cursor-pointer group mt-4">
+                    <input
+                      v-model="headless"
+                      type="checkbox"
+                      class="w-4 h-4 rounded border-input text-primary focus:ring-primary/50"
+                    />
+                    <div>
+                      <span class="text-sm font-medium group-hover:text-foreground transition-colors">Headless Mode</span>
+                      <p class="text-[10px] text-muted-foreground/70">Run browser without visible window (faster)</p>
+                    </div>
+                  </label>
                 </div>
               </div>
             </div>

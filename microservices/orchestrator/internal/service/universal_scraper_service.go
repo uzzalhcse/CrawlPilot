@@ -74,6 +74,27 @@ func NewUniversalScraperService(
 
 // SubmitScrape publishes a scrape request to the queue and stores initial status in cache
 func (s *UniversalScraperService) SubmitScrape(ctx context.Context, req *models.ScrapeRequest) error {
+	// If profile ID is provided, fetch and embed the profile
+	if req.ProfileID != "" && s.profileRepo != nil {
+		profile, err := s.profileRepo.Get(ctx, req.ProfileID)
+		if err != nil {
+			logger.Warn("Failed to fetch profile, using default settings",
+				zap.String("profile_id", req.ProfileID),
+				zap.Error(err),
+			)
+		} else {
+			req.Profile = profile
+			// Use profile's driver type if not explicitly specified
+			if req.Driver == "" || req.Driver == "http" {
+				req.Driver = profile.DriverType
+			}
+			logger.Info("Embedded profile in scrape request",
+				zap.String("profile_id", req.ProfileID),
+				zap.String("profile_name", profile.Name),
+			)
+		}
+	}
+
 	// Store initial pending status in Redis
 	result := &models.ScrapeResult{
 		ID:     req.ID,

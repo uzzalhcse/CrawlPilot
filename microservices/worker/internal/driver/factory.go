@@ -19,47 +19,69 @@ func NewFactory(cfg *config.BrowserConfig) *Factory {
 	}
 }
 
-// CreateDriver creates a new driver instance based on default config
+// CreateDriver creates a new driver instance using default config settings
 func (f *Factory) CreateDriver() (Driver, error) {
-	switch f.config.Driver {
-	case "http":
-		return NewHttpDriver(), nil
-	case "playwright", "": // Default to playwright
-		return NewPlaywrightDriver(f.config)
-	case "chromedp":
-		return NewChromedpDriver(f.config), nil
-	case "camoufox":
-		return NewCamoufoxDriver(f.config)
-	default:
-		return nil, fmt.Errorf("unknown driver type: %s", f.config.Driver)
-	}
+	return f.createDriverWithConfig(f.config, nil)
 }
 
-// CreateDriverFromProfile creates a driver based on browser profile configuration
-// This enables dynamic driver selection per-task based on profile settings
+// CreateDriverFromProfile creates a driver using profile settings
+// The config's headless setting is used by default
 func (f *Factory) CreateDriverFromProfile(profile *models.BrowserProfile) (Driver, error) {
 	if profile == nil {
 		return f.CreateDriver()
 	}
+	return f.createDriverWithConfig(f.config, profile)
+}
 
-	// Validate driver/browser combinations
-	if err := profile.Validate(); err != nil {
-		return nil, err
+// CreateDriverFromProfileWithHeadless creates a driver with explicit headless override
+// Use this for scrape requests where headless mode is specified per-request
+func (f *Factory) CreateDriverFromProfileWithHeadless(profile *models.BrowserProfile, headless bool) (Driver, error) {
+	// Create config copy with overridden headless
+	cfgCopy := *f.config
+	cfgCopy.Headless = headless
+
+	if profile == nil {
+		profile = &models.BrowserProfile{DriverType: f.config.Driver}
+	}
+	return f.createDriverWithConfig(&cfgCopy, profile)
+}
+
+// createDriverWithConfig is the internal method that creates drivers
+// All public methods delegate to this to avoid code duplication
+func (f *Factory) createDriverWithConfig(cfg *config.BrowserConfig, profile *models.BrowserProfile) (Driver, error) {
+	// Determine driver type - prefer profile, fall back to config
+	driverType := cfg.Driver
+	if profile != nil && profile.DriverType != "" {
+		driverType = profile.DriverType
 	}
 
-	switch profile.DriverType {
+	// Validate profile if provided
+	if profile != nil && profile.Name != "" {
+		if err := profile.Validate(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Create driver based on type
+	switch driverType {
 	case "http":
 		return NewHttpDriver(), nil
 	case "chromedp":
-		// Chromedp only supports Chromium - validation done by profile.Validate()
-		return NewChromedpDriverWithProfile(f.config, profile)
+		if profile != nil {
+			return NewChromedpDriverWithProfile(cfg, profile)
+		}
+		return NewChromedpDriver(cfg), nil
 	case "playwright", "":
-		// Playwright supports all browser types
-		return NewPlaywrightDriverWithProfile(f.config, profile)
+		if profile != nil {
+			return NewPlaywrightDriverWithProfile(cfg, profile)
+		}
+		return NewPlaywrightDriver(cfg)
 	case "camoufox":
-		// Camoufox anti-detect browser with auto CAPTCHA solving
-		return NewCamoufoxDriverWithProfile(f.config, profile)
+		if profile != nil {
+			return NewCamoufoxDriverWithProfile(cfg, profile)
+		}
+		return NewCamoufoxDriver(cfg)
 	default:
-		return nil, fmt.Errorf("unknown driver type: %s", profile.DriverType)
+		return nil, fmt.Errorf("unknown driver type: %s", driverType)
 	}
 }

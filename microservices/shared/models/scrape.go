@@ -4,15 +4,17 @@ import "time"
 
 // ScrapeRequest represents a single URL scrape request
 type ScrapeRequest struct {
-	ID              string    `json:"id"`
-	URL             string    `json:"url"`
-	Driver          string    `json:"driver"`            // camoufox, playwright, http
-	ProfileID       string    `json:"profile_id"`        // Browser profile ID
-	OutputFormat    string    `json:"output_format"`     // html, markdown, screenshot
-	Timeout         int       `json:"timeout"`           // Timeout in seconds
-	WaitForSelector string    `json:"wait_for_selector"` // CSS selector to wait for
-	Status          string    `json:"status"`            // pending, running, completed, failed
-	CreatedAt       time.Time `json:"created_at"`
+	ID              string          `json:"id"`
+	URL             string          `json:"url"`
+	Driver          string          `json:"driver"`            // camoufox, playwright, http
+	ProfileID       string          `json:"profile_id"`        // Browser profile ID
+	Profile         *BrowserProfile `json:"profile,omitempty"` // Embedded profile data (populated by orchestrator)
+	OutputFormat    string          `json:"output_format"`     // html, markdown, screenshot
+	Timeout         int             `json:"timeout"`           // Timeout in seconds
+	WaitForSelector string          `json:"wait_for_selector"` // CSS selector to wait for
+	Headless        bool            `json:"headless"`          // Run browser in headless mode
+	Status          string          `json:"status"`            // pending, running, completed, failed
+	CreatedAt       time.Time       `json:"created_at"`
 }
 
 // ScrapeResult represents the result of a scrape request
@@ -36,6 +38,7 @@ type ScrapeRequestInput struct {
 	OutputFormat    string `json:"output_format"`     // html, markdown, screenshot (default: html)
 	Timeout         int    `json:"timeout"`           // Timeout in seconds (default: 30)
 	WaitForSelector string `json:"wait_for_selector"` // Optional CSS selector to wait for
+	Headless        *bool  `json:"headless"`          // Run browser in headless mode (default: true)
 }
 
 // ValidateAndSetDefaults validates input and sets default values

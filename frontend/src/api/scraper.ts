@@ -8,6 +8,7 @@ export interface ScrapeRequest {
     output_format: string
     timeout?: number
     wait_for_selector?: string
+    headless?: boolean
 }
 
 export interface ScrapeResponse {

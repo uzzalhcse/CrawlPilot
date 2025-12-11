@@ -42,6 +42,12 @@ func (h *UniversalScraperHandler) Scrape(c *fiber.Ctx) error {
 	input.ValidateAndSetDefaults()
 
 	// Create scrape request
+	// Default headless to true if not specified
+	headless := true
+	if input.Headless != nil {
+		headless = *input.Headless
+	}
+
 	req := &models.ScrapeRequest{
 		ID:              uuid.New().String(),
 		URL:             input.URL,
@@ -50,6 +56,7 @@ func (h *UniversalScraperHandler) Scrape(c *fiber.Ctx) error {
 		OutputFormat:    input.OutputFormat,
 		Timeout:         input.Timeout,
 		WaitForSelector: input.WaitForSelector,
+		Headless:        headless,
 		Status:          models.ScrapeStatusPending,
 	}
 

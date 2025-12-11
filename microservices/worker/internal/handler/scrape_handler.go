@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/pubsub"
@@ -149,8 +151,25 @@ func (h *ScrapeHandler) executeScrape(ctx context.Context, req *models.ScrapeReq
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Create driver based on type
-	d, err := h.createDriverByType(req.Driver)
+	// Create driver with explicit headless override from request
+	var d driver.Driver
+	var err error
+	if req.Profile != nil {
+		// Use the full profile settings (proxy, fingerprint, etc.) with headless override
+		d, err = h.driverFactory.CreateDriverFromProfileWithHeadless(req.Profile, req.Headless)
+		if err == nil {
+			logger.Info("Created driver from profile",
+				zap.String("profile_id", req.ProfileID),
+				zap.String("profile_name", req.Profile.Name),
+				zap.String("driver_type", req.Profile.DriverType),
+				zap.Bool("headless", req.Headless),
+			)
+		}
+	} else {
+		// No profile - create with default settings based on driver type
+		d, err = h.createDriverByType(req.Driver, req.Headless)
+	}
+
 	if err != nil {
 		result.Status = models.ScrapeStatusFailed
 		result.Error = fmt.Sprintf("Failed to create driver: %v", err)
@@ -255,21 +274,114 @@ func (h *ScrapeHandler) sendResult(ctx context.Context, result *models.ScrapeRes
 	return nil
 }
 
-// htmlToMarkdown performs basic HTML to Markdown conversion
-// For production, consider using a library like gomarkdown/markdown
+// htmlToMarkdown converts HTML to Markdown format (Zenrows-style clean output)
+// Removes: scripts, styles, nav, footer, ads - keeps only main content
 func htmlToMarkdown(html string) string {
-	// This is a simple placeholder - in production use a proper library
-	// For now, just return the raw HTML with a note
-	return "<!-- Converted from HTML -->\n\n" + html
+	result := html
+
+	// Remove scripts, styles, and head section
+	result = removeTagContent(result, "script")
+	result = removeTagContent(result, "style")
+	result = removeTagContent(result, "head")
+
+	// Remove boilerplate/navigation elements (Zenrows-style)
+	result = removeTagContent(result, "nav")
+	result = removeTagContent(result, "footer")
+	result = removeTagContent(result, "header")
+	result = removeTagContent(result, "aside")
+	result = removeTagContent(result, "form")
+	result = removeTagContent(result, "iframe")
+	result = removeTagContent(result, "noscript")
+	result = removeTagContent(result, "svg")
+
+	// Convert headings
+	for i := 6; i >= 1; i-- {
+		prefix := strings.Repeat("#", i) + " "
+		result = replaceTag(result, fmt.Sprintf("h%d", i), prefix, "\n\n")
+	}
+
+	// Convert links: <a href="url">text</a> -> [text](url)
+	linkRegex := regexp.MustCompile(`<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)</a>`)
+	result = linkRegex.ReplaceAllString(result, "[$2]($1)")
+
+	// Convert images: <img src="url" alt="text"> -> ![text](url)
+	imgRegex := regexp.MustCompile(`<img[^>]*src=["']([^"']*)["'][^>]*alt=["']([^"']*)["'][^>]*/?>`)
+	result = imgRegex.ReplaceAllString(result, "![$2]($1)")
+	imgRegex2 := regexp.MustCompile(`<img[^>]*alt=["']([^"']*)["'][^>]*src=["']([^"']*)["'][^>]*/?>`)
+	result = imgRegex2.ReplaceAllString(result, "![$1]($2)")
+
+	// Convert bold
+	result = replaceTag(result, "strong", "**", "**")
+	result = replaceTag(result, "b", "**", "**")
+
+	// Convert italic
+	result = replaceTag(result, "em", "*", "*")
+	result = replaceTag(result, "i", "*", "*")
+
+	// Convert code
+	result = replaceTag(result, "code", "`", "`")
+
+	// Convert pre/code blocks
+	preRegex := regexp.MustCompile(`<pre[^>]*><code[^>]*>(.*?)</code></pre>`)
+	result = preRegex.ReplaceAllString(result, "\n```\n$1\n```\n")
+	result = replaceTag(result, "pre", "\n```\n", "\n```\n")
+
+	// Convert lists
+	ulRegex := regexp.MustCompile(`<li[^>]*>(.*?)</li>`)
+	result = ulRegex.ReplaceAllString(result, "- $1\n")
+	result = replaceTag(result, "ul", "\n", "\n")
+	result = replaceTag(result, "ol", "\n", "\n")
+
+	// Convert paragraphs and divs
+	result = replaceTag(result, "p", "", "\n\n")
+	result = replaceTag(result, "div", "", "\n")
+	result = replaceTag(result, "br", "", "\n")
+
+	// Remove remaining HTML tags
+	tagRegex := regexp.MustCompile(`<[^>]*>`)
+	result = tagRegex.ReplaceAllString(result, "")
+
+	// Decode common HTML entities
+	result = strings.ReplaceAll(result, "&amp;", "&")
+	result = strings.ReplaceAll(result, "&lt;", "<")
+	result = strings.ReplaceAll(result, "&gt;", ">")
+	result = strings.ReplaceAll(result, "&quot;", "\"")
+	result = strings.ReplaceAll(result, "&apos;", "'")
+	result = strings.ReplaceAll(result, "&nbsp;", " ")
+
+	// Clean up whitespace
+	multipleNewlines := regexp.MustCompile(`\n{3,}`)
+	result = multipleNewlines.ReplaceAllString(result, "\n\n")
+	result = strings.TrimSpace(result)
+
+	return result
+}
+
+// removeTagContent removes a tag and its content (including multi-line)
+func removeTagContent(html, tag string) string {
+	// (?s) makes . match newlines for multi-line content like <script>...</script>
+	regex := regexp.MustCompile(fmt.Sprintf(`(?si)<%s[^>]*>.*?</%s>`, tag, tag))
+	return regex.ReplaceAllString(html, "")
+}
+
+// replaceTag replaces an HTML tag with markdown equivalents
+func replaceTag(html, tag, prefix, suffix string) string {
+	// Handle self-closing and regular tags
+	openRegex := regexp.MustCompile(fmt.Sprintf(`<%s[^>]*>`, tag))
+	closeRegex := regexp.MustCompile(fmt.Sprintf(`</%s>`, tag))
+
+	result := openRegex.ReplaceAllString(html, prefix)
+	result = closeRegex.ReplaceAllString(result, suffix)
+	return result
 }
 
 // createDriverByType creates a driver instance based on driver type name
-func (h *ScrapeHandler) createDriverByType(driverType string) (driver.Driver, error) {
+func (h *ScrapeHandler) createDriverByType(driverType string, headless bool) (driver.Driver, error) {
 	// Create a temporary profile with the driver type
 	profile := &models.BrowserProfile{
 		Name:       "scrape-temp", // Required by validation
 		DriverType: driverType,
 	}
 	profile.SetDefaults() // Set screen size, browser type, etc.
-	return h.driverFactory.CreateDriverFromProfile(profile)
+	return h.driverFactory.CreateDriverFromProfileWithHeadless(profile, headless)
 }
