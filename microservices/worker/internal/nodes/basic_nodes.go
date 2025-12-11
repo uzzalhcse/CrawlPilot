@@ -95,8 +95,51 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 		zap.String("url", url),
 	)
 
-	// Optional: Wait for specific selector
-	if waitSelector, ok := node.Params["wait_selector"].(string); ok && waitSelector != "" {
+	// Get wait_selector for content verification (used for both CAPTCHA and normal wait)
+	waitSelector, hasWaitSelector := node.Params["wait_selector"].(string)
+
+	// Automatic CAPTCHA solving: Check if driver supports CAPTCHA solving
+	// This handles Cloudflare challenges transparently without workflow changes
+	if captchaSolver, ok := execCtx.Page.(driver.CaptchaSolver); ok && captchaSolver.SupportsCaptchaSolving() {
+		// Prepare CAPTCHA solve options
+		captchaOpts := driver.DefaultCaptchaSolveOptions()
+		captchaOpts.Timeout = time.Duration(timeout) * time.Millisecond
+
+		// Use wait_selector as expected content selector (proves real content loaded after solve)
+		if hasWaitSelector && waitSelector != "" {
+			captchaOpts.ExpectedContentSelector = waitSelector
+		}
+
+		// Check for debug flag
+		if debug, ok := node.Params["captcha_debug"].(bool); ok {
+			captchaOpts.Debug = debug
+		}
+
+		logger.Debug("Attempting automatic CAPTCHA detection and solving",
+			zap.String("url", url),
+			zap.String("expected_content", captchaOpts.ExpectedContentSelector),
+		)
+
+		solved, solveErr := captchaSolver.SolveCaptcha(captchaOpts)
+		if solveErr != nil {
+			logger.Warn("CAPTCHA solving encountered an error (continuing anyway)",
+				zap.Error(solveErr),
+				zap.String("url", url),
+			)
+			// Don't fail navigation on CAPTCHA errors - might not be a CAPTCHA page
+		} else if solved {
+			logger.Info("CAPTCHA solved successfully, page content should be accessible",
+				zap.String("url", url),
+			)
+		} else {
+			logger.Debug("No CAPTCHA detected or already solved",
+				zap.String("url", url),
+			)
+		}
+	}
+
+	// Optional: Wait for specific selector (after CAPTCHA solving if applicable)
+	if hasWaitSelector && waitSelector != "" {
 		logger.Debug("Waiting for selector", zap.String("selector", waitSelector))
 
 		if err := execCtx.Page.WaitForSelector(waitSelector,

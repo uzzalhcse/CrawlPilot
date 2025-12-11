@@ -20,10 +20,9 @@ import (
 
 // CamoufoxDriver implements the Driver interface using camoufox-go anti-detect browser
 type CamoufoxDriver struct {
-	camoufox    *camoufox.Camoufox
-	config      *config.BrowserConfig
-	profile     *models.BrowserProfile
-	autoCaptcha bool // Enable auto CAPTCHA solving middleware
+	camoufox *camoufox.Camoufox
+	config   *config.BrowserConfig
+	profile  *models.BrowserProfile
 }
 
 // CamoufoxOptions for configuring the driver
@@ -31,7 +30,6 @@ type CamoufoxOptions struct {
 	GeoIP            string // "auto" or IP address for geolocation
 	VirtualHeadless  bool   // Use Xvfb virtual display
 	ForceScopeAccess bool   // Enable shadow DOM access for CAPTCHA
-	AutoCaptcha      bool   // Enable auto CAPTCHA solving
 	BlockImages      bool   // Block image loading
 	BlockWebGL       bool   // Block WebGL
 	BlockWebRTC      bool   // Block WebRTC
@@ -66,15 +64,8 @@ func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.Browse
 		return nil, fmt.Errorf("failed to create camoufox browser: %w", err)
 	}
 
-	// Determine auto captcha setting (default: true)
-	autoCaptcha := true
-	if profile != nil && !profile.AutoCaptchaSolve {
-		autoCaptcha = false
-	}
-
 	logger.Info("Camoufox driver initialized",
 		zap.Bool("headless", cfg.Headless),
-		zap.Bool("auto_captcha", autoCaptcha),
 		zap.Bool("force_scope_access", opts.ForceScopeAccess),
 		zap.Bool("disable_coop", opts.DisableCOOP),
 		zap.Bool("virtual_headless", opts.VirtualHeadless),
@@ -82,10 +73,9 @@ func newCamoufoxDriverInternal(cfg *config.BrowserConfig, profile *models.Browse
 	)
 
 	return &CamoufoxDriver{
-		camoufox:    cam,
-		config:      cfg,
-		profile:     profile,
-		autoCaptcha: autoCaptcha,
+		camoufox: cam,
+		config:   cfg,
+		profile:  profile,
 	}, nil
 }
 
@@ -114,9 +104,8 @@ func (d *CamoufoxDriver) NewPage(ctx context.Context) (Page, error) {
 	}
 
 	return &CamoufoxPage{
-		page:        page,
-		camoufox:    d.camoufox,
-		autoCaptcha: d.autoCaptcha,
+		page:     page,
+		camoufox: d.camoufox,
 	}, nil
 }
 
@@ -131,13 +120,12 @@ func (d *CamoufoxDriver) Name() string {
 	return "camoufox"
 }
 
-// CamoufoxPage implements the Page interface with auto CAPTCHA middleware
+// CamoufoxPage implements the Page interface
 type CamoufoxPage struct {
-	page        playwright.Page
-	camoufox    *camoufox.Camoufox
-	autoCaptcha bool
-	closed      bool
-	mu          sync.Mutex
+	page     playwright.Page
+	camoufox *camoufox.Camoufox
+	closed   bool
+	mu       sync.Mutex
 }
 
 func (p *CamoufoxPage) Close() error {
@@ -156,7 +144,7 @@ func (p *CamoufoxPage) DriverName() string {
 	return "camoufox"
 }
 
-// Goto navigates to the URL with auto CAPTCHA detection and solving middleware
+// Goto navigates to the URL
 func (p *CamoufoxPage) Goto(url string, options ...PageOption) error {
 	opts := &PageOptions{}
 	for _, opt := range options {
@@ -173,22 +161,7 @@ func (p *CamoufoxPage) Goto(url string, options ...PageOption) error {
 	}
 
 	_, err := p.page.Goto(url, pwOpts)
-	if err != nil {
-		return err
-	}
-
-	// Auto CAPTCHA solving middleware
-	if p.autoCaptcha {
-		if err := p.trySolveCaptcha(); err != nil {
-			logger.Warn("Auto CAPTCHA solving attempt failed",
-				zap.String("url", url),
-				zap.Error(err),
-			)
-			// Don't return error - CAPTCHA solving is best-effort
-		}
-	}
-
-	return nil
+	return err
 }
 
 // SolveCaptcha attempts to detect and solve CAPTCHA challenges on the current page.
@@ -280,20 +253,6 @@ func (p *CamoufoxPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
 // via shadowRootUnl for accessing closed Shadow DOM elements.
 func (p *CamoufoxPage) SupportsCaptchaSolving() bool {
 	return true
-}
-
-// trySolveCaptcha is an internal wrapper for auto CAPTCHA solving during navigation.
-// Uses default options with auto-detection for backward compatibility.
-func (p *CamoufoxPage) trySolveCaptcha() error {
-	// Use empty ChallengeType to trigger auto-detection
-	// Enable Debug to see detailed solver logs
-	_, err := p.SolveCaptcha(CaptchaSolveOptions{
-		CaptchaType:   "cloudflare",
-		ChallengeType: "", // Auto-detect
-		SolveAttempts: 3,
-		Debug:         true, // Enable debug logging to see solver details
-	})
-	return err
 }
 
 // detectCloudflareChallenge checks if the page has a Cloudflare challenge

@@ -48,10 +48,10 @@ gcp:
   scrape_subscription: "scrape-tasks-sub"
 
 browser:
-  pool_size: 5         # Increased from 2 for parallel scraping
+  pool_size: 3         # Increased from 2 for parallel scraping
   headless: false        # Always headless in production
   timeout: 30000        # 30s (reduced from 60s for faster failures)
-  max_concurrency: 5   # Realistic limit per worker instance
+  max_concurrency: 3   # Realistic limit per worker instance
   context_lifetime: 120 # Recycle contexts every 2 min to prevent memory leaks
   driver: "playwright"  # "playwright" (default) or "http"
   log_warnings: true   # Enable warning logging (default: false)

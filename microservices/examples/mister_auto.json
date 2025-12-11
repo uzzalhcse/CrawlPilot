@@ -18,7 +18,8 @@
                         "type": "navigate",
                         "name": "Navigate to Homepage",
                         "params": {
-                            "url": "{{start_url}}"
+                            "url": "{{start_url}}",
+                            "wait_selector": "ul.container.fx-items-center.ma-list"
                         }
                     },
                     {
@@ -52,7 +53,7 @@
                         "name": "Navigate to Category Page",
                         "params": {
                             "url": "{{current_url}}",
-                            "driver": "chromedp"
+                            "wait_selector": "#cs-product-listing"
                         }
                     },
                     {
@@ -60,7 +61,7 @@
                         "type": "extract_links",
                         "name": "Extract Product Links",
                         "params": {
-                            "selector": ".vertical-product a.ma-links",
+                            "selector": "#cs-product-listing a.display-h3-title--std,.vertical-product a.ma-links",
                             "marker": "product",
                             "limit": 5
                         },
@@ -88,7 +89,7 @@
                         "name": "Navigate to Product Page",
                         "params": {
                             "url": "{{current_url}}",
-                            "driver": "http"
+                            "wait_selector": "#product-item-main-container"
                         }
                     },
                     {
@@ -105,6 +106,12 @@
                                 },
                                 "product_name": {
                                     "selector": "#product-item-main-container .abt-listing-title",
+                                    "type": "text",
+                                    "transform": "trim",
+                                    "required": true
+                                },
+                                "price": {
+                                    "selector": "#product-item-main-container .medium-price--std",
                                     "type": "text",
                                     "transform": "trim",
                                     "required": true
