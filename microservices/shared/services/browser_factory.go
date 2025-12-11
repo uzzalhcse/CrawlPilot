@@ -122,15 +122,19 @@ func BuildCamoufoxOptions(profile *models.BrowserProfile, headless bool) (camouf
 	}
 
 	// Timezone
-	if profile.Timezone != "" {
+	// If GeoIP is "auto", we let Camoufox detect the timezone from the IP
+	if profile.GeoIP != "auto" && profile.Timezone != "" {
 		opts.Timezone = profile.Timezone
 	}
 
 	// Locale/Languages
-	if profile.Locale != "" {
-		opts.Locale = []string{profile.Locale}
-	} else if len(profile.Languages) > 0 {
-		opts.Locale = profile.Languages
+	// If GeoIP is "auto", we let Camoufox detect the locale from the IP
+	if profile.GeoIP != "auto" {
+		if profile.Locale != "" {
+			opts.Locale = []string{profile.Locale}
+		} else if len(profile.Languages) > 0 {
+			opts.Locale = profile.Languages
+		}
 	}
 
 	// Proxy configuration with URL validation
