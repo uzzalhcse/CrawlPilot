@@ -35,6 +35,9 @@ gcp:
   # Batch publishing settings
   pubsub_publish_batch_size: 100   # Messages per batch
   pubsub_publish_timeout: 10       # Seconds
+  # Universal Scraper (dedicated topic for single-URL requests)
+  scrape_topic: "scrape-tasks"
+  scrape_subscription: "scrape-tasks-sub"
 
 browser:
   pool_size: 2         # Orchestrator doesn't use browser pool

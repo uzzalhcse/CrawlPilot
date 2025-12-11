@@ -85,6 +85,10 @@ type GCPConfig struct {
 	PubSubDLQSubscription     string `mapstructure:"pubsub_dlq_subscription"`      // DLQ subscription for monitoring
 	PubSubMaxDeliveryAttempts int    `mapstructure:"pubsub_max_delivery_attempts"` // Attempts before DLQ (default: 5)
 
+	// Scrape Request Topic (dedicated topic for Universal Scraper)
+	ScrapeTopic        string `mapstructure:"scrape_topic"`        // Topic for scrape requests (default: scrape-tasks)
+	ScrapeSubscription string `mapstructure:"scrape_subscription"` // Subscription for scrape workers
+
 	// Cloud Storage
 	StorageEnabled bool   `mapstructure:"storage_enabled"` // Enable/disable cloud storage
 	StorageBucket  string `mapstructure:"storage_bucket"`

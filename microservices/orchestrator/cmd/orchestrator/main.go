@@ -20,6 +20,7 @@ import (
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/database"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
+	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/shared/queue"
 )
 
@@ -303,6 +304,38 @@ func main() {
 	schedules.Delete("/:id", scheduleHandler.DeleteSchedule)
 	schedules.Patch("/:id/toggle", scheduleHandler.ToggleSchedule)
 	schedules.Post("/:id/run", scheduleHandler.RunNow)
+
+	// Initialize universal scraper service and handler
+	scraperSvc, err := service.NewUniversalScraperService(ctx, &cfg.GCP, browserProfileRepo, redisCache)
+	if err != nil {
+		logger.Warn("Universal scraper service not available", zap.Error(err))
+	}
+	var scraperHandler *handlers.UniversalScraperHandler
+	if scraperSvc != nil {
+		scraperHandler = handlers.NewUniversalScraperHandler(scraperSvc)
+		defer scraperSvc.Close()
+	}
+
+	// Universal Scraper routes
+	if scraperHandler != nil {
+		scraper := api.Group("/scrape")
+		scraper.Post("/", scraperHandler.Scrape)
+		scraper.Get("/drivers", scraperHandler.ListDrivers)
+		scraper.Get("/profiles", scraperHandler.ListProfiles)
+		scraper.Get("/:id", scraperHandler.GetResult)
+
+		// Internal endpoint for worker to store results
+		internal.Post("/scrape/result", func(c *fiber.Ctx) error {
+			var result models.ScrapeResult
+			if err := c.BodyParser(&result); err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
+			}
+			if err := scraperSvc.StoreResult(c.Context(), &result); err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			}
+			return c.JSON(fiber.Map{"status": "ok"})
+		})
+	}
 
 	// Start the scheduler background service
 	scheduler := service.NewScheduler(scheduleSvc, executionSvc)

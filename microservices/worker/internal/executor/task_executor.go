@@ -1326,6 +1326,12 @@ func (e *TaskExecutor) Close() error {
 	return nil
 }
 
+// DriverFactory returns the driver factory for creating profile-based drivers
+// Used by scrape handler for single-URL scrape requests
+func (e *TaskExecutor) DriverFactory() *driver.Factory {
+	return e.driverFactory
+}
+
 // extractDomain extracts the domain from a URL
 func extractDomain(url string) string {
 	// Simple extraction - could use net/url for more robust parsing

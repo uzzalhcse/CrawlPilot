@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { 
   Zap, 
   ChevronDown,
@@ -12,9 +12,16 @@ import {
   Sparkles,
   Monitor,
   User,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import { useBrowserProfilesStore } from '@/stores/browserProfiles'
+import { 
+  submitScrape, 
+  pollScrapeResult, 
+  type ScrapeResult
+} from '@/api/scraper'
 
 // State
 const url = ref('https://example.com/products')
@@ -22,28 +29,68 @@ const advancedSettingsOpen = ref(false)
 const selectedOutputFormat = ref('html')
 const isRunning = ref(false)
 const hasResult = ref(false)
+const timeout = ref(30)
+const waitForSelector = ref('')
+const error = ref('')
+
+// Check if any advanced settings are modified from defaults
+const hasAdvancedSettings = computed(() => {
+  return timeout.value !== 30 || waitForSelector.value !== ''
+})
 
 // Driver & Profile selection
-const selectedDriver = ref('camoufox')
+const selectedDriver = ref('http')
 const selectedProfile = ref('')
 
+// Static driver options (matches backend)
 const drivers = [
-  { id: 'camoufox', label: 'Camoufox (Stealth)' },
-  { id: 'playwright', label: 'Playwright' },
-  { id: 'puppeteer', label: 'Puppeteer' },
-  { id: 'http', label: 'HTTP Client (Fast)' },
+  { id: 'http', name: 'HTTP Client (Fast)', description: 'Fast HTTP requests without JavaScript' },
+  { id: 'playwright', name: 'Playwright', description: 'Full browser automation' },
+  { id: 'camoufox', name: 'Camoufox (Stealth)', description: 'Anti-detection browser' },
 ]
 
-const profiles = [
-  { id: '', label: 'No Profile' },
-  { id: 'profile-1', label: 'Default Profile' },
-  { id: 'profile-2', label: 'US Residential' },
-  { id: 'profile-3', label: 'EU Mobile' },
-]
+// Use browser profiles store
+const profilesStore = useBrowserProfilesStore()
 
-// Sample result data for demonstration
-const sampleHtml = ref('<html><head><title>Sample Page</title></head><body><h1>Hello World</h1><p>This is sample content.</p></body></html>')
-const sampleMarkdown = ref('# Hello World\n\nThis is sample content extracted from the page.\n\n## Products\n- Product 1: $29.99\n- Product 2: $49.99')
+// Load profiles on mount
+onMounted(async () => {
+  if (profilesStore.profiles.length === 0) {
+    try {
+      await profilesStore.fetchProfiles()
+    } catch (err) {
+      console.error('Failed to load profiles:', err)
+    }
+  }
+})
+
+// Filter profiles based on selected driver
+const filteredProfiles = computed(() => {
+  if (!selectedDriver.value || selectedDriver.value === 'http') {
+    // HTTP driver doesn't use profiles
+    return []
+  }
+  return profilesStore.profiles.filter(p => 
+    p.driver_type === selectedDriver.value || !p.driver_type
+  )
+})
+
+// Reset profile when driver changes if current profile is incompatible
+watch(selectedDriver, (newDriver) => {
+  if (newDriver === 'http') {
+    selectedProfile.value = ''
+  } else if (selectedProfile.value) {
+    const profile = profilesStore.profiles.find(p => p.id === selectedProfile.value)
+    if (profile && profile.driver_type && profile.driver_type !== newDriver) {
+      selectedProfile.value = ''
+    }
+  }
+})
+
+// Result data
+const resultContent = ref('')
+const resultScreenshot = ref('')
+const resultStatus = ref<'pending' | 'running' | 'completed' | 'failed'>('pending')
+const resultDuration = ref(0)
 
 const outputFormats = [
   { id: 'html', label: 'HTML', icon: FileText },
@@ -51,17 +98,62 @@ const outputFormats = [
   { id: 'screenshot', label: 'Screenshot', icon: ImageIcon },
 ]
 
-// Sync preview with output format
-watch(selectedOutputFormat, (newFormat) => {
-  // Preview automatically shows selected format
-})
-
 const runScraper = async () => {
+  if (!url.value) {
+    error.value = 'Please enter a URL'
+    return
+  }
+
+  error.value = ''
   isRunning.value = true
-  // Simulate API call
-  await new Promise(resolve => setTimeout(resolve, 1500))
-  hasResult.value = true
-  isRunning.value = false
+  hasResult.value = false
+  resultContent.value = ''
+  resultScreenshot.value = ''
+  resultStatus.value = 'pending'
+
+  try {
+    // Submit scrape request
+    const response = await submitScrape({
+      url: url.value,
+      driver: selectedDriver.value,
+      profile_id: selectedProfile.value || undefined,
+      output_format: selectedOutputFormat.value,
+      timeout: timeout.value,
+      wait_for_selector: waitForSelector.value || undefined
+    })
+
+    // Poll for result
+    const result = await pollScrapeResult(
+      response.scrape_id,
+      (update: ScrapeResult) => {
+        resultStatus.value = update.status
+        if (update.duration_ms) {
+          resultDuration.value = update.duration_ms
+        }
+      },
+      120, // max 2 minutes
+      500  // poll every 500ms
+    )
+
+    // Update result
+    hasResult.value = true
+    if (result.content) {
+      resultContent.value = result.content
+    }
+    if (result.screenshot) {
+      resultScreenshot.value = result.screenshot
+    }
+    if (result.error) {
+      error.value = result.error
+    }
+    resultDuration.value = result.duration_ms
+
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Scrape failed'
+    hasResult.value = false
+  } finally {
+    isRunning.value = false
+  }
 }
 </script>
 
@@ -92,6 +184,12 @@ const runScraper = async () => {
             />
           </div>
 
+          <!-- Error Display -->
+          <div v-if="error" class="rounded-xl border border-red-500/30 bg-red-500/5 p-4 flex items-center gap-3">
+            <AlertCircle class="w-4 h-4 text-red-500 shrink-0" />
+            <span class="text-sm text-red-600 dark:text-red-400">{{ error }}</span>
+          </div>
+
           <!-- AI Unblocker Banner -->
           <div class="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-center gap-3">
             <div class="p-2 rounded-lg bg-emerald-500/10">
@@ -117,30 +215,34 @@ const runScraper = async () => {
                     class="w-full px-4 py-2.5 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors appearance-none cursor-pointer"
                   >
                     <option v-for="driver in drivers" :key="driver.id" :value="driver.id">
-                      {{ driver.label }}
+                      {{ driver.name }}
                     </option>
                   </select>
                   <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 </div>
+                <p class="text-xs text-muted-foreground mt-1.5">
+                  {{ drivers.find(d => d.id === selectedDriver)?.description }}
+                </p>
               </div>
 
-              <!-- Profile Selection -->
-              <div>
-                <label class="text-xs font-medium text-muted-foreground mb-2 block">Profile</label>
+              <!-- Profile Selection (only for browser drivers) -->
+              <div v-if="selectedDriver !== 'http'">
+                <label class="text-xs font-medium text-muted-foreground mb-2 block">Browser Profile</label>
                 <div class="relative">
                   <select
                     v-model="selectedProfile"
                     class="w-full px-4 py-2.5 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors appearance-none cursor-pointer"
                   >
-                    <option v-for="profile in profiles" :key="profile.id" :value="profile.id">
-                      {{ profile.label }}
+                    <option value="">No Profile (Default Settings)</option>
+                    <option v-for="profile in filteredProfiles" :key="profile.id" :value="profile.id">
+                      {{ profile.name }} ({{ profile.browser_type || 'chromium' }})
                     </option>
                   </select>
                   <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 </div>
                 <p class="text-xs text-muted-foreground mt-2 flex items-start gap-1.5">
                   <User class="w-3 h-3 mt-0.5 shrink-0" />
-                  <span>Select a browser profile to run the scraper with (cookies, fingerprint, and settings will load automatically).</span>
+                  <span>Select a browser profile to use custom fingerprint and proxy settings.</span>
                 </p>
               </div>
             </div>
@@ -152,28 +254,49 @@ const runScraper = async () => {
               @click="advancedSettingsOpen = !advancedSettingsOpen"
               class="w-full px-5 py-4 flex items-center justify-between hover:bg-muted/30 transition-colors"
             >
-              <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Advanced Settings</span>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Advanced Settings</span>
+                <span v-if="hasAdvancedSettings" class="px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary rounded">Modified</span>
+              </div>
               <component 
                 :is="advancedSettingsOpen ? ChevronDown : ChevronRight" 
                 class="w-4 h-4 text-muted-foreground" 
               />
             </button>
-            <div v-if="advancedSettingsOpen" class="px-5 pb-5 space-y-4 border-t">
-              <div class="pt-4">
-                <label class="text-xs font-medium text-muted-foreground">Timeout (seconds)</label>
-                <input
-                  type="number"
-                  value="30"
-                  class="w-full mt-2 px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-              <div>
-                <label class="text-xs font-medium text-muted-foreground">Wait For Selector</label>
-                <input
-                  type="text"
-                  placeholder=".product-list, #main-content"
-                  class="w-full mt-2 px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
+            <div v-if="advancedSettingsOpen" class="px-5 pb-5 border-t">
+              <!-- General Settings -->
+              <div class="pt-4 space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                  <!-- Timeout -->
+                  <div>
+                    <label class="text-xs font-medium text-muted-foreground mb-1.5 block">Request Timeout</label>
+                    <div class="relative">
+                      <input
+                        v-model.number="timeout"
+                        type="number"
+                        min="5"
+                        max="300"
+                        class="w-full px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 pr-12"
+                      />
+                      <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">sec</span>
+                    </div>
+                    <p class="text-[10px] text-muted-foreground/70 mt-1">5-300 seconds</p>
+                  </div>
+
+
+                </div>
+
+                <!-- Wait For Selector (browser drivers only) -->
+                <div v-if="selectedDriver !== 'http'" class="pt-2 border-t border-dashed">
+                  <label class="text-xs font-medium text-muted-foreground mb-1.5 block">Wait For Selector</label>
+                  <input
+                    v-model="waitForSelector"
+                    type="text"
+                    placeholder=".product-list, #main-content, [data-loaded]"
+                    class="w-full px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-xs"
+                  />
+                  <p class="text-[10px] text-muted-foreground/70 mt-1">Wait for element before extracting content</p>
+                </div>
               </div>
             </div>
           </div>
@@ -219,16 +342,24 @@ const runScraper = async () => {
         <!-- Right Panel: Preview -->
         <div class="rounded-xl border bg-card overflow-hidden flex flex-col">
           <!-- Header -->
-          <div class="p-5 border-b">
-            <h2 class="text-sm font-semibold">Output Preview</h2>
-            <p class="text-xs text-muted-foreground mt-0.5">Your result will appear here after running a request</p>
+          <div class="p-5 border-b flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-semibold">Output Preview</h2>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                {{ hasResult ? `Completed in ${resultDuration}ms` : 'Your result will appear here after running a request' }}
+              </p>
+            </div>
+            <div v-if="isRunning" class="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 class="w-3 h-3 animate-spin" />
+              <span class="capitalize">{{ resultStatus }}</span>
+            </div>
           </div>
 
           <!-- Content Area -->
           <div class="flex-1 p-5">
             <!-- Empty State -->
             <div 
-              v-if="!hasResult" 
+              v-if="!hasResult && !isRunning" 
               class="h-full min-h-[400px] rounded-lg bg-muted/30 border border-dashed border-muted-foreground/20 flex flex-col items-center justify-center"
             >
               <div class="p-4 rounded-full bg-muted/50 mb-3">
@@ -238,30 +369,42 @@ const runScraper = async () => {
               <p class="text-xs text-muted-foreground/70 mt-1">Run a request to see the {{ selectedOutputFormat.toUpperCase() }} output here</p>
             </div>
 
+            <!-- Loading State -->
+            <div 
+              v-else-if="isRunning" 
+              class="h-full min-h-[400px] rounded-lg bg-muted/30 border border-dashed border-muted-foreground/20 flex flex-col items-center justify-center"
+            >
+              <Loader2 class="w-8 h-8 text-primary animate-spin mb-3" />
+              <p class="text-sm font-medium text-muted-foreground">Processing request...</p>
+              <p class="text-xs text-muted-foreground/70 mt-1 capitalize">Status: {{ resultStatus }}</p>
+            </div>
+
             <!-- Result Content -->
-            <div v-else class="h-full min-h-[400px]">
+            <div v-else-if="hasResult" class="h-full min-h-[400px]">
               <!-- HTML Output -->
               <div v-if="selectedOutputFormat === 'html'" class="h-full">
                 <div class="h-full rounded-lg bg-muted/30 border p-4 overflow-auto">
-                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap">{{ sampleHtml }}</pre>
+                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap">{{ resultContent }}</pre>
                 </div>
               </div>
 
               <!-- Markdown Output -->
               <div v-if="selectedOutputFormat === 'markdown'" class="h-full">
                 <div class="h-full rounded-lg bg-muted/30 border p-4 overflow-auto">
-                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap">{{ sampleMarkdown }}</pre>
+                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap">{{ resultContent }}</pre>
                 </div>
               </div>
 
               <!-- Screenshot Output -->
               <div v-if="selectedOutputFormat === 'screenshot'" class="h-full">
                 <div class="h-full rounded-lg bg-muted/30 border p-4 flex items-center justify-center">
-                  <div class="text-center">
+                  <div v-if="resultScreenshot" class="w-full">
+                    <img :src="`data:image/png;base64,${resultScreenshot}`" alt="Screenshot" class="max-w-full rounded-lg border" />
+                  </div>
+                  <div v-else class="text-center">
                     <div class="w-full max-w-md mx-auto rounded-lg border-2 border-dashed border-muted-foreground/20 p-8">
                       <ImageIcon class="w-12 h-12 text-muted-foreground/50 mx-auto mb-3" />
-                      <p class="text-sm text-muted-foreground">Screenshot preview</p>
-                      <p class="text-xs text-muted-foreground/70 mt-1">1920x1080px</p>
+                      <p class="text-sm text-muted-foreground">No screenshot available</p>
                     </div>
                   </div>
                 </div>
@@ -273,4 +416,3 @@ const runScraper = async () => {
     </div>
   </div>
 </template>
-

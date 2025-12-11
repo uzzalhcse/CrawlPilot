@@ -43,6 +43,9 @@ gcp:
   pubsub_dlq_topic: "crawlify-tasks-dlq"
   pubsub_dlq_subscription: "crawlify-tasks-dlq-sub"
   pubsub_max_delivery_attempts: 5
+  # Universal Scraper (dedicated topic for single-URL requests)
+  scrape_topic: "scrape-tasks"
+  scrape_subscription: "scrape-tasks-sub"
 
 browser:
   pool_size: 5         # Increased from 2 for parallel scraping
