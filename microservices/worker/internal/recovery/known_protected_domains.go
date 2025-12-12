@@ -19,8 +19,9 @@ type KnownProtectedDomains struct {
 	cache *cache.Cache
 
 	// In-memory cache for hot path
-	staticDomains map[string]models.ProxyTier // Hardcoded/configured domains
-	learnedCache  sync.Map                    // domain -> learned minimum tier
+	staticDomains   map[string]models.ProxyTier // Hardcoded/configured domains
+	staticDomainsMu sync.RWMutex                // Mutex for staticDomains (critical for 10k/sec concurrency)
+	learnedCache    sync.Map                    // domain -> learned minimum tier (already thread-safe)
 }
 
 // Redis key for learned protected domains
@@ -74,8 +75,11 @@ func (kpd *KnownProtectedDomains) GetMinimumTier(ctx context.Context, domain str
 	// Normalize domain (remove www. prefix, lowercase)
 	domain = normalizeDomainName(domain)
 
-	// Check static list first (fastest)
-	if tier, ok := kpd.staticDomains[domain]; ok {
+	// Check static list first (fastest) - with read lock
+	kpd.staticDomainsMu.RLock()
+	tier, ok := kpd.staticDomains[domain]
+	kpd.staticDomainsMu.RUnlock()
+	if ok {
 		return tier
 	}
 
@@ -108,12 +112,55 @@ func (kpd *KnownProtectedDomains) GetMinimumTier(ctx context.Context, domain str
 }
 
 // LearnMinimumTier learns that a domain requires at least the specified tier
-// This is called when Tier 0 fails for a domain
+// This is called when a lower tier fails for a domain (ESCALATION)
 func (kpd *KnownProtectedDomains) LearnMinimumTier(ctx context.Context, domain string, tier models.ProxyTier) {
 	domain = normalizeDomainName(domain)
 
+	// Only escalate, never downgrade here
+	currentTier := kpd.GetMinimumTier(ctx, domain)
+	if tier <= currentTier {
+		return // Already at same or higher tier
+	}
+
+	logger.Debug("Escalating domain tier (learned from failure)",
+		zap.String("domain", domain),
+		zap.Int("old_tier", int(currentTier)),
+		zap.Int("new_tier", int(tier)),
+	)
+
 	// Update in-memory cache
 	kpd.learnedCache.Store(domain, tier)
+
+	// Persist to Redis (24 hour TTL)
+	if kpd.cache != nil {
+		key := kpd.learnedKey(domain)
+		kpd.cache.Set(ctx, key, formatInt(int(tier)), 24*time.Hour)
+	}
+}
+
+// UpdateTierIfLower updates the tier if the new tier is LOWER than current
+// This enables de-escalation when a lower tier starts working (site relaxed protection)
+func (kpd *KnownProtectedDomains) UpdateTierIfLower(ctx context.Context, domain string, tier models.ProxyTier) {
+	domain = normalizeDomainName(domain)
+
+	currentTier := kpd.GetMinimumTier(ctx, domain)
+	if tier >= currentTier {
+		return // Not a de-escalation
+	}
+
+	logger.Info("De-escalating domain tier (lower tier succeeded)",
+		zap.String("domain", domain),
+		zap.Int("old_tier", int(currentTier)),
+		zap.Int("new_tier", int(tier)),
+	)
+
+	// Update in-memory cache with lower tier
+	kpd.learnedCache.Store(domain, tier)
+
+	// Also update staticDomains if it was loaded from DB (with write lock)
+	kpd.staticDomainsMu.Lock()
+	kpd.staticDomains[domain] = tier
+	kpd.staticDomainsMu.Unlock()
 
 	// Persist to Redis (24 hour TTL)
 	if kpd.cache != nil {
@@ -134,7 +181,9 @@ func (kpd *KnownProtectedDomains) checkParentDomain(domain string) (models.Proxy
 		return 0, false
 	}
 
-	// Try progressively shorter domain suffixes
+	// Try progressively shorter domain suffixes (with read lock)
+	kpd.staticDomainsMu.RLock()
+	defer kpd.staticDomainsMu.RUnlock()
 	for i := 1; i < len(parts)-1; i++ {
 		parentDomain := strings.Join(parts[i:], ".")
 		if tier, ok := kpd.staticDomains[parentDomain]; ok {
@@ -148,11 +197,15 @@ func (kpd *KnownProtectedDomains) checkParentDomain(domain string) (models.Proxy
 // AddStaticDomain adds a domain to the static protected list (runtime)
 func (kpd *KnownProtectedDomains) AddStaticDomain(domain string, tier models.ProxyTier) {
 	domain = normalizeDomainName(domain)
+	kpd.staticDomainsMu.Lock()
 	kpd.staticDomains[domain] = tier
+	kpd.staticDomainsMu.Unlock()
 }
 
 // GetAllStaticDomains returns all statically configured protected domains
 func (kpd *KnownProtectedDomains) GetAllStaticDomains() map[string]models.ProxyTier {
+	kpd.staticDomainsMu.RLock()
+	defer kpd.staticDomainsMu.RUnlock()
 	result := make(map[string]models.ProxyTier)
 	for domain, tier := range kpd.staticDomains {
 		result[domain] = tier

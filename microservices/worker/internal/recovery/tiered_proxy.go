@@ -30,6 +30,9 @@ type TieredProxyConfig struct {
 	// Learning
 	MinSamplesForConfidence int     // Min requests before considering tier stable (default: 20)
 	SuccessRateThreshold    float64 // Success rate to consider tier working (default: 0.8)
+
+	// De-escalation
+	DeescalationMinSamples int // Min successful requests before de-escalating (default: 5)
 }
 
 // DefaultTieredProxyConfig returns sensible defaults
@@ -39,6 +42,7 @@ func DefaultTieredProxyConfig() *TieredProxyConfig {
 		TierCooldown:            10 * time.Minute,
 		MinSamplesForConfidence: 20,
 		SuccessRateThreshold:    0.8,
+		DeescalationMinSamples:  5,
 	}
 }
 
@@ -175,11 +179,31 @@ func (m *TieredProxyManager) SetDomainTier(ctx context.Context, domain string, t
 }
 
 // RecordTierResult records success/failure for tier learning
+// Also triggers tier de-escalation if lower tier succeeds (with min sample check)
 func (m *TieredProxyManager) RecordTierResult(ctx context.Context, domain string, tier models.ProxyTier, success bool) error {
 	attemptKey := fmt.Sprintf(keyTierAttempts, domain, tier)
 
 	if success {
 		m.cache.HIncrBy(ctx, attemptKey, "successes", 1)
+
+		// BIDIRECTIONAL LEARNING: Only de-escalate after minimum successful samples
+		if m.knownProtected != nil && m.config != nil {
+			// Get current success count for this tier
+			data, _ := m.cache.HGetAll(ctx, attemptKey)
+			successes := 0
+			if val, ok := data["successes"]; ok {
+				fmt.Sscanf(val, "%d", &successes)
+			}
+
+			// Only de-escalate if we have enough successful samples
+			minSamples := m.config.DeescalationMinSamples
+			if minSamples <= 0 {
+				minSamples = 5 // Default fallback
+			}
+			if successes >= minSamples {
+				m.knownProtected.UpdateTierIfLower(ctx, domain, tier)
+			}
+		}
 	} else {
 		m.cache.HIncrBy(ctx, attemptKey, "failures", 1)
 		logger.Debug("Recorded tier failure",

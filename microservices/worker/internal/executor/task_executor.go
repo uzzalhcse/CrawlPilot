@@ -185,6 +185,22 @@ func NewTaskExecutor(
 		}
 	}
 
+	// Wire completion callback to persist learned strategies to DB
+	// This is called by CompletionTracker when an execution finishes
+	if completionTracker != nil && recoveryManager != nil {
+		completionTracker.SetOnComplete(func(ctx context.Context, executionID string) {
+			if unblocker := recoveryManager.GetSmartUnblocker(); unblocker != nil {
+				if err := unblocker.PersistLearnedStrategies(ctx, executionID); err != nil {
+					logger.Warn("Failed to persist learned strategies", zap.Error(err))
+				} else {
+					logger.Info("Persisted learned domain strategies",
+						zap.String("execution_id", executionID),
+					)
+				}
+			}
+		})
+	}
+
 	logger.Info("Task executor initialized",
 		zap.Int("registered_nodes", len(nodeRegistry.List())),
 		zap.Bool("gcs_archive_enabled", gcsClient != nil),
@@ -353,7 +369,12 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 					if err == nil && proxy != nil {
 						task.ProxyURL = proxy.ProxyURL()
 						task.ProxyID = proxy.ID
-						task.ProxyTier = currentTier // Track tier for retry escalation
+						// IMPORTANT: Use proxy's ACTUAL tier for learning (may be lower due to fallback)
+						// This enables proper de-escalation when lower tiers succeed
+						if proxy.Tier > 0 {
+							currentTier = models.ProxyTier(proxy.Tier)
+						}
+						task.ProxyTier = currentTier // Track actual tier for retry escalation
 						logger.Info("SmartUnblocker: Using tiered proxy",
 							zap.String("task_id", task.TaskID),
 							zap.String("domain", domain),

@@ -42,6 +42,9 @@ type CompletionTracker struct {
 	// Local counters per execution (batched for performance)
 	counters sync.Map // map[executionID]*executionCounterEntry
 
+	// OnComplete callback - called when an execution completes (for cleanup/persistence)
+	onComplete func(ctx context.Context, executionID string)
+
 	// Control channels
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
@@ -67,6 +70,12 @@ func NewCompletionTracker(redisCache *cache.Cache, statsReporter *BatchedStatsRe
 	)
 
 	return t
+}
+
+// SetOnComplete sets a callback to be called when an execution completes.
+// This is used to trigger persistence of learned strategies.
+func (t *CompletionTracker) SetOnComplete(callback func(ctx context.Context, executionID string)) {
+	t.onComplete = callback
 }
 
 // TaskQueued increments the local queued count (lock-free, no network call)
@@ -217,6 +226,15 @@ func (t *CompletionTracker) flush() {
 							zap.Error(err),
 						)
 					}
+				}(executionID)
+			}
+
+			// Call onComplete callback for cleanup/persistence (e.g., PersistLearnedStrategies)
+			if t.onComplete != nil {
+				go func(execID string) {
+					persistCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					t.onComplete(persistCtx, execID)
 				}(executionID)
 			}
 		}

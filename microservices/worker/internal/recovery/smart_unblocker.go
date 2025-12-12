@@ -44,6 +44,10 @@ type SmartUnblockerConfig struct {
 	// Persistence
 	PersistThreshold int // Min requests before persisting to DB (default: 50)
 
+	// De-escalation (bidirectional learning)
+	DeescalationConfidenceThreshold float64 // Min confidence to de-escalate tier in DB (default: 0.7)
+	DeescalationMinSamples          int     // Min successful requests before de-escalating (default: 5)
+
 	// Optimistic Mode
 	StartAtTierZero bool // Start new domains at Tier 0 (default: true)
 
@@ -59,15 +63,17 @@ type SmartUnblockerConfig struct {
 // DefaultSmartUnblockerConfig returns sensible defaults
 func DefaultSmartUnblockerConfig() *SmartUnblockerConfig {
 	return &SmartUnblockerConfig{
-		MinSamplesForStable: 100,
-		ConfidenceThreshold: 0.7,
-		LearningTTL:         24 * time.Hour,
-		PersistThreshold:    10,
-		StartAtTierZero:     true,
-		MaxAdaptiveDelayMs:  5000,
-		DelayIncrementMs:    500,
-		DelayDecrementMs:    100,
-		LocalCacheTTL:       30 * time.Second,
+		MinSamplesForStable:             100,
+		ConfidenceThreshold:             0.7,
+		LearningTTL:                     24 * time.Hour,
+		PersistThreshold:                10,
+		DeescalationConfidenceThreshold: 0.7,
+		DeescalationMinSamples:          5,
+		StartAtTierZero:                 true,
+		MaxAdaptiveDelayMs:              5000,
+		DelayIncrementMs:                500,
+		DelayDecrementMs:                100,
+		LocalCacheTTL:                   30 * time.Second,
 	}
 }
 
@@ -428,7 +434,11 @@ func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, execution
 
 		// Upsert to DB
 		ds := &models.DomainStrategy{TierAttempts: tierAttempts}
-		tierAttemptsJSON, _ := ds.TierAttemptsJSON()
+		tierAttemptsBytes, err := ds.TierAttemptsJSON()
+		tierAttemptsJSON := "{}" // Default valid JSON
+		if err == nil && len(tierAttemptsBytes) > 0 {
+			tierAttemptsJSON = string(tierAttemptsBytes)
+		}
 
 		query := `
 			INSERT INTO domain_strategies 
@@ -438,9 +448,16 @@ func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, execution
 				 sample_size, learning_status, tier_attempts)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			ON CONFLICT (domain) DO UPDATE SET
+				-- BIDIRECTIONAL TIER UPDATES:
+				-- 1. De-escalate: If new tier is LOWER and has good confidence (>= threshold), use it
+				-- 2. Escalate: If new tier is HIGHER and has better confidence, use it
+				-- 3. Otherwise: Keep existing tier
 				recommended_tier = CASE 
+					WHEN EXCLUDED.recommended_tier < domain_strategies.recommended_tier 
+					     AND EXCLUDED.tier_confidence >= $13
+					THEN EXCLUDED.recommended_tier -- De-escalation: lower tier works
 					WHEN EXCLUDED.tier_confidence > domain_strategies.tier_confidence 
-					THEN EXCLUDED.recommended_tier 
+					THEN EXCLUDED.recommended_tier -- Higher confidence wins
 					ELSE domain_strategies.recommended_tier 
 				END,
 				tier_confidence = GREATEST(EXCLUDED.tier_confidence, domain_strategies.tier_confidence),
@@ -468,6 +485,7 @@ func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, execution
 			totalRequests, successes, failures,
 			totalRequests, learningStatus, tierAttemptsJSON,
 			u.config.MinSamplesForStable,
+			u.config.DeescalationConfidenceThreshold,
 		)
 		if err != nil {
 			logger.Error("Failed to persist domain strategy",
