@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
+	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/shared/queue"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/recovery/llm"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/reporter"
@@ -608,7 +609,52 @@ func (m *RecoveryManager) ExecutePlan(ctx context.Context, plan *RecoveryPlan, t
 
 	switch plan.Action {
 	case ActionSwitchProxy:
-		// Prefer distributed proxy manager (Redis-based)
+		// Get current tier from plan params (passed by caller)
+		currentTier := models.TierDirect
+		if tier, ok := plan.Params["current_tier"].(models.ProxyTier); ok {
+			currentTier = tier
+		}
+
+		// Try tiered proxy manager first (with escalation logic)
+		if m.tieredProxy != nil {
+			// Check if we should escalate to a higher tier based on failure history
+			shouldEscalate, nextTier := m.tieredProxy.ShouldEscalateTier(ctx, domain, currentTier)
+			if shouldEscalate {
+				currentTier = nextTier
+				plan.Params["escalated_tier"] = nextTier
+				logger.Info("Escalating proxy tier for recovery",
+					zap.String("domain", domain),
+					zap.Int("from_tier", int(currentTier)-1),
+					zap.Int("to_tier", int(nextTier)),
+				)
+			}
+
+			// Get proxy from the appropriate tier
+			proxy, lease, err := m.tieredProxy.GetProxyForTier(ctx, domain, currentTier)
+			if err == nil && proxy != nil {
+				plan.Params["proxy_url"] = proxy.ProxyURL()
+				plan.Params["proxy_id"] = proxy.ID
+				plan.Params["proxy_tier"] = currentTier
+				if lease != nil {
+					plan.Params["lease_expires"] = lease.ExpiresAt
+				}
+				logger.Debug("Recovery using tiered proxy",
+					zap.String("domain", domain),
+					zap.String("proxy_id", proxy.ID),
+					zap.Int("tier", int(currentTier)),
+				)
+				return nil
+			}
+			// Log if tiered proxy failed, will fallback to distributed
+			if err != nil {
+				logger.Debug("Tiered proxy selection failed, falling back",
+					zap.Error(err),
+					zap.Int("tier", int(currentTier)),
+				)
+			}
+		}
+
+		// Fallback: Use distributed proxy manager (Redis-based, round-robin)
 		if m.distributedProxy != nil {
 			proxy, lease, err := m.distributedProxy.GetProxy(ctx, domain)
 			if err != nil {
@@ -616,11 +662,12 @@ func (m *RecoveryManager) ExecutePlan(ctx context.Context, plan *RecoveryPlan, t
 			}
 			plan.Params["proxy_url"] = proxy.ProxyURL()
 			plan.Params["proxy_id"] = proxy.ID
+			plan.Params["proxy_tier"] = currentTier // Preserve tier even with fallback
 			if lease != nil {
 				plan.Params["lease_expires"] = lease.ExpiresAt
 			}
 		} else if m.proxyManager != nil {
-			// Fallback to local proxy manager
+			// Last fallback to local proxy manager
 			proxy, err := m.proxyManager.GetNext(ctx)
 			if err != nil {
 				return err

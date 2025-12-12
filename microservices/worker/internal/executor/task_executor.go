@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -1317,7 +1318,19 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 						return execCtx.Page, result, nil
 
 					case recovery.ActionSwitchProxy:
-						// Execute the recovery plan
+						// Record tier failure for escalation learning BEFORE recovery
+						domain := extractDomain(task.URL)
+						if tieredProxy := e.recoveryManager.GetTieredProxyManager(); tieredProxy != nil {
+							tieredProxy.RecordTierResult(ctx, domain, task.ProxyTier, false)
+						}
+						if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
+							unblocker.RecordResult(ctx, task.ExecutionID, domain, task.ProxyTier, false, 403, 0)
+						}
+
+						// Pass current tier to ExecutePlan for escalation check
+						plan.Params["current_tier"] = task.ProxyTier
+
+						// Execute the recovery plan (now tier-aware)
 						if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
 							logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
 						} else if plan.ShouldRetry {
@@ -1328,17 +1341,32 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 							if proxyID, ok := plan.Params["proxy_id"].(string); ok {
 								task.ProxyID = proxyID
 							}
+							// Preserve proxy tier from recovery plan (may have escalated)
+							if proxyTier, ok := plan.Params["proxy_tier"].(models.ProxyTier); ok {
+								task.ProxyTier = proxyTier
+							}
 
 							// Republish task for fresh execution with new proxy
 							task.RetryCount++
 							if e.pubsubClient != nil && task.RetryCount <= e.retryConfig.MaxRetries {
+								// IMPORTANT: Increment queue counter BEFORE publishing to prevent race condition
+								// This ensures the retry task is counted before original task completes
+								if e.completionTracker != nil {
+									e.completionTracker.TaskQueued(ctx, task.ExecutionID, 1)
+								}
+
 								logger.Info("Republishing task with new proxy for retry",
 									zap.String("task_id", task.TaskID),
 									zap.String("node_id", node.ID),
 									zap.String("proxy_id", task.ProxyID),
+									zap.Int("proxy_tier", int(task.ProxyTier)),
 									zap.Int("retry_count", task.RetryCount),
 								)
 								if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
+									// Rollback the queue counter on publish failure
+									if e.completionTracker != nil {
+										e.completionTracker.TaskCompleted(ctx, task.ExecutionID)
+									}
 									logger.Error("Failed to republish task for proxy retry", zap.Error(pubErr))
 								} else {
 									// Record recovery success - task will be retried with new proxy
@@ -1649,28 +1677,17 @@ func (e *TaskExecutor) DriverFactory() *driver.Factory {
 	return e.driverFactory
 }
 
-// extractDomain extracts the domain from a URL
-func extractDomain(url string) string {
-	// Simple extraction - could use net/url for more robust parsing
-	if len(url) > 8 {
-		start := 0
-		if url[:8] == "https://" {
-			start = 8
-		} else if url[:7] == "http://" {
-			start = 7
-		}
-
-		url = url[start:]
-		end := len(url)
-		for i, c := range url {
-			if c == '/' || c == '?' || c == ':' {
-				end = i
-				break
-			}
-		}
-		return url[:end]
+// extractDomain extracts the domain (including port) from a URL
+// Uses net/url for consistent parsing with recovery package
+func extractDomain(rawURL string) string {
+	if rawURL == "" {
+		return ""
 	}
-	return url
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
 }
 
 // getDriverForTask returns the appropriate driver for the task

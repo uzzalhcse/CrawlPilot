@@ -72,6 +72,34 @@ func (c *Cache) SetNX(ctx context.Context, key string, value interface{}, ttl ti
 	return c.client.SetNX(ctx, key, value, ttl).Result()
 }
 
+// SetNXMulti executes multiple SetNX commands in a single pipeline
+// Returns a slice of booleans indicating which keys were successfully set (new)
+// Use this for batch deduplication to reduce N round-trips to 1
+func (c *Cache) SetNXMulti(ctx context.Context, keys []string, value interface{}, ttl time.Duration) ([]bool, error) {
+	if len(keys) == 0 {
+		return []bool{}, nil
+	}
+
+	pipe := c.client.Pipeline()
+	cmds := make([]*redis.BoolCmd, len(keys))
+
+	for i, key := range keys {
+		cmds[i] = pipe.SetNX(ctx, key, value, ttl)
+	}
+
+	_, err := pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		return nil, err
+	}
+
+	results := make([]bool, len(keys))
+	for i, cmd := range cmds {
+		results[i] = cmd.Val()
+	}
+
+	return results, nil
+}
+
 // Delete removes a key from cache
 func (c *Cache) Delete(ctx context.Context, keys ...string) error {
 	return c.client.Del(ctx, keys...).Err()

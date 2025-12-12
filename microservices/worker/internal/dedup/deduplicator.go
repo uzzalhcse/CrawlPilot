@@ -70,6 +70,78 @@ func (d *URLDeduplicator) IsDuplicate(ctx context.Context, executionID, phaseID,
 	return isDuplicate, nil
 }
 
+// FilterDuplicatesBatch checks multiple URLs and returns only unique ones (new URLs)
+// Uses Redis pipeline to execute all SetNX ops in minimal round-trips
+// maxBatchSize limits the number of keys per pipeline operation (0 = no limit)
+// This reduces N round-trips to ceil(N/maxBatchSize) round-trips
+func (d *URLDeduplicator) FilterDuplicatesBatch(ctx context.Context, executionID, phaseID string, urls []string, maxBatchSize int) ([]string, error) {
+	if d.cache == nil {
+		// No cache available, treat all as not duplicate
+		logger.Warn("Deduplicator cache not available, skipping batch dedup check")
+		return urls, nil
+	}
+
+	if len(urls) == 0 {
+		return []string{}, nil
+	}
+
+	// Default batch size if not specified
+	if maxBatchSize <= 0 {
+		maxBatchSize = 1000
+	}
+
+	// Build keys for all URLs
+	keys := make([]string, len(urls))
+	for i, url := range urls {
+		keys[i] = d.makeKey(executionID, phaseID, url)
+	}
+
+	// Process in batches to avoid overly large pipeline operations
+	var uniqueURLs []string
+	for start := 0; start < len(keys); start += maxBatchSize {
+		end := start + maxBatchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+
+		batchKeys := keys[start:end]
+		batchURLs := urls[start:end]
+
+		// Execute batch SetNX in single round-trip
+		results, err := d.cache.SetNXMulti(ctx, batchKeys, "1", dedupTTL)
+		if err != nil {
+			logger.Warn("Batch deduplication SetNXMulti failed",
+				zap.Int("batch_start", start),
+				zap.Int("batch_size", len(batchKeys)),
+				zap.Error(err),
+			)
+			// On error, fallback to including all URLs from this batch (best effort)
+			uniqueURLs = append(uniqueURLs, batchURLs...)
+			continue
+		}
+
+		// Collect URLs that were successfully SET (new, not duplicate)
+		for i, wasSet := range results {
+			if wasSet {
+				uniqueURLs = append(uniqueURLs, batchURLs[i])
+			}
+		}
+	}
+
+	duplicateCount := len(urls) - len(uniqueURLs)
+	if duplicateCount > 0 {
+		logger.Debug("Batch dedup filtered duplicates",
+			zap.String("execution_id", executionID),
+			zap.String("phase_id", phaseID),
+			zap.Int("total_urls", len(urls)),
+			zap.Int("unique_urls", len(uniqueURLs)),
+			zap.Int("duplicates_filtered", duplicateCount),
+		)
+	}
+
+	return uniqueURLs, nil
+}
+
 // MarkAsProcessed explicitly marks a URL as processed (for manual marking)
 func (d *URLDeduplicator) MarkAsProcessed(ctx context.Context, executionID, phaseID, url string) error {
 	if d.cache == nil {

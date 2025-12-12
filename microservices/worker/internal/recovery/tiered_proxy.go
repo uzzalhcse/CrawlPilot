@@ -182,6 +182,11 @@ func (m *TieredProxyManager) RecordTierResult(ctx context.Context, domain string
 		m.cache.HIncrBy(ctx, attemptKey, "successes", 1)
 	} else {
 		m.cache.HIncrBy(ctx, attemptKey, "failures", 1)
+		logger.Debug("Recorded tier failure",
+			zap.String("domain", domain),
+			zap.Int("tier", int(tier)),
+			zap.String("key", attemptKey),
+		)
 	}
 	m.cache.HIncrBy(ctx, attemptKey, "attempts", 1)
 	m.cache.Expire(ctx, attemptKey, 24*time.Hour)
@@ -198,12 +203,25 @@ func (m *TieredProxyManager) ShouldEscalateTier(ctx context.Context, domain stri
 	attemptKey := fmt.Sprintf(keyTierAttempts, domain, currentTier)
 	data, err := m.cache.HGetAll(ctx, attemptKey)
 	if err != nil {
+		logger.Debug("Failed to get tier attempts from cache",
+			zap.Error(err),
+			zap.String("domain", domain),
+			zap.Int("tier", int(currentTier)),
+		)
 		return false, currentTier
 	}
 
 	var failures, attempts int
 	fmt.Sscanf(data["failures"], "%d", &failures)
 	fmt.Sscanf(data["attempts"], "%d", &attempts)
+
+	logger.Debug("Checking tier escalation",
+		zap.String("domain", domain),
+		zap.Int("current_tier", int(currentTier)),
+		zap.Int("failures", failures),
+		zap.Int("attempts", attempts),
+		zap.Int("threshold", m.config.EscalateAfterFailures),
+	)
 
 	// Escalate after N consecutive failures
 	if failures >= m.config.EscalateAfterFailures {

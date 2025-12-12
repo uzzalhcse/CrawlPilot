@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"time"
 
@@ -58,7 +59,7 @@ func DefaultProxyRotationConfig() *ProxyRotationConfig {
 	return &ProxyRotationConfig{
 		LeaseDuration:        30 * time.Second,
 		CooldownDuration:     60 * time.Second,
-		Strategy:             StrategyDomainAffinity,
+		Strategy:             StrategyRoundRobin,
 		MaxFailuresPerHour:   5,
 		HealthCheckTTL:       5 * time.Minute,
 		DomainAffinityWeight: 0.7,
@@ -207,7 +208,20 @@ func (m *DistributedProxyManager) selectLeastUsed(ctx context.Context, domain st
 }
 
 // selectRoundRobin selects the next proxy in rotation for this domain
+// FIXED: Sort proxies alphabetically to ensure consistent ordering across all workers
 func (m *DistributedProxyManager) selectRoundRobin(ctx context.Context, domain string) (string, error) {
+	// First, get all available proxies
+	proxies, err := m.getAvailableFromSet(ctx, keyProxyPool, domain, 100)
+	if err != nil || len(proxies) == 0 {
+		return "", fmt.Errorf("no proxies available")
+	}
+
+	// CRITICAL: Sort proxies alphabetically for consistent ordering across all workers
+	// Without this, different workers may see proxies in different order due to:
+	// 1. Redis ZRangeByScore not guaranteeing order for equal scores
+	// 2. Race conditions between getAvailableFromSet calls
+	sort.Strings(proxies)
+
 	rotationKey := fmt.Sprintf(keyProxyRotation, domain)
 
 	// Atomically increment rotation counter
@@ -216,14 +230,11 @@ func (m *DistributedProxyManager) selectRoundRobin(ctx context.Context, domain s
 		counter = 0
 	}
 
-	// Get all available proxies
-	proxies, err := m.getAvailableFromSet(ctx, keyProxyPool, domain, 100)
-	if err != nil || len(proxies) == 0 {
-		return "", fmt.Errorf("no proxies available")
-	}
+	// Set TTL on rotation counter (reset every hour for fresh distribution)
+	m.cache.Expire(ctx, rotationKey, 1*time.Hour)
 
-	// Round-robin selection
-	index := int(counter) % len(proxies)
+	// Round-robin selection with stable ordering
+	index := int(counter-1) % len(proxies) // -1 because Incr returns new value
 	return proxies[index], nil
 }
 

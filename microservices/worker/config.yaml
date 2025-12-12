@@ -36,8 +36,8 @@ gcp:
   storage_bucket: "crawlify-data"
   orchestrator_url: "http://localhost:8181"  # Orchestrator service URL
   # High-throughput Pub/Sub settings (used in code)
-  pubsub_max_outstanding: 50       # Messages per worker instance
-  pubsub_num_goroutines: 10        # Parallel message handlers
+  pubsub_max_outstanding: 5       # Messages per worker instance
+  pubsub_num_goroutines: 1        # Parallel message handlers
   
   # Dead Letter Queue Settings
   pubsub_dlq_topic: "crawlify-tasks-dlq"
@@ -48,10 +48,10 @@ gcp:
   scrape_subscription: "scrape-tasks-sub"
 
 browser:
-  pool_size: 3         # Increased from 2 for parallel scraping
+  pool_size: 1         # Increased from 2 for parallel scraping
   headless: false        # Always headless in production
   timeout: 30000        # 30s (reduced from 60s for faster failures)
-  max_concurrency: 3   # Realistic limit per worker instance
+  max_concurrency: 1   # Realistic limit per worker instance
   context_lifetime: 120 # Recycle contexts every 2 min to prevent memory leaks
   driver: "playwright"  # "playwright" (default) or "http"
   log_warnings: true   # Enable warning logging (default: false)

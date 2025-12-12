@@ -134,28 +134,88 @@ var categories = []Category{
 }
 
 var products = []Product{
-	// Electronics
+	// Electronics - Phones (4)
 	{ID: "ELEC001", Name: "iPhone 15 Pro Max 256GB", Price: 1199.00, OldPrice: 1299.00, Rating: 4.8, Reviews: 15234, Category: "electronics", SubCategory: "phones", Image: "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=400", Description: "The most advanced iPhone ever with A17 Pro chip", Features: []string{"A17 Pro chip", "48MP camera", "Titanium design", "Action button"}, InStock: true},
 	{ID: "ELEC002", Name: "Samsung Galaxy S24 Ultra", Price: 1299.99, OldPrice: 1399.99, Rating: 4.7, Reviews: 8921, Category: "electronics", SubCategory: "phones", Image: "https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?w=400", Description: "Galaxy AI is here with the most powerful Galaxy yet", Features: []string{"Galaxy AI", "200MP camera", "S Pen included", "Titanium frame"}, InStock: true},
-	{ID: "ELEC003", Name: "Sony WH-1000XM5 Headphones", Price: 348.00, OldPrice: 399.99, Rating: 4.6, Reviews: 12453, Category: "electronics", SubCategory: "headphones", Image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400", Description: "Industry-leading noise cancellation", Features: []string{"30hr battery", "Multipoint connection", "Speak-to-chat", "Wearing detection"}, InStock: true},
-	{ID: "ELEC004", Name: "Canon EOS R6 Mark II", Price: 2499.00, OldPrice: 2699.00, Rating: 4.9, Reviews: 2341, Category: "electronics", SubCategory: "cameras", Image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=400", Description: "Full-frame mirrorless for photo and video", Features: []string{"24.2MP sensor", "40fps shooting", "4K 60p video", "In-body stabilization"}, InStock: true},
-	// Computers
-	{ID: "COMP001", Name: "MacBook Pro 14\" M3 Pro", Price: 1999.00, OldPrice: 2199.00, Rating: 4.9, Reviews: 5621, Category: "computers", SubCategory: "laptops", Image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400", Description: "Supercharged by M3 Pro for demanding workflows", Features: []string{"M3 Pro chip", "18GB memory", "512GB SSD", "18hr battery"}, InStock: true},
-	{ID: "COMP002", Name: "Dell XPS 15 OLED", Price: 1799.00, OldPrice: 1999.00, Rating: 4.7, Reviews: 3421, Category: "computers", SubCategory: "laptops", Image: "https://images.unsplash.com/photo-1593642702821-c8da6771f0c6?w=400", Description: "Stunning 3.5K OLED display in a compact design", Features: []string{"Intel Core i7", "32GB RAM", "1TB SSD", "OLED display"}, InStock: true},
+	{ID: "ELEC003", Name: "Google Pixel 8 Pro", Price: 999.00, OldPrice: 1099.00, Rating: 4.6, Reviews: 5432, Category: "electronics", SubCategory: "phones", Image: "https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=400", Description: "The best of Google AI in a phone", Features: []string{"Tensor G3", "Magic Eraser", "7 years updates", "50MP camera"}, InStock: true},
+	{ID: "ELEC004", Name: "OnePlus 12 5G", Price: 799.00, OldPrice: 899.00, Rating: 4.5, Reviews: 3211, Category: "electronics", SubCategory: "phones", Image: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400", Description: "Flagship killer with Snapdragon 8 Gen 3", Features: []string{"100W charging", "Hasselblad camera", "120Hz display", "5400mAh"}, InStock: true},
+	// Electronics - Laptops (3)
+	{ID: "ELEC005", Name: "MacBook Pro 14\" M3 Pro", Price: 1999.00, OldPrice: 2199.00, Rating: 4.9, Reviews: 5621, Category: "electronics", SubCategory: "laptops", Image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400", Description: "Supercharged by M3 Pro for demanding workflows", Features: []string{"M3 Pro chip", "18GB memory", "512GB SSD", "18hr battery"}, InStock: true},
+	{ID: "ELEC006", Name: "Dell XPS 15 OLED", Price: 1799.00, OldPrice: 1999.00, Rating: 4.7, Reviews: 3421, Category: "electronics", SubCategory: "laptops", Image: "https://images.unsplash.com/photo-1593642702821-c8da6771f0c6?w=400", Description: "Stunning 3.5K OLED display in a compact design", Features: []string{"Intel Core i7", "32GB RAM", "1TB SSD", "OLED display"}, InStock: true},
+	{ID: "ELEC007", Name: "ThinkPad X1 Carbon Gen 11", Price: 1649.00, OldPrice: 1849.00, Rating: 4.8, Reviews: 2156, Category: "electronics", SubCategory: "laptops", Image: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=400", Description: "Legendary business laptop with carbon fiber chassis", Features: []string{"Intel Core Ultra", "16GB RAM", "512GB SSD", "2.8K display"}, InStock: true},
+	// Electronics - Tablets (2)
+	{ID: "ELEC008", Name: "iPad Pro 12.9\" M2", Price: 1099.00, OldPrice: 1199.00, Rating: 4.9, Reviews: 8765, Category: "electronics", SubCategory: "tablets", Image: "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=400", Description: "The ultimate iPad experience with M2 chip", Features: []string{"M2 chip", "Liquid Retina XDR", "Face ID", "USB-C"}, InStock: true},
+	{ID: "ELEC009", Name: "Samsung Galaxy Tab S9 Ultra", Price: 1199.00, OldPrice: 1299.00, Rating: 4.7, Reviews: 4532, Category: "electronics", SubCategory: "tablets", Image: "https://images.unsplash.com/photo-1561154464-82e9adf32764?w=400", Description: "PC-level performance in a tablet", Features: []string{"14.6\" AMOLED", "Snapdragon 8 Gen 2", "S Pen included", "IP68"}, InStock: true},
+	// Electronics - Headphones (2)
+	{ID: "ELEC010", Name: "Sony WH-1000XM5 Headphones", Price: 348.00, OldPrice: 399.99, Rating: 4.6, Reviews: 12453, Category: "electronics", SubCategory: "headphones", Image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400", Description: "Industry-leading noise cancellation", Features: []string{"30hr battery", "Multipoint connection", "Speak-to-chat", "Wearing detection"}, InStock: true},
+	{ID: "ELEC011", Name: "Apple AirPods Pro 2", Price: 249.00, OldPrice: 279.00, Rating: 4.8, Reviews: 18234, Category: "electronics", SubCategory: "headphones", Image: "https://images.unsplash.com/photo-1588423771073-b8903fbb85b5?w=400", Description: "Adaptive Audio, now with USB-C", Features: []string{"H2 chip", "Active Noise Cancelling", "Spatial Audio", "USB-C"}, InStock: true},
+	// Electronics - Cameras (2)
+	{ID: "ELEC012", Name: "Canon EOS R6 Mark II", Price: 2499.00, OldPrice: 2699.00, Rating: 4.9, Reviews: 2341, Category: "electronics", SubCategory: "cameras", Image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=400", Description: "Full-frame mirrorless for photo and video", Features: []string{"24.2MP sensor", "40fps shooting", "4K 60p video", "In-body stabilization"}, InStock: true},
+	{ID: "ELEC013", Name: "Sony Alpha A7 IV", Price: 2498.00, OldPrice: 2798.00, Rating: 4.8, Reviews: 3456, Category: "electronics", SubCategory: "cameras", Image: "https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=400", Description: "The new basic beyond basic", Features: []string{"33MP full-frame", "Real-time Eye AF", "4K 60p", "10fps burst"}, InStock: true},
+	// Computers - Desktops (2)
+	{ID: "COMP001", Name: "Mac Studio M2 Ultra", Price: 3999.00, OldPrice: 4399.00, Rating: 4.9, Reviews: 1234, Category: "computers", SubCategory: "desktops", Image: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=400", Description: "Ultimate power for pro workflows", Features: []string{"M2 Ultra", "64GB RAM", "1TB SSD", "6 Thunderbolt"}, InStock: true},
+	{ID: "COMP002", Name: "HP Omen 45L Gaming Desktop", Price: 2299.00, OldPrice: 2599.00, Rating: 4.6, Reviews: 876, Category: "computers", SubCategory: "desktops", Image: "https://images.unsplash.com/photo-1587202372775-e229f172b9d7?w=400", Description: "Dominate with RTX 4080", Features: []string{"RTX 4080", "Intel i9", "64GB DDR5", "Cryo Chamber"}, InStock: true},
+	// Computers - Monitors (2)
 	{ID: "COMP003", Name: "LG UltraGear 27\" 4K Monitor", Price: 699.99, OldPrice: 799.99, Rating: 4.5, Reviews: 4532, Category: "computers", SubCategory: "monitors", Image: "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=400", Description: "4K gaming monitor with 144Hz refresh rate", Features: []string{"4K UHD", "144Hz", "1ms response", "G-Sync Compatible"}, InStock: true},
-	{ID: "COMP004", Name: "Logitech MX Keys Keyboard", Price: 119.99, OldPrice: 149.99, Rating: 4.6, Reviews: 8765, Category: "computers", SubCategory: "keyboards", Image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=400", Description: "Advanced wireless illuminated keyboard", Features: []string{"Backlit keys", "Multi-device", "USB-C charging", "Smart illumination"}, InStock: true},
-	// Gaming
+	{ID: "COMP004", Name: "Samsung Odyssey G9 49\"", Price: 1299.99, OldPrice: 1499.99, Rating: 4.7, Reviews: 2345, Category: "computers", SubCategory: "monitors", Image: "https://images.unsplash.com/photo-1547082299-de196ea013d6?w=400", Description: "Super ultrawide gaming immersion", Features: []string{"DQHD 5120x1440", "240Hz", "1ms", "1000R curve"}, InStock: true},
+	// Computers - Keyboards (2)
+	{ID: "COMP005", Name: "Logitech MX Keys Keyboard", Price: 119.99, OldPrice: 149.99, Rating: 4.6, Reviews: 8765, Category: "computers", SubCategory: "keyboards", Image: "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=400", Description: "Advanced wireless illuminated keyboard", Features: []string{"Backlit keys", "Multi-device", "USB-C charging", "Smart illumination"}, InStock: true},
+	{ID: "COMP006", Name: "Keychron Q1 Pro Mechanical", Price: 199.00, OldPrice: 229.00, Rating: 4.8, Reviews: 3456, Category: "computers", SubCategory: "keyboards", Image: "https://images.unsplash.com/photo-1595225476474-87563907a212?w=400", Description: "Premium wireless mechanical keyboard", Features: []string{"Gateron switches", "QMK/VIA", "CNC aluminum", "Hot-swappable"}, InStock: true},
+	// Computers - Mice (2)
+	{ID: "COMP007", Name: "Logitech MX Master 3S", Price: 99.99, OldPrice: 119.99, Rating: 4.7, Reviews: 12543, Category: "computers", SubCategory: "mice", Image: "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=400", Description: "Advanced wireless mouse for creators", Features: []string{"8000 DPI", "Quiet clicks", "USB-C", "Multi-device"}, InStock: true},
+	{ID: "COMP008", Name: "Razer DeathAdder V3 Pro", Price: 149.99, OldPrice: 179.99, Rating: 4.8, Reviews: 5678, Category: "computers", SubCategory: "mice", Image: "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=400", Description: "Pro-level esports mouse", Features: []string{"30K DPI", "63g weight", "90hr battery", "Focus Pro sensor"}, InStock: true},
+	// Computers - Storage (2)
+	{ID: "COMP009", Name: "Samsung 990 Pro 2TB NVMe", Price: 179.99, OldPrice: 229.99, Rating: 4.9, Reviews: 6789, Category: "computers", SubCategory: "storage", Image: "https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=400", Description: "PCIe 4.0 NVMe with 7,450 MB/s read", Features: []string{"7450MB/s read", "6900MB/s write", "600 TBW", "Heat spreader"}, InStock: true},
+	{ID: "COMP010", Name: "WD Black SN850X 4TB", Price: 349.99, OldPrice: 399.99, Rating: 4.7, Reviews: 2345, Category: "computers", SubCategory: "storage", Image: "https://images.unsplash.com/photo-1601737487795-dab272f52420?w=400", Description: "Gaming SSD optimized for PS5", Features: []string{"7300MB/s", "Game Mode 2.0", "RGB heatsink", "PCIe Gen4"}, InStock: true},
+	// Gaming - Consoles (3)
 	{ID: "GAME001", Name: "PlayStation 5 Console", Price: 499.99, OldPrice: 549.99, Rating: 4.8, Reviews: 25678, Category: "gaming", SubCategory: "consoles", Image: "https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=400", Description: "Experience lightning-fast loading with an ultra-high speed SSD", Features: []string{"4K gaming", "Ray tracing", "3D Audio", "DualSense controller"}, InStock: false},
 	{ID: "GAME002", Name: "Nintendo Switch OLED", Price: 349.99, OldPrice: 379.99, Rating: 4.9, Reviews: 18234, Category: "gaming", SubCategory: "consoles", Image: "https://images.unsplash.com/photo-1578303512597-81e6cc155b3e?w=400", Description: "7-inch OLED screen with vibrant colors", Features: []string{"OLED screen", "64GB storage", "Enhanced audio", "Wide adjustable stand"}, InStock: true},
 	{ID: "GAME003", Name: "Xbox Series X", Price: 499.99, OldPrice: 549.99, Rating: 4.7, Reviews: 15432, Category: "gaming", SubCategory: "consoles", Image: "https://images.unsplash.com/photo-1621259182978-fbf93132d53d?w=400", Description: "The fastest, most powerful Xbox ever", Features: []string{"12 teraflops", "4K at 120fps", "1TB SSD", "Quick Resume"}, InStock: true},
-	// Fashion
-	{ID: "FASH001", Name: "Nike Air Max 270", Price: 150.00, OldPrice: 180.00, Rating: 4.5, Reviews: 12345, Category: "fashion", SubCategory: "shoes", Image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400", Description: "Lifestyle shoe with Max Air unit for all-day comfort", Features: []string{"Max Air unit", "Mesh upper", "Foam midsole", "Rubber outsole"}, InStock: true},
-	{ID: "FASH002", Name: "Apple Watch Series 9", Price: 399.00, OldPrice: 449.00, Rating: 4.8, Reviews: 9876, Category: "fashion", SubCategory: "watches", Image: "https://images.unsplash.com/photo-1434493789847-2f02dc6ca35d?w=400", Description: "Smarter. Brighter. Mightier.", Features: []string{"S9 chip", "Double tap", "Brighter display", "Carbon neutral"}, InStock: true},
-	// Home
-	{ID: "HOME001", Name: "Dyson V15 Detect Vacuum", Price: 749.99, OldPrice: 849.99, Rating: 4.7, Reviews: 5678, Category: "home", SubCategory: "appliances", Image: "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=400", Description: "Reveals invisible dust with a laser", Features: []string{"Laser dust detection", "LCD screen", "60min runtime", "HEPA filtration"}, InStock: true},
-	{ID: "HOME002", Name: "Instant Pot Duo 7-in-1", Price: 89.99, OldPrice: 119.99, Rating: 4.6, Reviews: 45678, Category: "home", SubCategory: "kitchen", Image: "https://images.unsplash.com/photo-1585515320310-259814833e62?w=400", Description: "7-in-1 Electric Pressure Cooker", Features: []string{"7 appliances in 1", "6 quart capacity", "13 programs", "Dishwasher safe"}, InStock: true},
-	// Books
-	{ID: "BOOK001", Name: "Kindle Paperwhite 16GB", Price: 149.99, OldPrice: 179.99, Rating: 4.8, Reviews: 28901, Category: "books", SubCategory: "ebooks", Image: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400", Description: "The best Kindle for reading, Icons: anywhere", Features: []string{"6.8\" display", "Adjustable warm light", "Waterproof", "Weeks of battery"}, InStock: true},
+	// Gaming - Games (2)
+	{ID: "GAME004", Name: "The Legend of Zelda: TOTK", Price: 59.99, OldPrice: 69.99, Rating: 4.9, Reviews: 45678, Category: "gaming", SubCategory: "games", Image: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400", Description: "An epic adventure awaits in the vast land and skies of Hyrule", Features: []string{"Open world", "100+ hours", "Crafting system", "Sky islands"}, InStock: true},
+	{ID: "GAME005", Name: "Elden Ring GOTY Edition", Price: 49.99, OldPrice: 69.99, Rating: 4.8, Reviews: 32145, Category: "gaming", SubCategory: "games", Image: "https://images.unsplash.com/photo-1493711662062-fa541f7f3d24?w=400", Description: "Rise, Tarnished. Includes Shadow of the Erdtree expansion", Features: []string{"FromSoftware", "Open world RPG", "Co-op multiplayer", "DLC included"}, InStock: true},
+	// Gaming - Accessories (2)
+	{ID: "GAME006", Name: "DualSense Edge Controller", Price: 199.99, OldPrice: 229.99, Rating: 4.6, Reviews: 3456, Category: "gaming", SubCategory: "accessories", Image: "https://images.unsplash.com/photo-1592840496694-26d035b52b48?w=400", Description: "Ultra-customizable pro controller for PS5", Features: []string{"Swappable sticks", "Back buttons", "Adjustable triggers", "Carrying case"}, InStock: true},
+	{ID: "GAME007", Name: "Xbox Elite Controller Series 2", Price: 179.99, OldPrice: 199.99, Rating: 4.7, Reviews: 8765, Category: "gaming", SubCategory: "accessories", Image: "https://images.unsplash.com/photo-1600861194942-f883de0dfe96?w=400", Description: "Over 30 ways to play like a pro", Features: []string{"40hr battery", "4 paddles", "3 thumbstick sets", "Adjustable tension"}, InStock: true},
+	// Gaming - Chairs (2)
+	{ID: "GAME008", Name: "Secretlab Titan Evo 2022", Price: 449.00, OldPrice: 499.00, Rating: 4.8, Reviews: 9876, Category: "gaming", SubCategory: "chairs", Image: "https://images.unsplash.com/photo-1616626625495-c6b0e91c2f5c?w=400", Description: "Award-winning gaming chair with 4-way lumbar", Features: []string{"4D armrests", "Magnetic headrest", "Pebble seat", "Multi-tilt"}, InStock: true},
+	{ID: "GAME009", Name: "Herman Miller x Logitech Embody", Price: 1695.00, OldPrice: 1895.00, Rating: 4.9, Reviews: 2143, Category: "gaming", SubCategory: "chairs", Image: "https://images.unsplash.com/photo-1541558869434-2840d308329a?w=400", Description: "Premium ergonomic gaming chair", Features: []string{"Flexible spine", "12yr warranty", "Breathable fabric", "PostureFit"}, InStock: true},
+	// Fashion - Mens (2)
+	{ID: "FASH001", Name: "Patagonia Better Sweater Jacket", Price: 139.00, OldPrice: 159.00, Rating: 4.7, Reviews: 5678, Category: "fashion", SubCategory: "mens", Image: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400", Description: "Classic fleece jacket made from recycled materials", Features: []string{"Recycled polyester", "Zip closure", "Raglan sleeves", "Stand-up collar"}, InStock: true},
+	{ID: "FASH002", Name: "Levi's 501 Original Jeans", Price: 69.50, OldPrice: 89.50, Rating: 4.6, Reviews: 12345, Category: "fashion", SubCategory: "mens", Image: "https://images.unsplash.com/photo-1542272604-787c3835535d?w=400", Description: "The original blue jean since 1873", Features: []string{"Straight leg", "Button fly", "100% cotton", "Signature arcuate stitch"}, InStock: true},
+	// Fashion - Womens (2)
+	{ID: "FASH003", Name: "Lululemon Align Leggings", Price: 98.00, OldPrice: 118.00, Rating: 4.9, Reviews: 23456, Category: "fashion", SubCategory: "womens", Image: "https://images.unsplash.com/photo-1506629082955-511b1aa562c8?w=400", Description: "Buttery soft leggings for yoga and beyond", Features: []string{"Nulu fabric", "High rise", "Naked sensation", "Hidden pocket"}, InStock: true},
+	{ID: "FASH004", Name: "Everlane Cashmere Sweater", Price: 145.00, OldPrice: 175.00, Rating: 4.7, Reviews: 4567, Category: "fashion", SubCategory: "womens", Image: "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=400", Description: "Grade-A Mongolian cashmere crew neck", Features: []string{"100% cashmere", "Relaxed fit", "Ribbed trim", "Sustainable"}, InStock: true},
+	// Fashion - Shoes (2)
+	{ID: "FASH005", Name: "Nike Air Max 270", Price: 150.00, OldPrice: 180.00, Rating: 4.5, Reviews: 12345, Category: "fashion", SubCategory: "shoes", Image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400", Description: "Lifestyle shoe with Max Air unit for all-day comfort", Features: []string{"Max Air unit", "Mesh upper", "Foam midsole", "Rubber outsole"}, InStock: true},
+	{ID: "FASH006", Name: "Adidas Ultraboost 23", Price: 190.00, OldPrice: 220.00, Rating: 4.7, Reviews: 8765, Category: "fashion", SubCategory: "shoes", Image: "https://images.unsplash.com/photo-1560769629-975ec94e6a86?w=400", Description: "Incredible energy return with BOOST midsole", Features: []string{"Primeknit upper", "BOOST midsole", "Continental rubber", "Linear Energy Push"}, InStock: true},
+	// Fashion - Watches (2)
+	{ID: "FASH007", Name: "Apple Watch Series 9", Price: 399.00, OldPrice: 449.00, Rating: 4.8, Reviews: 9876, Category: "fashion", SubCategory: "watches", Image: "https://images.unsplash.com/photo-1434493789847-2f02dc6ca35d?w=400", Description: "Smarter. Brighter. Mightier.", Features: []string{"S9 chip", "Double tap", "Brighter display", "Carbon neutral"}, InStock: true},
+	{ID: "FASH008", Name: "Garmin Fenix 7 Pro", Price: 799.99, OldPrice: 899.99, Rating: 4.8, Reviews: 3456, Category: "fashion", SubCategory: "watches", Image: "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=400", Description: "Multisport GPS watch with solar charging", Features: []string{"Solar charging", "Topo maps", "32GB storage", "Titanium bezel"}, InStock: true},
+	// Home - Furniture (2)
+	{ID: "HOME001", Name: "West Elm Mid-Century Sofa", Price: 1499.00, OldPrice: 1799.00, Rating: 4.6, Reviews: 2345, Category: "home", SubCategory: "furniture", Image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400", Description: "Iconic mid-century modern design", Features: []string{"Solid wood legs", "Down-filled cushions", "Deco weave fabric", "86\" wide"}, InStock: true},
+	{ID: "HOME002", Name: "IKEA MALM Bed Frame", Price: 249.00, OldPrice: 299.00, Rating: 4.4, Reviews: 15678, Category: "home", SubCategory: "furniture", Image: "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=400", Description: "Clean design that looks great on all sides", Features: []string{"Queen size", "4 storage drawers", "High headboard", "Adjustable sides"}, InStock: true},
+	// Home - Appliances (2)
+	{ID: "HOME003", Name: "Dyson V15 Detect Vacuum", Price: 749.99, OldPrice: 849.99, Rating: 4.7, Reviews: 5678, Category: "home", SubCategory: "appliances", Image: "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=400", Description: "Reveals invisible dust with a laser", Features: []string{"Laser dust detection", "LCD screen", "60min runtime", "HEPA filtration"}, InStock: true},
+	{ID: "HOME004", Name: "Vitamix A3500 Blender", Price: 649.95, OldPrice: 749.95, Rating: 4.8, Reviews: 4321, Category: "home", SubCategory: "appliances", Image: "https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=400", Description: "Smart blender with touchscreen controls", Features: []string{"Self-cleaning", "5 presets", "Variable speed", "Stainless steel blades"}, InStock: true},
+	// Home - Decor (2)
+	{ID: "HOME005", Name: "Philips Hue Starter Kit", Price: 179.99, OldPrice: 199.99, Rating: 4.6, Reviews: 8765, Category: "home", SubCategory: "decor", Image: "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400", Description: "Smart lighting that transforms your home", Features: []string{"16M colors", "Voice control", "Bridge included", "4 bulbs"}, InStock: true},
+	{ID: "HOME006", Name: "Anthropologie Moroccan Rug", Price: 498.00, OldPrice: 598.00, Rating: 4.5, Reviews: 1234, Category: "home", SubCategory: "decor", Image: "https://images.unsplash.com/photo-1531835551805-16d864c8d311?w=400", Description: "Handwoven bohemian area rug", Features: []string{"8x10 feet", "Wool blend", "Hand-tufted", "Fade resistant"}, InStock: true},
+	// Home - Kitchen (2)
+	{ID: "HOME007", Name: "Instant Pot Duo 7-in-1", Price: 89.99, OldPrice: 119.99, Rating: 4.6, Reviews: 45678, Category: "home", SubCategory: "kitchen", Image: "https://images.unsplash.com/photo-1585515320310-259814833e62?w=400", Description: "7-in-1 Electric Pressure Cooker", Features: []string{"7 appliances in 1", "6 quart capacity", "13 programs", "Dishwasher safe"}, InStock: true},
+	{ID: "HOME008", Name: "KitchenAid Stand Mixer", Price: 379.99, OldPrice: 449.99, Rating: 4.9, Reviews: 23456, Category: "home", SubCategory: "kitchen", Image: "https://images.unsplash.com/photo-1594385208974-2e4c0f7c4e7b?w=400", Description: "Iconic stand mixer with 10-speed control", Features: []string{"5-quart bowl", "10 speeds", "59-point mixing", "Tilt-head design"}, InStock: true},
+	// Books - Fiction (2)
+	{ID: "BOOK001", Name: "Fourth Wing by Rebecca Yarros", Price: 24.99, OldPrice: 29.99, Rating: 4.7, Reviews: 34567, Category: "books", SubCategory: "fiction", Image: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400", Description: "Enter the Basgiath War College in this dragon fantasy", Features: []string{"Hardcover", "512 pages", "#1 Bestseller", "Fantasy romance"}, InStock: true},
+	{ID: "BOOK002", Name: "A Court of Thorns and Roses", Price: 16.99, OldPrice: 19.99, Rating: 4.8, Reviews: 56789, Category: "books", SubCategory: "fiction", Image: "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400", Description: "A sensual Beauty and the Beast retelling", Features: []string{"Paperback", "432 pages", "Series starter", "Adult fantasy"}, InStock: true},
+	// Books - Non-Fiction (2)
+	{ID: "BOOK003", Name: "Atomic Habits by James Clear", Price: 18.99, OldPrice: 24.99, Rating: 4.9, Reviews: 89012, Category: "books", SubCategory: "nonfiction", Image: "https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=400", Description: "Tiny changes, remarkable results", Features: []string{"Hardcover", "320 pages", "10M+ sold", "Self-improvement"}, InStock: true},
+	{ID: "BOOK004", Name: "The Psychology of Money", Price: 16.99, OldPrice: 21.99, Rating: 4.8, Reviews: 45678, Category: "books", SubCategory: "nonfiction", Image: "https://images.unsplash.com/photo-1554774853-aae0a22c8aa4?w=400", Description: "Timeless lessons on wealth, greed, and happiness", Features: []string{"Paperback", "256 pages", "Finance", "Morgan Housel"}, InStock: true},
+	// Books - Textbooks (2)
+	{ID: "BOOK005", Name: "Introduction to Algorithms", Price: 89.99, OldPrice: 129.99, Rating: 4.7, Reviews: 12345, Category: "books", SubCategory: "textbooks", Image: "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=400", Description: "The bible of computer science algorithms", Features: []string{"Hardcover", "1312 pages", "4th Edition", "CLRS authors"}, InStock: true},
+	{ID: "BOOK006", Name: "Campbell Biology 12th Edition", Price: 139.99, OldPrice: 179.99, Rating: 4.6, Reviews: 6789, Category: "books", SubCategory: "textbooks", Image: "https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400", Description: "Gold standard biology textbook", Features: []string{"Hardcover", "1488 pages", "Mastering Bio access", "Full color"}, InStock: true},
+	// Books - eBooks (2)
+	{ID: "BOOK007", Name: "Kindle Paperwhite 16GB", Price: 149.99, OldPrice: 179.99, Rating: 4.8, Reviews: 28901, Category: "books", SubCategory: "ebooks", Image: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400", Description: "The best Kindle for reading, anywhere", Features: []string{"6.8\" display", "Adjustable warm light", "Waterproof", "Weeks of battery"}, InStock: true},
+	{ID: "BOOK008", Name: "Kindle Scribe 64GB", Price: 339.99, OldPrice: 399.99, Rating: 4.7, Reviews: 5678, Category: "books", SubCategory: "ebooks", Image: "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=400", Description: "Read and write on a 10.2\" display", Features: []string{"10.2\" display", "Premium Pen included", "PDF annotation", "Weeks of battery"}, InStock: true},
 }
 
 func main() {
@@ -932,6 +992,26 @@ func dashboard(c *fiber.Ctx) error {
             </div>
         </div>
 
+        <!-- Site Stats Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 text-center">
+                <div class="text-3xl font-bold text-white" id="stat-urls">-</div>
+                <div class="text-blue-200 text-sm mt-1">Total URLs</div>
+            </div>
+            <div class="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-6 text-center">
+                <div class="text-3xl font-bold text-white" id="stat-products">-</div>
+                <div class="text-green-200 text-sm mt-1">Products</div>
+            </div>
+            <div class="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-6 text-center">
+                <div class="text-3xl font-bold text-white" id="stat-categories">-</div>
+                <div class="text-purple-200 text-sm mt-1">Categories</div>
+            </div>
+            <div class="bg-gradient-to-br from-orange-600 to-orange-700 rounded-xl p-6 text-center">
+                <div class="text-3xl font-bold text-white" id="stat-subcategories">-</div>
+                <div class="text-orange-200 text-sm mt-1">Subcategories</div>
+            </div>
+        </div>
+
         <!-- Config & Stats Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -959,6 +1039,14 @@ func dashboard(c *fiber.Ctx) error {
             const [statsRes, cfgRes] = await Promise.all([fetch('/api/stats'), fetch('/api/config')]);
             const data = await statsRes.json();
             const cfg = await cfgRes.json();
+
+            // Update site stats
+            if (data.site_stats) {
+                document.getElementById('stat-urls').textContent = data.site_stats.total_urls || 0;
+                document.getElementById('stat-products').textContent = data.site_stats.total_products || 0;
+                document.getElementById('stat-categories').textContent = data.site_stats.total_categories || 0;
+                document.getElementById('stat-subcategories').textContent = data.site_stats.total_subcategories || 0;
+            }
 
             document.getElementById('config-panel').innerHTML = ` + "`" + `
                 <div class="flex justify-between items-center mb-4 p-3 rounded-lg ${cfg.anti_bot_enabled ? 'bg-green-500/20 border border-green-500/50' : 'bg-red-500/20 border border-red-500/50'}">
@@ -993,7 +1081,27 @@ func dashboard(c *fiber.Ctx) error {
 func getStats(c *fiber.Ctx) error {
 	config.mu.RLock()
 	defer config.mu.RUnlock()
-	return c.JSON(fiber.Map{"ip_stats": config.IPStats, "request_log": config.RequestLog})
+
+	// Calculate site structure counts
+	totalCategories := len(categories)
+	totalSubcategories := 0
+	for _, cat := range categories {
+		totalSubcategories += len(cat.Subs)
+	}
+	totalProducts := len(products)
+	// Total URLs = 1 (home) + categories + subcategories + products
+	totalURLs := 1 + totalCategories + totalSubcategories + totalProducts
+
+	return c.JSON(fiber.Map{
+		"ip_stats":    config.IPStats,
+		"request_log": config.RequestLog,
+		"site_stats": fiber.Map{
+			"total_urls":          totalURLs,
+			"total_products":      totalProducts,
+			"total_categories":    totalCategories,
+			"total_subcategories": totalSubcategories,
+		},
+	})
 }
 
 func getConfig(c *fiber.Ctx) error {
