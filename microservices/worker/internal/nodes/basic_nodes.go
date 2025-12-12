@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
@@ -190,7 +191,7 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 				)
 				// Don't fail navigation on CAPTCHA errors - might not be a CAPTCHA page
 			} else if solved {
-				logger.Info("CAPTCHA solved successfully, page content should be accessible",
+				logger.Info("Page accessible (CAPTCHA not present or auto-solved)",
 					zap.String("url", targetURL),
 				)
 
@@ -256,6 +257,63 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 			driver.WithWaitTimeout(time.Duration(timeout)*time.Millisecond),
 		); err != nil {
 			return fmt.Errorf("wait for selector failed: %w", err)
+		}
+	}
+
+	// Content-based block detection: detect soft blocks that return HTTP 200
+	// but with block page content (Access Denied, Rate Limited, etc.)
+	statusCode := execCtx.Page.StatusCode()
+	if statusCode == 403 || statusCode == 429 {
+		// Hard block/rate limit based on status code
+		if statusCode == 429 {
+			logger.Warn("Rate limited by server",
+				zap.Int("status_code", statusCode),
+				zap.String("url", targetURL),
+			)
+			return fmt.Errorf("rate limited: HTTP %d", statusCode)
+		}
+		logger.Warn("Blocked by server",
+			zap.Int("status_code", statusCode),
+			zap.String("url", targetURL),
+		)
+		return fmt.Errorf("blocked: HTTP %d", statusCode)
+	}
+
+	// Check page content for soft blocks (HTTP 200 but block page content)
+	pageContent, contentErr := execCtx.Page.Content()
+	if contentErr == nil && len(pageContent) > 0 {
+		// Limit content scan to first 5KB for performance
+		scanContent := pageContent
+		if len(scanContent) > 5000 {
+			scanContent = scanContent[:5000]
+		}
+		scanLower := strings.ToLower(scanContent)
+
+		// Detect common block page patterns
+		blockPatterns := []struct {
+			pattern string
+			errType string
+		}{
+			{"access denied", "blocked"},
+			{"bot_detected", "blocked"},
+			{"bot detected", "blocked"},
+			{"you have been blocked", "blocked"},
+			{"ip address has been blocked", "blocked"},
+			{"too many requests", "rate_limited"},
+			{"rate limit exceeded", "rate_limited"},
+			{"slow down", "rate_limited"},
+			{"try again in", "rate_limited"},
+		}
+
+		for _, bp := range blockPatterns {
+			if strings.Contains(scanLower, bp.pattern) {
+				logger.Warn("Block page detected in content",
+					zap.String("pattern", bp.pattern),
+					zap.String("error_type", bp.errType),
+					zap.String("url", targetURL),
+				)
+				return fmt.Errorf("%s: page contains '%s'", bp.errType, bp.pattern)
+			}
 		}
 	}
 

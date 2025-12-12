@@ -238,6 +238,16 @@ func (m *DistributedProxyManager) getAvailableFromSet(ctx context.Context, setKe
 		return nil, err
 	}
 
+	// Debug: log pool size
+	if len(members) == 0 {
+		poolCount, _ := m.cache.ZCard(ctx, setKey)
+		logger.Debug("Proxy pool query returned zero members",
+			zap.String("set_key", setKey),
+			zap.Int64("pool_total_count", poolCount),
+			zap.Int("limit_requested", limit*2),
+		)
+	}
+
 	available := make([]string, 0, limit)
 	for _, proxyID := range members {
 		if len(available) >= limit {
@@ -252,11 +262,13 @@ func (m *DistributedProxyManager) getAvailableFromSet(ctx context.Context, setKe
 		}
 
 		// Check if in cooldown for this domain
-		cooldownKey := fmt.Sprintf(keyProxyCooldown, proxyID, domain)
-		exists, _ = m.cache.Exists(ctx, cooldownKey)
-		if exists {
-			continue
-		}
+		// DISABLED: Cooldown wastes billable time on Cloud Run/serverless
+		// When all proxies are in cooldown, we'd rather try again than wait
+		// cooldownKey := fmt.Sprintf(keyProxyCooldown, proxyID, domain)
+		// exists, _ = m.cache.Exists(ctx, cooldownKey)
+		// if exists {
+		// 	continue
+		// }
 
 		// Check if disabled
 		health, _ := m.getHealth(ctx, proxyID)
@@ -265,6 +277,16 @@ func (m *DistributedProxyManager) getAvailableFromSet(ctx context.Context, setKe
 		}
 
 		available = append(available, proxyID)
+	}
+
+	// Debug: log if proxies existed but all were filtered out
+	if len(available) == 0 && len(members) > 0 {
+		logger.Debug("All proxies filtered by availability checks",
+			zap.String("set_key", setKey),
+			zap.Int("pool_members_found", len(members)),
+			zap.String("domain", domain),
+			zap.String("reason", "all proxies leased, in cooldown, or disabled"),
+		)
 	}
 
 	return available, nil
@@ -339,6 +361,17 @@ func (m *DistributedProxyManager) RecordFailure(ctx context.Context, proxyID, do
 	m.cache.HIncrBy(ctx, healthKey, "total_requests", 1)
 	m.cache.HIncrBy(ctx, healthKey, "failure_count", 1)
 	m.cache.HSet(ctx, healthKey, "last_failure", time.Now().Format(time.RFC3339))
+
+	// Immediately disable proxies with auth failures (bad credentials)
+	// These should not be retried as they'll never work
+	if pattern == PatternProxyAuthFailed {
+		m.disableProxy(ctx, proxyID, 24*time.Hour) // Disable for 24 hours
+		logger.Warn("Proxy disabled due to authentication failure (bad credentials)",
+			zap.String("proxy_id", proxyID),
+			zap.String("domain", domain),
+		)
+		return nil
+	}
 
 	// Increment hourly failure count
 	hourlyKey := fmt.Sprintf("proxy:hourly_fail:%s:%d", proxyID, time.Now().Hour())

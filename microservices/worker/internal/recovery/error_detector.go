@@ -157,6 +157,18 @@ func NewErrorDetector() *ErrorDetector {
 		statusCodes: []int{404, 410},
 	}
 
+	// Proxy authentication failed patterns (bad proxy credentials)
+	d.patterns[PatternProxyAuthFailed] = &patternMatcher{
+		substrings: []string{
+			"err_invalid_auth_credentials",
+			"proxy authentication required",
+			"proxy authentication failed",
+			"407 proxy authentication",
+			"the proxy requires a username and password",
+		},
+		statusCodes: []int{407},
+	}
+
 	// Server error patterns
 	d.patterns[PatternServerError] = &patternMatcher{
 		substrings: []string{

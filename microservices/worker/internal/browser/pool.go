@@ -253,16 +253,34 @@ func (p *Pool) createContextWithProfile(proxy *ProxyConfig) (playwright.BrowserC
 
 	// Add proxy if provided (overrides profile proxy)
 	if proxy != nil && proxy.Server != "" {
-		proxyURL, _ := services.EnsureScheme(proxy.Server)
-		opts.Proxy = &playwright.Proxy{
-			Server: proxyURL,
+		// Parse proxy URL to extract credentials (if embedded in URL like http://user:pass@host:port)
+		server, username, password, err := services.ParseProxyURL(proxy.Server)
+		if err != nil {
+			logger.Warn("Failed to parse proxy URL, using as-is",
+				zap.String("proxy", proxy.Server),
+				zap.Error(err),
+			)
+			server = proxy.Server
 		}
-		if proxy.Username != "" {
-			opts.Proxy.Username = playwright.String(proxy.Username)
-			opts.Proxy.Password = playwright.String(proxy.Password)
+
+		// Use parsed credentials if not provided separately
+		if username == "" && proxy.Username != "" {
+			username = proxy.Username
+		}
+		if password == "" && proxy.Password != "" {
+			password = proxy.Password
+		}
+
+		opts.Proxy = &playwright.Proxy{
+			Server: server,
+		}
+		if username != "" {
+			opts.Proxy.Username = playwright.String(username)
+			opts.Proxy.Password = playwright.String(password)
 		}
 		logger.Debug("Creating context with proxy",
-			zap.String("server", proxy.Server),
+			zap.String("server", server),
+			zap.Bool("has_auth", username != ""),
 		)
 	}
 

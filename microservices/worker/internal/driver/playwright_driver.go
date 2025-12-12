@@ -468,7 +468,7 @@ func (p *PlaywrightPage) SolveCaptcha(opts CaptchaSolveOptions) (bool, error) {
 	}
 
 	if success {
-		logger.Info("CAPTCHA solved successfully via Playwright driver")
+		logger.Debug("CAPTCHA check passed via Playwright driver")
 	}
 
 	return success, nil

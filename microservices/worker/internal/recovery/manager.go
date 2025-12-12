@@ -167,9 +167,9 @@ func NewRecoveryManager(
 		logger.Info("Batched recovery reporter initialized", zap.String("orchestrator_url", config.OrchestratorURL))
 	}
 
-	// Sync proxies from database to Redis for distributed coordination
+	// Sync proxies from database to Redis for distributed coordination (SYNCHRONOUS - must complete before tasks start)
 	if distributedProxy != nil && pool != nil {
-		go func() {
+		func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
@@ -182,21 +182,57 @@ func NewRecoveryManager(
 
 			rows, err := pool.Query(ctx, query)
 			if err != nil {
-				logger.Warn("Failed to load proxies from database", zap.Error(err))
+				logger.Warn("Failed to load proxies from database for Redis sync", zap.Error(err))
 				return
 			}
 			defer rows.Close()
 
 			proxies := make([]Proxy, 0)
 			for rows.Next() {
-				var p Proxy
+				p := Proxy{}
+				// Use temporary pointers for nullable fields (same as ProxyManager)
+				var username, password, countryCode, cityName, asnName, proxyType *string
+				var asnNumber *int
+				var tier *int
 				var lastVerified, lastUsed, createdAt, updatedAt *time.Time
-				err := rows.Scan(&p.ID, &p.ProxyID, &p.Server, &p.Username, &p.Password, &p.ProxyAddress, &p.Port,
-					&p.Valid, &lastVerified, &p.CountryCode, &p.CityName, &p.ASNName, &p.ASNNumber,
-					&p.ConfidenceHigh, &p.ProxyType, &p.Tier, &p.FailureCount, &p.SuccessCount,
-					&lastUsed, &p.IsHealthy, &createdAt, &updatedAt)
+
+				err := rows.Scan(
+					&p.ID, &p.ProxyID, &p.Server, &username, &password, &p.ProxyAddress, &p.Port,
+					&p.Valid, &lastVerified, &countryCode, &cityName, &asnName, &asnNumber,
+					&p.ConfidenceHigh, &proxyType, &tier, &p.FailureCount, &p.SuccessCount,
+					&lastUsed, &p.IsHealthy, &createdAt, &updatedAt,
+				)
 				if err != nil {
+					logger.Debug("Failed to scan proxy row for Redis sync", zap.Error(err))
 					continue
+				}
+
+				// Assign nullable fields
+				if username != nil {
+					p.Username = *username
+				}
+				if password != nil {
+					p.Password = *password
+				}
+				if countryCode != nil {
+					p.CountryCode = *countryCode
+				}
+				if cityName != nil {
+					p.CityName = *cityName
+				}
+				if asnName != nil {
+					p.ASNName = *asnName
+				}
+				if asnNumber != nil {
+					p.ASNNumber = *asnNumber
+				}
+				if proxyType != nil {
+					p.ProxyType = *proxyType
+				}
+				if tier != nil {
+					p.Tier = *tier
+				} else {
+					p.Tier = 1 // Default tier
 				}
 				p.LastVerified = lastVerified
 				p.LastUsed = lastUsed
@@ -210,22 +246,39 @@ func NewRecoveryManager(
 			}
 
 			if len(proxies) > 0 {
+				// Log tier breakdown
+				tierCounts := make(map[int]int)
+				for _, p := range proxies {
+					tierCounts[p.Tier]++
+				}
+				logger.Info("Syncing proxies to Redis",
+					zap.Int("count", len(proxies)),
+					zap.Any("tier_breakdown", tierCounts),
+				)
+
 				// Seed to tiered proxy manager with tier support
 				if tieredProxy != nil {
 					if err := tieredProxy.SeedProxiesWithTiers(ctx, proxies); err != nil {
 						logger.Error("Failed to seed tiered proxies to Redis", zap.Error(err))
 					} else {
-						logger.Info("Proxies auto-synced to Redis with tiers",
-							zap.Int("count", len(proxies)),
+						// Verify seeding worked
+						poolCount, _ := cache.ZCard(ctx, "proxy:pool")
+						logger.Info("Proxies seeded to Redis ✓",
+							zap.Int("seeded_count", len(proxies)),
+							zap.Int64("pool_size_after", poolCount),
 						)
 					}
 				} else if err := distributedProxy.SeedProxies(ctx, proxies); err != nil {
 					logger.Error("Failed to seed proxies to Redis", zap.Error(err))
 				} else {
-					logger.Info("Proxies auto-synced from database to Redis",
-						zap.Int("count", len(proxies)),
+					poolCount, _ := cache.ZCard(ctx, "proxy:pool")
+					logger.Info("Proxies seeded to Redis (no tiers) ✓",
+						zap.Int("seeded_count", len(proxies)),
+						zap.Int64("pool_size_after", poolCount),
 					)
 				}
+			} else {
+				logger.Warn("No valid proxies found in database for Redis sync")
 			}
 		}()
 	}

@@ -141,6 +141,18 @@ func isRetryable(err error) bool {
 		return false
 	}
 
+	// Proxy authentication errors should NOT be retried - bad credentials won't fix themselves
+	// These need recovery (switch to different proxy)
+	if strings.Contains(errStr, "err_invalid_auth_credentials") ||
+		strings.Contains(errStr, "proxy authentication") {
+		return false
+	}
+
+	// Block errors should NOT be retried locally - they need recovery (proxy switch)
+	if strings.Contains(errStr, "blocked:") {
+		return false
+	}
+
 	// Timeout errors
 	if strings.Contains(errStr, "timeout") ||
 		strings.Contains(errStr, "timed out") ||

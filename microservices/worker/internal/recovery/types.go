@@ -14,16 +14,17 @@ import (
 type ErrorPattern string
 
 const (
-	PatternBlocked       ErrorPattern = "blocked"
-	PatternRateLimited   ErrorPattern = "rate_limited"
-	PatternCaptcha       ErrorPattern = "captcha"
-	PatternTimeout       ErrorPattern = "timeout"
-	PatternConnectionErr ErrorPattern = "connection_error"
-	PatternLayoutChanged ErrorPattern = "layout_changed"
-	PatternAuthRequired  ErrorPattern = "auth_required"
-	PatternNotFound      ErrorPattern = "not_found"
-	PatternServerError   ErrorPattern = "server_error"
-	PatternUnknown       ErrorPattern = "unknown"
+	PatternBlocked         ErrorPattern = "blocked"
+	PatternRateLimited     ErrorPattern = "rate_limited"
+	PatternCaptcha         ErrorPattern = "captcha"
+	PatternTimeout         ErrorPattern = "timeout"
+	PatternConnectionErr   ErrorPattern = "connection_error"
+	PatternLayoutChanged   ErrorPattern = "layout_changed"
+	PatternAuthRequired    ErrorPattern = "auth_required"
+	PatternNotFound        ErrorPattern = "not_found"
+	PatternServerError     ErrorPattern = "server_error"
+	PatternProxyAuthFailed ErrorPattern = "proxy_auth_failed" // Proxy authentication failure (bad credentials)
+	PatternUnknown         ErrorPattern = "unknown"
 )
 
 // ActionType represents a recovery action to take

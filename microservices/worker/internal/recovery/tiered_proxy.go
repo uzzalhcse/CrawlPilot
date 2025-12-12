@@ -253,6 +253,14 @@ func (m *TieredProxyManager) GetTierStats(ctx context.Context, domain string) ma
 
 // SeedProxiesWithTiers seeds proxies with tier information
 func (m *TieredProxyManager) SeedProxiesWithTiers(ctx context.Context, proxies []Proxy) error {
+	// Clear existing pools to remove stale proxies from previous runs
+	m.cache.Delete(ctx, keyProxyPool)
+	// Also clear tier-specific pools
+	for tier := 0; tier <= 3; tier++ {
+		tierPoolKey := fmt.Sprintf("proxy:pool:tier:%d", tier)
+		m.cache.Delete(ctx, tierPoolKey)
+	}
+
 	for _, proxy := range proxies {
 		// Store proxy data
 		dataKey := fmt.Sprintf(keyProxyData, proxy.ID)

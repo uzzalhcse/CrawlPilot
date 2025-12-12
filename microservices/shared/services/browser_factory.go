@@ -36,6 +36,36 @@ func EnsureScheme(rawURL string) (string, error) {
 	return parsedURL.String(), nil
 }
 
+// ParseProxyURL parses a proxy URL and extracts server, username, and password.
+// Handles URLs like http://user:pass@host:port or http://host:port
+// Returns: server (http://host:port), username, password, error
+func ParseProxyURL(proxyURL string) (server, username, password string, err error) {
+	if proxyURL == "" {
+		return "", "", "", nil
+	}
+
+	// Ensure URL has scheme
+	if !strings.Contains(proxyURL, "://") {
+		proxyURL = "http://" + proxyURL
+	}
+
+	parsedURL, err := url.Parse(proxyURL)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to parse proxy URL: %w", err)
+	}
+
+	// Extract username and password from URL
+	if parsedURL.User != nil {
+		username = parsedURL.User.Username()
+		password, _ = parsedURL.User.Password()
+	}
+
+	// Rebuild server URL without credentials
+	server = fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
+
+	return server, username, password, nil
+}
+
 // ========================================
 // CAMOUFOX CONFIGURATION
 // ========================================

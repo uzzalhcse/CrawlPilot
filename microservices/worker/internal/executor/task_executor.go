@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	camoufoxLib "github.com/uzzalhcse/camoufox-go"
@@ -296,14 +297,22 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	taskStats := reporter.NewTaskStats()
 
 	// Check for duplicate URL
+	// Skip dedup for recovery retries - these need to actually run with new proxy
+	isRecoveryRetry := task.RetryCount > 0 && task.ProxyURL != ""
 	isDuplicate, err := e.deduplicator.IsDuplicate(ctx, task.ExecutionID, task.PhaseID, task.URL)
 	if err != nil {
 		logger.Warn("Deduplication check failed", zap.Error(err))
-	} else if isDuplicate {
+	} else if isDuplicate && !isRecoveryRetry {
 		logger.Info("Skipping duplicate URL",
 			zap.String("url", task.URL),
 		)
 		return nil
+	} else if isDuplicate && isRecoveryRetry {
+		logger.Debug("Bypassing dedup for recovery retry",
+			zap.String("url", task.URL),
+			zap.String("proxy_id", task.ProxyID),
+			zap.Int("retry_count", task.RetryCount),
+		)
 	}
 
 	// Prepare context with proxy if needed
@@ -491,6 +500,25 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 				}
 
 				if plan.ShouldRetry {
+					// Check max retries BEFORE republishing to prevent infinite loops
+					if task.RetryCount >= e.retryConfig.MaxRetries {
+						logger.Warn("Max retries reached, sending to DLQ instead of republishing",
+							zap.String("task_id", task.TaskID),
+							zap.Int("retry_count", task.RetryCount),
+							zap.Int("max_retries", e.retryConfig.MaxRetries),
+						)
+						e.logError(task, "dlq", "max retries exceeded during recovery")
+						if e.pubsubClient != nil {
+							if dlqErr := e.pubsubClient.PublishToDLQ(ctx, task, "max retries exceeded during recovery"); dlqErr != nil {
+								logger.Error("Failed to publish to DLQ", zap.Error(dlqErr))
+							}
+						}
+						if e.recoveryManager != nil {
+							e.recoveryManager.ClearHistory(task.TaskID)
+						}
+						return fmt.Errorf("max retries exceeded during recovery")
+					}
+
 					// Apply retry delay if specified
 					if plan.RetryDelay > 0 {
 						time.Sleep(plan.RetryDelay)
@@ -556,9 +584,18 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		}
 
 		// Record proxy failure if proxy was used
+		// Detect the pattern from the error for proper handling (especially auth failures)
 		if task.ProxyID != "" && e.recoveryManager != nil {
-			if err := e.recoveryManager.RecordProxyFailure(ctx, task.ProxyID, domain, recovery.PatternUnknown); err != nil {
-				logger.Warn("Failed to record proxy failure", zap.Error(err))
+			failPattern := recovery.PatternUnknown
+			errStr := strings.ToLower(err.Error())
+			if strings.Contains(errStr, "err_invalid_auth_credentials") ||
+				strings.Contains(errStr, "proxy authentication") {
+				failPattern = recovery.PatternProxyAuthFailed
+			} else if strings.Contains(errStr, "403") || strings.Contains(errStr, "blocked") {
+				failPattern = recovery.PatternBlocked
+			}
+			if recErr := e.recoveryManager.RecordProxyFailure(ctx, task.ProxyID, domain, failPattern); recErr != nil {
+				logger.Warn("Failed to record proxy failure", zap.Error(recErr))
 			}
 		}
 
@@ -1270,6 +1307,33 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 					// Execute the recovery plan
 					if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
 						logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
+					} else if plan.ShouldRetry && plan.Action == recovery.ActionSwitchProxy {
+						// Proxy was switched - republish task to get fresh browser context with new proxy
+						if proxyURL, ok := plan.Params["proxy_url"].(string); ok {
+							task.ProxyURL = proxyURL
+						}
+						if proxyID, ok := plan.Params["proxy_id"].(string); ok {
+							task.ProxyID = proxyID
+						}
+
+						// Republish task for fresh execution with new proxy
+						task.RetryCount++
+						if e.pubsubClient != nil && task.RetryCount <= e.retryConfig.MaxRetries {
+							logger.Info("Republishing task with new proxy for retry",
+								zap.String("task_id", task.TaskID),
+								zap.String("node_id", node.ID),
+								zap.String("proxy_id", task.ProxyID),
+								zap.Int("retry_count", task.RetryCount),
+							)
+							if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
+								logger.Error("Failed to republish task for proxy retry", zap.Error(pubErr))
+							} else {
+								// Record recovery success - task will be retried with new proxy
+								e.recoveryManager.RecordRecoverySuccess(ctx, task.TaskID, 0)
+								// Return early - a new task message will handle the retry
+								return execCtx.Page, result, nil
+							}
+						}
 					}
 				} else {
 					logger.Debug("No recovery plan generated (thresholds not met or not applicable)",
