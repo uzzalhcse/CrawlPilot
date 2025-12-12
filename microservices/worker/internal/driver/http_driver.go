@@ -135,6 +135,13 @@ func (d *HttpDriver) Name() string {
 	return "http"
 }
 
+// SetSessionChecker is a no-op for HttpDriver.
+// HTTP driver doesn't use browser contexts - each request is stateless
+// and cookies are managed via cookiejar, not pool contexts.
+func (d *HttpDriver) SetSessionChecker(checker browser.SessionChecker) {
+	// No-op: HTTP driver manages sessions via cookiejar, not browser contexts
+}
+
 // HttpPage implements the Page interface
 type HttpPage struct {
 	client      *http.Client

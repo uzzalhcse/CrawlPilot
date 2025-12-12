@@ -24,6 +24,10 @@ type ExecutionContext struct {
 	SwitchDriverWithBrowser func(driverType, browserName string) error // Switch HTTP driver with browser name for JA3
 	OnWarning               func(field, message string)                // Callback for logging warnings
 	CaptchaCookieCache      CaptchaCookieCacheInterface                // Cookie cache for CAPTCHA bypass sharing
+
+	// Session detection callback for SmartUnblocker integration
+	// Called when anti-bot cookies (Cloudflare, Datadome, etc.) are detected after navigation
+	OnAntiBotCookiesDetected func(domain string, cookieNames []string)
 }
 
 // CaptchaCookieCacheInterface defines the interface for CAPTCHA cookie/session caching

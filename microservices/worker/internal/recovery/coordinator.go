@@ -34,15 +34,20 @@ type CoordinatorConfig struct {
 	ResultTTL    time.Duration // How long to cache recovery results (default: 5m)
 	WaitTimeout  time.Duration // How long non-coordinators wait for result (default: 10s)
 	PollInterval time.Duration // How often to check for result (default: 500ms)
+
+	// Non-blocking mode: don't wait for other workers, proceed independently
+	// Recommended for Cloud Run to avoid paying for idle time
+	NonBlockingMode bool
 }
 
 // DefaultCoordinatorConfig returns sensible defaults
 func DefaultCoordinatorConfig() *CoordinatorConfig {
 	return &CoordinatorConfig{
-		LockTTL:      30 * time.Second,
-		ResultTTL:    5 * time.Minute,
-		WaitTimeout:  10 * time.Second,
-		PollInterval: 500 * time.Millisecond,
+		LockTTL:         30 * time.Second,
+		ResultTTL:       5 * time.Minute,
+		WaitTimeout:     10 * time.Second,
+		PollInterval:    500 * time.Millisecond,
+		NonBlockingMode: true, // Default to non-blocking for Cloud Run
 	}
 }
 
@@ -128,6 +133,48 @@ func (c *RecoveryCoordinator) TryAcquireCoordination(ctx context.Context, domain
 		zap.String("pattern", string(pattern)),
 	)
 	return RoleFollower, nil, nil
+}
+
+// TryCoordinateNonBlocking attempts coordination without waiting
+// Returns: role, cached result (if any), whether we should proceed independently
+// This is the recommended method for Cloud Run to avoid paying for idle time
+func (c *RecoveryCoordinator) TryCoordinateNonBlocking(ctx context.Context, domain string, pattern ErrorPattern) (CoordinatorRole, *RecoveryResult, bool) {
+	if c.cache == nil {
+		return RoleNone, nil, true // No Redis, proceed independently
+	}
+
+	lockKey := fmt.Sprintf(keyRecoveryLock, domain, pattern)
+	resultKey := fmt.Sprintf(keyRecoveryResult, domain, pattern)
+
+	// Check for cached result first (very fast)
+	existingResult, err := c.getResult(ctx, resultKey)
+	if err == nil && existingResult != nil && time.Now().Before(existingResult.ExpiresAt) {
+		logger.Debug("Using cached recovery result (non-blocking)",
+			zap.String("domain", domain),
+			zap.String("pattern", string(pattern)),
+		)
+		return RoleFollower, existingResult, false // Don't proceed, use cached
+	}
+
+	// Try to acquire lock (non-blocking)
+	success, err := c.cache.SetNX(ctx, lockKey, c.workerID, c.config.LockTTL)
+	if err != nil {
+		return RoleNone, nil, true // Redis error, proceed independently
+	}
+
+	if success {
+		// We're coordinator
+		return RoleCoordinator, nil, true
+	}
+
+	// Another worker is coordinator - DON'T WAIT
+	// In non-blocking mode, we proceed independently
+	// The coordinator's result will be cached and used by future requests
+	logger.Debug("Another worker is coordinator (non-blocking mode: proceeding independently)",
+		zap.String("domain", domain),
+		zap.String("pattern", string(pattern)),
+	)
+	return RoleFollower, nil, true // Proceed independently
 }
 
 // WaitForResult waits for the coordinator to publish recovery result

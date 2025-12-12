@@ -171,6 +171,15 @@ func NewTaskExecutor(
 			logger.Warn("Failed to initialize recovery manager", zap.Error(err))
 		} else {
 			recoveryManager = rm
+
+			// Wire SmartUnblocker to drivers for session-aware context selection
+			// This enables browser pool to reuse contexts with anti-bot cookies
+			if unblocker := rm.GetSmartUnblocker(); unblocker != nil {
+				if pwDriver, ok := drivers["playwright"].(*driver.PlaywrightDriver); ok {
+					pwDriver.SetSessionChecker(unblocker)
+					logger.Info("SmartUnblocker wired to PlaywrightDriver for session-aware contexts")
+				}
+			}
 		}
 	}
 
@@ -188,6 +197,14 @@ func NewTaskExecutor(
 
 	// Create driver factory for profile-based driver creation
 	driverFactory := driver.NewFactory(cfg)
+
+	// Wire SmartUnblocker to factory so all factory-created drivers get session checker
+	if recoveryManager != nil {
+		if unblocker := recoveryManager.GetSmartUnblocker(); unblocker != nil {
+			driverFactory.SetSessionChecker(unblocker)
+			logger.Info("SmartUnblocker wired to DriverFactory for session-aware profile drivers")
+		}
+	}
 
 	// Create probe reporter for probe result reporting
 	probeReporter := reporter.NewProbeReporter(orchestratorURL)
@@ -291,15 +308,65 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 
 	// Prepare context with proxy if needed
 	execCtx := ctx
+	domain := extractDomain(task.URL)
+	var currentTier models.ProxyTier = models.TierDirect // Track current tier for learning
+
+	// Smart Unblocker: Get optimal tier and proxy for this domain
+	// This provides tiered proxy escalation based on learned domain behavior
+	if e.recoveryManager != nil {
+		if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
+			// Check if tier was escalated during retry (from previous failure)
+			if task.ProxyTier > models.TierDirect {
+				currentTier = task.ProxyTier
+				logger.Debug("Using escalated tier from retry",
+					zap.String("domain", domain),
+					zap.Int("tier", int(currentTier)),
+				)
+			} else {
+				// Get recommended tier for this domain (learned from previous executions)
+				currentTier = unblocker.GetOptimalTier(ctx, domain)
+			}
+
+			// Apply adaptive delay before navigation (learned throttling)
+			if adaptiveDelay := unblocker.GetAdaptiveDelay(ctx, domain); adaptiveDelay > 0 {
+				logger.Debug("Applying adaptive delay",
+					zap.String("domain", domain),
+					zap.Duration("delay", adaptiveDelay),
+				)
+				time.Sleep(adaptiveDelay)
+			}
+
+			if currentTier > models.TierDirect {
+				// Get tiered proxy manager for tier-specific proxy selection
+				if tieredProxy := e.recoveryManager.GetTieredProxyManager(); tieredProxy != nil {
+					proxy, _, err := tieredProxy.GetProxyForTier(ctx, domain, currentTier)
+					if err == nil && proxy != nil {
+						task.ProxyURL = proxy.ProxyURL()
+						task.ProxyID = proxy.ID
+						task.ProxyTier = currentTier // Track tier for retry escalation
+						logger.Info("SmartUnblocker: Using tiered proxy",
+							zap.String("task_id", task.TaskID),
+							zap.String("domain", domain),
+							zap.Int("tier", int(currentTier)),
+							zap.String("proxy_id", proxy.ID),
+						)
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: Use task proxy if already set (e.g., from recovery retry)
 	if task.ProxyURL != "" {
 		proxyConfig := &browser.ProxyConfig{
 			Server: task.ProxyURL,
 		}
 		// Pass proxy config via context to driver
 		execCtx = context.WithValue(ctx, driver.ProxyKey, proxyConfig)
-		logger.Info("Using proxy for retry",
+		logger.Debug("Using proxy",
 			zap.String("task_id", task.TaskID),
 			zap.String("proxy_id", task.ProxyID),
+			zap.Int("tier", int(currentTier)),
 		)
 	}
 
@@ -429,7 +496,26 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 						)
 					}
 
-					// Republish task with updated info (proxy, retry count)
+					// SmartUnblocker: Check if we should escalate to a higher tier
+					if e.recoveryManager != nil {
+						if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
+							shouldEscalate, nextTier := unblocker.ShouldEscalate(ctx, domain, currentTier)
+							if shouldEscalate {
+								task.ProxyTier = nextTier
+								// Clear old proxy - will be selected based on new tier
+								task.ProxyURL = ""
+								task.ProxyID = ""
+								logger.Info("SmartUnblocker: Escalating tier for retry",
+									zap.String("task_id", task.TaskID),
+									zap.String("domain", domain),
+									zap.Int("from_tier", int(currentTier)),
+									zap.Int("to_tier", int(nextTier)),
+								)
+							}
+						}
+					}
+
+					// Republish task with updated info (proxy, retry count, tier)
 					task.RetryCount++
 					if e.pubsubClient != nil {
 						if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
@@ -448,9 +534,17 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 
 		// Record proxy failure if proxy was used
 		if task.ProxyID != "" && e.recoveryManager != nil {
-			domain := extractDomain(task.URL)
 			if err := e.recoveryManager.RecordProxyFailure(ctx, task.ProxyID, domain, recovery.PatternUnknown); err != nil {
 				logger.Warn("Failed to record proxy failure", zap.Error(err))
+			}
+		}
+
+		// SmartUnblocker: Record failure for tier learning
+		// This helps the system learn to escalate tiers when needed
+		if e.recoveryManager != nil {
+			if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
+				failDuration := time.Since(startTime)
+				unblocker.RecordResult(ctx, task.ExecutionID, domain, currentTier, false, 0, failDuration)
 			}
 		}
 
@@ -490,16 +584,22 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	}
 
 	// Record success for error rate tracking
+	duration := time.Since(startTime)
 	if e.recoveryManager != nil {
 		e.recoveryManager.RecordSuccess(ctx, task.URL)
 		e.recoveryManager.ClearHistory(task.TaskID)
 
 		// Record proxy success if proxy was used
 		if task.ProxyID != "" {
-			domain := extractDomain(task.URL)
 			if err := e.recoveryManager.RecordProxySuccess(ctx, task.ProxyID, domain); err != nil {
 				logger.Warn("Failed to record proxy success", zap.Error(err))
 			}
+		}
+
+		// SmartUnblocker: Record result for tier learning
+		// This helps the system learn which tier works best for each domain
+		if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
+			unblocker.RecordResult(ctx, task.ExecutionID, domain, currentTier, true, 200, duration)
 		}
 	}
 
@@ -565,7 +665,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	}
 
 	// Set phase context for stats (enables per-phase breakdown)
-	duration := time.Since(startTime)
+	duration = time.Since(startTime) // Update duration at completion
 	taskStats.SetPhase(task.PhaseID, duration)
 
 	// Report stats to orchestrator
@@ -601,6 +701,24 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 			logger.Info("Execution complete - signaling orchestrator",
 				zap.String("execution_id", task.ExecutionID),
 			)
+
+			// SmartUnblocker: Persist learned strategies to database
+			// This saves tier learning for future executions
+			if e.recoveryManager != nil {
+				if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
+					go func() {
+						persistCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+						defer cancel()
+						if err := unblocker.PersistLearnedStrategies(persistCtx, task.ExecutionID); err != nil {
+							logger.Warn("Failed to persist learned strategies", zap.Error(err))
+						} else {
+							logger.Info("Persisted learned domain strategies",
+								zap.String("execution_id", task.ExecutionID),
+							)
+						}
+					}()
+				}
+			}
 		}
 	}
 
@@ -663,6 +781,16 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 					PhaseID:     task.PhaseID,
 					RetryCount:  task.RetryCount,
 				})
+			}
+		}
+	}
+
+	// SmartUnblocker: Wire up anti-bot cookie detection callback
+	// This automatically detects anti-bot sessions (Cloudflare, Datadome, etc.) after navigation
+	if e.recoveryManager != nil {
+		if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
+			execCtx.OnAntiBotCookiesDetected = func(domain string, cookieNames []string) {
+				unblocker.RecordSessionCookies(ctx, task.ExecutionID, domain, cookieNames)
 			}
 		}
 	}

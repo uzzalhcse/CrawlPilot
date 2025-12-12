@@ -95,6 +95,12 @@ func (d *PlaywrightDriver) Name() string {
 	return "playwright"
 }
 
+// SetSessionChecker sets the session checker for session-aware context selection
+// This enables the browser pool to reuse contexts with anti-bot cookies for domains that need them
+func (d *PlaywrightDriver) SetSessionChecker(checker browser.SessionChecker) {
+	d.pool.SetSessionChecker(checker)
+}
+
 // PlaywrightPage implements the Page interface
 type PlaywrightPage struct {
 	page          playwright.Page

@@ -24,6 +24,20 @@ type Driver interface {
 	Name() string
 }
 
+// SessionAwareDriver is an optional interface for drivers that support
+// session-aware context selection (reusing contexts with anti-bot cookies)
+type SessionAwareDriver interface {
+	Driver
+	// SetSessionChecker sets the session checker for session-aware context selection
+	// This should be called after driver creation to wire up SmartUnblocker
+	SetSessionChecker(checker SessionChecker)
+}
+
+// SessionChecker checks if a domain needs session reuse (anti-bot sessions)
+type SessionChecker interface {
+	NeedsSessionReuse(ctx context.Context, domain string) bool
+}
+
 // Page defines the common interactions required by nodes
 type Page interface {
 	// Navigation

@@ -132,8 +132,9 @@ type Task struct {
 	BrowserProfileID *string                `json:"browser_profile_id,omitempty"` // Browser profile for this task
 
 	// Proxy settings (populated by recovery system)
-	ProxyURL string `json:"proxy_url,omitempty"` // Full proxy URL with auth
-	ProxyID  string `json:"proxy_id,omitempty"`  // Proxy ID for tracking
+	ProxyURL  string    `json:"proxy_url,omitempty"`  // Full proxy URL with auth
+	ProxyID   string    `json:"proxy_id,omitempty"`   // Proxy ID for tracking
+	ProxyTier ProxyTier `json:"proxy_tier,omitempty"` // Escalated tier for Smart Unblocker
 
 	// Probe execution flag
 	IsProbe bool `json:"is_probe"`

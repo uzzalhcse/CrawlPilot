@@ -134,6 +134,14 @@ func (d *CamoufoxDriver) Name() string {
 	return "camoufox"
 }
 
+// SetSessionChecker is a no-op for CamoufoxDriver.
+// Camoufox doesn't use pooled contexts - sessions are managed at browser level,
+// so anti-bot cookies are naturally preserved within the same browser instance.
+func (d *CamoufoxDriver) SetSessionChecker(checker browser.SessionChecker) {
+	// No-op: Camoufox maintains session state within the browser instance
+	logger.Debug("CamoufoxDriver: SetSessionChecker called (no-op, sessions managed at browser level)")
+}
+
 // CamoufoxPage implements the Page interface
 type CamoufoxPage struct {
 	page     playwright.Page

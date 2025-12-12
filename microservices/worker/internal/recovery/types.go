@@ -177,6 +177,7 @@ type Proxy struct {
 	ASNNumber      int       `json:"asn_number" db:"asn_number"`
 	ConfidenceHigh bool      `json:"high_country_confidence" db:"confidence_high"`
 	ProxyType      string    `json:"proxy_type" db:"proxy_type"` // static, rotating
+	Tier           int       `json:"tier" db:"tier"`             // 1=datacenter, 2=residential, 3=mobile
 	FailureCount   int       `json:"failure_count" db:"failure_count"`
 	SuccessCount   int       `json:"success_count" db:"success_count"`
 	LastUsed       time.Time `json:"last_used" db:"last_used"`

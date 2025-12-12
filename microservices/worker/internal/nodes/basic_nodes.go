@@ -222,6 +222,15 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 						if err := execCtx.CaptchaCookieCache.SetSession(ctx, domain, cookies, fp); err != nil {
 							logger.Warn("Failed to cache CAPTCHA session", zap.Error(err))
 						}
+
+						// Notify SmartUnblocker about anti-bot cookies for session requirement detection
+						if execCtx.OnAntiBotCookiesDetected != nil {
+							var cookieNames []string
+							for _, c := range cookies {
+								cookieNames = append(cookieNames, c.Name)
+							}
+							execCtx.OnAntiBotCookiesDetected(domain, cookieNames)
+						}
 					}
 				}
 			} else {

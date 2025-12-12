@@ -221,3 +221,74 @@ func (c *Cache) HIncrBy(ctx context.Context, key, field string, incr int64) (int
 func (c *Cache) HDel(ctx context.Context, key string, fields ...string) error {
 	return c.client.HDel(ctx, key, fields...).Err()
 }
+
+// =====================================================
+// SET OPERATIONS (for domain tracking)
+// =====================================================
+
+// SAdd adds members to a set
+func (c *Cache) SAdd(ctx context.Context, key string, members ...interface{}) error {
+	return c.client.SAdd(ctx, key, members...).Err()
+}
+
+// SMembers returns all members of a set
+func (c *Cache) SMembers(ctx context.Context, key string) ([]string, error) {
+	return c.client.SMembers(ctx, key).Result()
+}
+
+// SCard returns the number of members in a set
+func (c *Cache) SCard(ctx context.Context, key string) (int64, error) {
+	return c.client.SCard(ctx, key).Result()
+}
+
+// =====================================================
+// PIPELINE OPERATIONS (for high-throughput batching)
+// =====================================================
+
+// Pipeliner wraps Redis pipeline for batched commands
+type Pipeliner struct {
+	pipe redis.Pipeliner
+}
+
+// Pipeline creates a new pipeline for batching commands
+// Use Exec() to execute all commands in a single round-trip
+func (c *Cache) Pipeline() *Pipeliner {
+	return &Pipeliner{pipe: c.client.Pipeline()}
+}
+
+// HIncrBy queues a hash increment in the pipeline
+func (p *Pipeliner) HIncrBy(ctx context.Context, key, field string, incr int64) {
+	p.pipe.HIncrBy(ctx, key, field, incr)
+}
+
+// HSet queues a hash set in the pipeline
+func (p *Pipeliner) HSet(ctx context.Context, key, field string, value interface{}) {
+	p.pipe.HSet(ctx, key, field, value)
+}
+
+// Incr queues an increment in the pipeline
+func (p *Pipeliner) Incr(ctx context.Context, key string) {
+	p.pipe.Incr(ctx, key)
+}
+
+// Expire queues an expire in the pipeline
+func (p *Pipeliner) Expire(ctx context.Context, key string, ttl time.Duration) {
+	p.pipe.Expire(ctx, key, ttl)
+}
+
+// Del queues a delete in the pipeline
+func (p *Pipeliner) Del(ctx context.Context, keys ...string) {
+	p.pipe.Del(ctx, keys...)
+}
+
+// SAdd queues a set add in the pipeline
+func (p *Pipeliner) SAdd(ctx context.Context, key string, members ...interface{}) {
+	p.pipe.SAdd(ctx, key, members...)
+}
+
+// Exec executes all queued commands in a single round-trip
+// Returns the number of completed commands and any error
+func (p *Pipeliner) Exec(ctx context.Context) (int, error) {
+	cmds, err := p.pipe.Exec(ctx)
+	return len(cmds), err
+}

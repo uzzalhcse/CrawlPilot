@@ -15,11 +15,38 @@ import (
 	"go.uber.org/zap"
 )
 
+// SessionChecker checks if a domain needs session reuse (anti-bot sessions)
+// This interface allows dependency injection of SmartUnblocker without circular imports
+type SessionChecker interface {
+	NeedsSessionReuse(ctx context.Context, domain string) bool
+}
+
 // PooledContext wraps a browser context with metadata for lifecycle management
 type PooledContext struct {
 	ctx         playwright.BrowserContext
 	createdAt   time.Time
 	Fingerprint *services.Fingerprint // BrowserForge fingerprint used for this context
+
+	// Session tracking: which domains have anti-bot cookies in this context
+	cookieDomains map[string]bool // domain -> has anti-bot cookies
+	domainMu      sync.RWMutex
+}
+
+// HasCookiesFor checks if this context has anti-bot cookies for a domain
+func (pc *PooledContext) HasCookiesFor(domain string) bool {
+	pc.domainMu.RLock()
+	defer pc.domainMu.RUnlock()
+	return pc.cookieDomains[domain]
+}
+
+// MarkCookiesFor marks that this context has anti-bot cookies for a domain
+func (pc *PooledContext) MarkCookiesFor(domain string) {
+	pc.domainMu.Lock()
+	defer pc.domainMu.Unlock()
+	if pc.cookieDomains == nil {
+		pc.cookieDomains = make(map[string]bool)
+	}
+	pc.cookieDomains[domain] = true
 }
 
 // Pool manages a pool of browser contexts
@@ -33,6 +60,19 @@ type Pool struct {
 	pw          *playwright.Playwright
 	cam         *camoufox.Camoufox
 	semaphore   chan struct{} // Limits concurrent browser operations
+
+	// Session-aware context selection
+	sessionChecker SessionChecker            // Optional: checks if domain needs session reuse
+	domainContexts map[string]*PooledContext // domain -> context with anti-bot cookies (for reuse)
+	domainMu       sync.RWMutex
+}
+
+// SetSessionChecker sets the session checker for session-aware context selection
+// This should be called after pool creation to wire up SmartUnblocker
+func (p *Pool) SetSessionChecker(checker SessionChecker) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sessionChecker = checker
 }
 
 // ProxyConfig holds proxy settings for a browser context
@@ -331,6 +371,82 @@ func (p *Pool) AcquireWithFingerprint(ctx context.Context) (playwright.BrowserCo
 		<-p.semaphore // Release semaphore on timeout
 		return nil, nil, fmt.Errorf("timeout waiting for browser context")
 	}
+}
+
+// AcquireForDomain acquires a context suitable for the given domain
+// If the domain needs session reuse (detected anti-bot cookies), it will try to reuse a context that has cookies for that domain
+// Returns the context, fingerprint, and pooledContext for domain registration later
+func (p *Pool) AcquireForDomain(ctx context.Context, domain string) (playwright.BrowserContext, *services.Fingerprint, *PooledContext, error) {
+	// Check if domain needs session reuse
+	needsSession := false
+	if p.sessionChecker != nil {
+		needsSession = p.sessionChecker.NeedsSessionReuse(ctx, domain)
+	}
+
+	// If session needed, try to find existing context with cookies for this domain
+	if needsSession {
+		p.domainMu.RLock()
+		existingCtx := p.domainContexts[domain]
+		p.domainMu.RUnlock()
+
+		if existingCtx != nil && existingCtx.HasCookiesFor(domain) {
+			// Acquire semaphore for this context
+			select {
+			case p.semaphore <- struct{}{}:
+				p.mu.Lock()
+				p.activeCount++
+				p.mu.Unlock()
+
+				logger.Info("Reusing session context for anti-bot domain",
+					zap.String("domain", domain),
+					zap.Int("active_contexts", p.activeCount),
+				)
+
+				return existingCtx.ctx, existingCtx.Fingerprint, existingCtx, nil
+			case <-ctx.Done():
+				return nil, nil, nil, ctx.Err()
+			case <-time.After(5 * time.Second):
+				// Fallback to regular acquire if can't get semaphore
+				logger.Debug("Could not acquire session context, falling back to regular")
+			}
+		}
+	}
+
+	// Regular acquire
+	browserCtx, fp, err := p.AcquireWithFingerprint(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Wrap in PooledContext for tracking
+	pooledCtx := &PooledContext{
+		ctx:         browserCtx,
+		createdAt:   time.Now(),
+		Fingerprint: fp,
+	}
+
+	return browserCtx, fp, pooledCtx, nil
+}
+
+// RegisterDomainContext registers a context as having anti-bot cookies for a domain
+// Call this after CAPTCHA is solved and cookies are present
+func (p *Pool) RegisterDomainContext(domain string, pooledCtx *PooledContext) {
+	if pooledCtx == nil {
+		return
+	}
+
+	pooledCtx.MarkCookiesFor(domain)
+
+	p.domainMu.Lock()
+	if p.domainContexts == nil {
+		p.domainContexts = make(map[string]*PooledContext)
+	}
+	p.domainContexts[domain] = pooledCtx
+	p.domainMu.Unlock()
+
+	logger.Debug("Registered domain context for session reuse",
+		zap.String("domain", domain),
+	)
 }
 
 // Release returns a browser context to the pool

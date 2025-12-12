@@ -27,6 +27,8 @@ type RecoveryManager struct {
 	domainHealth     *DomainHealth
 	proxyManager     *ProxyManager                     // Local proxy manager (deprecated, use distributed)
 	distributedProxy *DistributedProxyManager          // Redis-based distributed proxy rotation
+	tieredProxy      *TieredProxyManager               // Tiered proxy escalation (Crawlee pattern)
+	smartUnblocker   *SmartUnblocker                   // Smart unblocker with domain learning
 	errorTracker     *ErrorTracker                     // Smart triggering with sliding window
 	configManager    *ConfigManager                    // Dynamic config from database (frontend-manageable)
 	incidentReporter *IncidentReporter                 // Creates reports for human investigation
@@ -146,6 +148,12 @@ func NewRecoveryManager(
 	// Initialize distributed proxy manager for Redis-based coordination
 	distributedProxy := NewDistributedProxyManager(cache, DefaultProxyRotationConfig())
 
+	// Initialize tiered proxy manager (Crawlee pattern: escalation tiers)
+	tieredProxy := NewTieredProxyManager(cache, DefaultProxyRotationConfig(), DefaultTieredProxyConfig())
+
+	// Initialize smart unblocker with domain learning and DB persistence
+	smartUnblocker := NewSmartUnblocker(pool, cache, tieredProxy, DefaultSmartUnblockerConfig())
+
 	// Generate unique worker ID for coordination
 	workerID := fmt.Sprintf("worker-%d-%d", time.Now().UnixNano()%1000000, time.Now().Unix()%10000)
 
@@ -165,10 +173,10 @@ func NewRecoveryManager(
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			// Load proxies from database
+			// Load proxies from database (including tier column)
 			query := `SELECT id, proxy_id, server, username, password, proxy_address, port, 
 			          valid, last_verified, country_code, city_name, asn_name, asn_number,
-			          confidence_high, proxy_type, failure_count, success_count, 
+			          confidence_high, proxy_type, COALESCE(tier, 1) as tier, failure_count, success_count, 
 			          last_used, is_healthy, created_at, updated_at
 			          FROM proxies WHERE valid = true AND is_healthy = true`
 
@@ -185,7 +193,7 @@ func NewRecoveryManager(
 				var lastVerified, lastUsed, createdAt, updatedAt *time.Time
 				err := rows.Scan(&p.ID, &p.ProxyID, &p.Server, &p.Username, &p.Password, &p.ProxyAddress, &p.Port,
 					&p.Valid, &lastVerified, &p.CountryCode, &p.CityName, &p.ASNName, &p.ASNNumber,
-					&p.ConfidenceHigh, &p.ProxyType, &p.FailureCount, &p.SuccessCount,
+					&p.ConfidenceHigh, &p.ProxyType, &p.Tier, &p.FailureCount, &p.SuccessCount,
 					&lastUsed, &p.IsHealthy, &createdAt, &updatedAt)
 				if err != nil {
 					continue
@@ -206,7 +214,16 @@ func NewRecoveryManager(
 			}
 
 			if len(proxies) > 0 {
-				if err := distributedProxy.SeedProxies(ctx, proxies); err != nil {
+				// Seed to tiered proxy manager with tier support
+				if tieredProxy != nil {
+					if err := tieredProxy.SeedProxiesWithTiers(ctx, proxies); err != nil {
+						logger.Error("Failed to seed tiered proxies to Redis", zap.Error(err))
+					} else {
+						logger.Info("Proxies auto-synced to Redis with tiers",
+							zap.Int("count", len(proxies)),
+						)
+					}
+				} else if err := distributedProxy.SeedProxies(ctx, proxies); err != nil {
 					logger.Error("Failed to seed proxies to Redis", zap.Error(err))
 				} else {
 					logger.Info("Proxies auto-synced from database to Redis",
@@ -221,6 +238,8 @@ func NewRecoveryManager(
 		zap.Bool("ai_fallback", agent != nil),
 		zap.Bool("proxy_manager", proxyManager != nil),
 		zap.Bool("distributed_proxy", distributedProxy != nil),
+		zap.Bool("tiered_proxy", tieredProxy != nil),
+		zap.Bool("smart_unblocker", smartUnblocker != nil),
 		zap.Bool("incident_reporter", incidentReporter != nil),
 		zap.Bool("coordinator", coordinator != nil),
 		zap.String("worker_id", workerID),
@@ -240,6 +259,8 @@ func NewRecoveryManager(
 		domainHealth:     domainHealth,
 		proxyManager:     proxyManager,
 		distributedProxy: distributedProxy,
+		tieredProxy:      tieredProxy,
+		smartUnblocker:   smartUnblocker,
 		errorTracker:     errorTracker,
 		configManager:    configManager,
 		incidentReporter: incidentReporter,
@@ -682,6 +703,16 @@ func (m *RecoveryManager) GetProbeLLMProvider() llm.Provider {
 	}
 	// Fallback to recovery provider
 	return m.GetLLMProvider()
+}
+
+// GetSmartUnblocker returns the smart unblocker for domain learning and tier management
+func (m *RecoveryManager) GetSmartUnblocker() *SmartUnblocker {
+	return m.smartUnblocker
+}
+
+// GetTieredProxyManager returns the tiered proxy manager for tier-based proxy selection
+func (m *RecoveryManager) GetTieredProxyManager() *TieredProxyManager {
+	return m.tieredProxy
 }
 
 // Close gracefully shuts down the recovery manager and its resources

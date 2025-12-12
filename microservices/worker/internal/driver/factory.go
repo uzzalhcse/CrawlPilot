@@ -6,11 +6,13 @@ import (
 	camoufox "github.com/uzzalhcse/camoufox-go"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"github.com/uzzalhcse/crawlify/microservices/worker/internal/browser"
 )
 
 // Factory creates drivers based on configuration
 type Factory struct {
-	config *config.BrowserConfig
+	config         *config.BrowserConfig
+	sessionChecker browser.SessionChecker // Session checker for session-aware drivers
 }
 
 // NewFactory creates a new driver factory
@@ -18,6 +20,12 @@ func NewFactory(cfg *config.BrowserConfig) *Factory {
 	return &Factory{
 		config: cfg,
 	}
+}
+
+// SetSessionChecker sets the session checker for session-aware context selection
+// All drivers created after this will have the session checker wired
+func (f *Factory) SetSessionChecker(checker browser.SessionChecker) {
+	f.sessionChecker = checker
 }
 
 // CreateDriver creates a new driver instance using default config settings
@@ -51,7 +59,15 @@ func (f *Factory) CreateDriverFromProfileWithHeadless(profile *models.BrowserPro
 // This is used for domain-locked CAPTCHA session sharing - all browsers for the same
 // domain use the same fingerprint to ensure cookies remain valid.
 func (f *Factory) CreateCamoufoxWithFingerprint(profile *models.BrowserProfile, fingerprint *camoufox.Fingerprint) (Driver, error) {
-	return NewCamoufoxDriverWithFingerprint(f.config, profile, fingerprint)
+	d, err := NewCamoufoxDriverWithFingerprint(f.config, profile, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	// Apply session checker if set
+	if f.sessionChecker != nil {
+		d.SetSessionChecker(f.sessionChecker)
+	}
+	return d, nil
 }
 
 // createDriverWithConfig is the internal method that creates drivers
@@ -70,26 +86,57 @@ func (f *Factory) createDriverWithConfig(cfg *config.BrowserConfig, profile *mod
 		}
 	}
 
+	var d Driver
+	var err error
+
 	// Create driver based on type
 	switch driverType {
 	case "http":
-		return NewHttpDriver(), nil
+		d = NewHttpDriver()
 	case "chromedp":
 		if profile != nil {
-			return NewChromedpDriverWithProfile(cfg, profile)
+			d, err = NewChromedpDriverWithProfile(cfg, profile)
+		} else {
+			d = NewChromedpDriver(cfg)
 		}
-		return NewChromedpDriver(cfg), nil
 	case "playwright", "":
 		if profile != nil {
-			return NewPlaywrightDriverWithProfile(cfg, profile)
+			d, err = NewPlaywrightDriverWithProfile(cfg, profile)
+		} else {
+			d, err = NewPlaywrightDriver(cfg)
 		}
-		return NewPlaywrightDriver(cfg)
 	case "camoufox":
 		if profile != nil {
-			return NewCamoufoxDriverWithProfile(cfg, profile)
+			d, err = NewCamoufoxDriverWithProfile(cfg, profile)
+		} else {
+			d, err = NewCamoufoxDriver(cfg)
 		}
-		return NewCamoufoxDriver(cfg)
 	default:
 		return nil, fmt.Errorf("unknown driver type: %s", driverType)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply session checker if set
+	if f.sessionChecker != nil {
+		f.applySessionChecker(d)
+	}
+
+	return d, nil
+}
+
+// applySessionChecker applies the session checker to a driver if it supports it
+func (f *Factory) applySessionChecker(d Driver) {
+	switch drv := d.(type) {
+	case *PlaywrightDriver:
+		drv.SetSessionChecker(f.sessionChecker)
+	case *CamoufoxDriver:
+		drv.SetSessionChecker(f.sessionChecker)
+	case *HttpDriver:
+		drv.SetSessionChecker(f.sessionChecker)
+	case *ChromedpDriver:
+		// ChromedpDriver doesn't have SetSessionChecker yet - can add if needed
 	}
 }
