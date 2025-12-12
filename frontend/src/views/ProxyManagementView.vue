@@ -7,6 +7,10 @@
       :show-help-icon="true"
     >
       <template #actions>
+        <Button @click="showImportDialog = true" variant="outline" size="sm" class="mr-2">
+          <Download class="w-4 h-4 mr-2" />
+          Import from API
+        </Button>
         <Button @click="showProxyEditor = true" variant="default" size="sm">
           <Plus class="w-4 h-4 mr-2" />
           Add Proxy
@@ -136,12 +140,35 @@
         </div>
       </div>
     </div>
+
+    <!-- Import from API Dialog -->
+    <div v-if="showImportDialog" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div class="bg-background border rounded-lg p-6 max-w-lg w-full mx-4">
+        <h3 class="text-lg font-semibold mb-4">Import Proxies from API</h3>
+        <div class="space-y-4">
+          <div>
+            <label class="text-sm font-medium">API URL</label>
+            <input v-model="importApiUrl" type="text" 
+              placeholder="http://example.com/api/proxy?page=1&limit=50" 
+              class="w-full mt-1 px-3 py-2 border rounded-md bg-background text-sm" />
+            <p class="text-xs text-muted-foreground mt-1">Enter the API endpoint URL to fetch proxies from</p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-6">
+          <Button variant="outline" @click="showImportDialog = false" :disabled="importing">Cancel</Button>
+          <Button @click="handleImportFromApi" :disabled="!importApiUrl || importing">
+            <Loader2 v-if="importing" class="h-4 w-4 mr-2 animate-spin" />
+            {{ importing ? 'Importing...' : 'Import Proxies' }}
+          </Button>
+        </div>
+      </div>
+    </div>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { getProxies, createProxy, deleteProxy, toggleProxy, type Proxy } from '@/api/recovery'
+import { getProxies, createProxy, deleteProxy, toggleProxy, importProxiesFromApi, type Proxy } from '@/api/recovery'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -149,7 +176,7 @@ import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import StatsBar from '@/components/layout/StatsBar.vue'
 import FilterBar from '@/components/layout/FilterBar.vue'
-import { Plus, Trash2, Loader2, SlidersHorizontal, Wifi, Power } from 'lucide-vue-next'
+import { Plus, Trash2, Loader2, SlidersHorizontal, Wifi, Power, Download } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const proxyStatusFilter = ref('all')
@@ -159,6 +186,9 @@ const loading = ref(false)
 const proxies = ref<Proxy[]>([])
 const togglingIds = ref<Set<string>>(new Set())
 const newProxy = ref({ proxy_address: '', port: 0, username: '', password: '', server: '' })
+const showImportDialog = ref(false)
+const importApiUrl = ref('http://34.85.113.40:8080/api/proxy?page=1&limit=50')
+const importing = ref(false)
 
 const proxyStats = computed(() => {
   const healthy = proxies.value.filter(p => p.is_healthy).length
@@ -231,6 +261,28 @@ async function handleToggleProxy(proxy: Proxy) {
     toast.error('Failed to toggle proxy')
   } finally {
     togglingIds.value.delete(proxy.id)
+  }
+}
+
+async function handleImportFromApi() {
+  if (!importApiUrl.value) return
+  importing.value = true
+  try {
+    const result = await importProxiesFromApi(importApiUrl.value)
+    if (result.imported > 0) {
+      toast.success(`Successfully imported ${result.imported} proxies${result.failed > 0 ? `, ${result.failed} failed` : ''}`)
+    } else if (result.failed > 0) {
+      toast.error(`Failed to import proxies: ${result.failed} errors`)
+    } else {
+      toast.info('No proxies found to import')
+    }
+    showImportDialog.value = false
+    await fetchProxies()
+  } catch (error) {
+    console.error('Import error:', error)
+    toast.error('Failed to import proxies from API')
+  } finally {
+    importing.value = false
   }
 }
 

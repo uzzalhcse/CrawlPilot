@@ -66,23 +66,23 @@ if ! command -v pm2 &> /dev/null; then
 fi
 
 # Stop existing processes
-pm2 delete all || true
+#pm2 delete all || true
 
 # Start Orchestrator
 # Env vars should be loaded from .env or set here. Assuming .env exists or defaults are fine.
 # We need to ensure SELECTFLOW_SCRIPT_PATH is set correctly relative to the binary or absolute
 export SELECTFLOW_SCRIPT_PATH="$(pwd)/orchestrator/assets/selectflow.js"
 
-pm2 start ./orchestrator/bin/orchestrator --name "crawlify-orchestrator" --cwd ./orchestrator
+pm2 restart ./orchestrator/bin/orchestrator --name "crawlify-orchestrator" --cwd ./orchestrator
 
 # Start Worker
-pm2 start ./worker/bin/worker --name "crawlify-worker" --cwd ./worker
+pm2 restart ./worker/bin/worker --name "crawlify-worker" --cwd ./worker
 
 # Start Frontend (Serving static files or using preview)
 # For production, usually served via Nginx, but user asked for PM2.
 # We can use 'serve' or 'npm run preview'
 cd ../frontend
-pm2 start "npm run preview -- --host 0.0.0.0 --port 3131" --name "crawlify-frontend"
+pm2 restart "npm run preview -- --host 0.0.0.0 --port 3131" --name "crawlify-frontend"
 
 # Save PM2 list
 pm2 save

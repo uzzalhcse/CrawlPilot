@@ -156,3 +156,74 @@ export async function getRecoveryAttemptStats(): Promise<RecoveryAttemptStats> {
     const response = await apiClient.get('/recovery/attempts/stats')
     return response.data
 }
+
+// External Proxy API Import
+export interface ExternalProxyResponse {
+    data: {
+        data: ExternalProxy[]
+        message: string
+        meta: {
+            limit: number
+            page: number
+            total: number
+            total_pages: number
+        }
+    }
+    success: boolean
+}
+
+export interface ExternalProxy {
+    id: string
+    proxy_id: string
+    server: string
+    username: string
+    password: string
+    proxy_address: string
+    port: number
+    valid: boolean
+    last_verification: string
+    country_code: string
+    city_name: string
+    asn_name: string
+    asn_number: number
+    high_country_confidence: boolean
+    proxy_type: string
+}
+
+export async function importProxiesFromApi(apiUrl: string): Promise<{ imported: number; failed: number }> {
+    // Fetch proxies from external API
+    const response = await fetch(apiUrl)
+    if (!response.ok) {
+        throw new Error(`Failed to fetch proxies from API: ${response.statusText}`)
+    }
+
+    const data: ExternalProxyResponse = await response.json()
+
+    if (!data.success || !data.data?.data) {
+        throw new Error('Invalid API response format')
+    }
+
+    let imported = 0
+    let failed = 0
+
+    // Import each proxy
+    for (const externalProxy of data.data.data) {
+        try {
+            await createProxy({
+                server: externalProxy.server,
+                username: externalProxy.username || '',
+                password: externalProxy.password || '',
+                proxy_address: externalProxy.proxy_address,
+                port: externalProxy.port,
+                proxy_type: externalProxy.proxy_type || 'static',
+                country_code: externalProxy.country_code || ''
+            })
+            imported++
+        } catch (error) {
+            console.error(`Failed to import proxy ${externalProxy.server}:`, error)
+            failed++
+        }
+    }
+
+    return { imported, failed }
+}
