@@ -748,6 +748,7 @@ func (m *RecoveryManager) historyKeyFor(taskID string) string {
 }
 
 // getHistory returns recovery history for a task from Redis
+// Uses atomic LRange to get all list elements
 func (m *RecoveryManager) getHistory(taskID string) []*RecoveryAttempt {
 	if m.cache == nil {
 		return []*RecoveryAttempt{}
@@ -755,20 +756,27 @@ func (m *RecoveryManager) getHistory(taskID string) []*RecoveryAttempt {
 
 	ctx := context.Background()
 	key := m.historyKeyFor(taskID)
-	data, err := m.cache.Get(ctx, key)
-	if err != nil || data == "" {
+
+	// Use LRange to get all list elements atomically
+	items, err := m.cache.LRange(ctx, key, 0, -1)
+	if err != nil || len(items) == 0 {
 		return []*RecoveryAttempt{}
 	}
 
-	var attempts []*RecoveryAttempt
-	if err := json.Unmarshal([]byte(data), &attempts); err != nil {
-		return []*RecoveryAttempt{}
+	// Parse each JSON item in the list
+	attempts := make([]*RecoveryAttempt, 0, len(items))
+	for _, item := range items {
+		var attempt RecoveryAttempt
+		if err := json.Unmarshal([]byte(item), &attempt); err == nil {
+			attempts = append(attempts, &attempt)
+		}
 	}
 
 	return attempts
 }
 
 // recordAttempt records a recovery attempt to Redis
+// Uses atomic RPush to append to list, avoiding race conditions
 func (m *RecoveryManager) recordAttempt(taskID, executionID string, detected *DetectedError, plan *RecoveryPlan) {
 	attempt := &RecoveryAttempt{
 		ID:            generateID(),
@@ -786,17 +794,22 @@ func (m *RecoveryManager) recordAttempt(taskID, executionID string, detected *De
 	ctx := context.Background()
 	key := m.historyKeyFor(taskID)
 
-	// Get existing history
-	history := m.getHistory(taskID)
-	history = append(history, attempt)
-
-	// Save to Redis with 1 hour TTL
-	data, err := json.Marshal(history)
+	// Serialize the attempt to JSON
+	data, err := json.Marshal(attempt)
 	if err != nil {
 		return
 	}
 
-	m.cache.Set(ctx, key, string(data), 1*time.Hour)
+	// Use RPush for atomic append - no race condition!
+	// Multiple workers pushing to same list is safe
+	if _, err := m.cache.RPush(ctx, key, string(data)); err != nil {
+		logger.Warn("Failed to record recovery attempt", zap.Error(err))
+		return
+	}
+
+	// Set TTL on the list (1 hour)
+	// Note: This may extend TTL on each append, which is desired behavior
+	m.cache.Expire(ctx, key, 1*time.Hour)
 }
 
 // ClearHistory clears recovery history for a task from Redis
@@ -808,6 +821,64 @@ func (m *RecoveryManager) ClearHistory(taskID string) {
 	ctx := context.Background()
 	key := m.historyKeyFor(taskID)
 	m.cache.Delete(ctx, key)
+}
+
+// RecordRecoverySuccess should be called when a task that was previously retried
+// via recovery now succeeds. This updates rule success stats, AI learning outcomes,
+// and domain health to help the system learn which recovery strategies work.
+func (m *RecoveryManager) RecordRecoverySuccess(ctx context.Context, taskID string, duration time.Duration) error {
+	if !m.config.Enabled {
+		return nil
+	}
+
+	// Get the last recovery attempt from history
+	history := m.getHistory(taskID)
+	if len(history) == 0 {
+		// No recovery history - nothing to update
+		return nil
+	}
+
+	// Get the most recent attempt
+	lastAttempt := history[len(history)-1]
+	if lastAttempt.Plan == nil {
+		return nil
+	}
+
+	// Update the attempt with success outcome
+	lastAttempt.Success = true
+	lastAttempt.Duration = duration
+
+	// Call RecordOutcome to update rule stats, AI learning, and domain health
+	return m.RecordOutcome(ctx, lastAttempt)
+}
+
+// RecordRecoveryFailure should be called when a task that was retried via recovery
+// has exhausted all retries and is going to DLQ. This updates rule failure stats
+// and AI learning to help the system avoid ineffective recovery strategies.
+func (m *RecoveryManager) RecordRecoveryFailure(ctx context.Context, taskID string, duration time.Duration) error {
+	if !m.config.Enabled {
+		return nil
+	}
+
+	// Get the last recovery attempt from history
+	history := m.getHistory(taskID)
+	if len(history) == 0 {
+		// No recovery history - nothing to update
+		return nil
+	}
+
+	// Get the most recent attempt
+	lastAttempt := history[len(history)-1]
+	if lastAttempt.Plan == nil {
+		return nil
+	}
+
+	// Update the attempt with failure outcome
+	lastAttempt.Success = false
+	lastAttempt.Duration = duration
+
+	// Call RecordOutcome to update rule stats, AI learning, and domain health
+	return m.RecordOutcome(ctx, lastAttempt)
 }
 
 // RecordSuccess records a successful task execution (for error rate tracking)

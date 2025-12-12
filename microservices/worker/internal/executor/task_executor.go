@@ -445,7 +445,21 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 
 		// Try smart recovery (if enabled and thresholds met)
 		if e.recoveryManager != nil {
-			plan, recoverErr := e.recoveryManager.TryRecover(ctx, task.TaskID, task.ExecutionID, task.WorkflowID, task.URL, err, "")
+			// Capture page content for better error pattern detection
+			// This helps identify blocked pages, CAPTCHA challenges, etc.
+			var pageContent string
+			if currentPage != nil {
+				if content, contentErr := currentPage.Content(); contentErr == nil {
+					// Limit content size to avoid memory issues
+					if len(content) > 10000 {
+						pageContent = content[:10000]
+					} else {
+						pageContent = content
+					}
+				}
+			}
+
+			plan, recoverErr := e.recoveryManager.TryRecover(ctx, task.TaskID, task.ExecutionID, task.WorkflowID, task.URL, err, pageContent)
 			if recoverErr != nil {
 				logger.Warn("Recovery attempt failed", zap.Error(recoverErr))
 			} else if plan != nil {
@@ -502,14 +516,23 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 							shouldEscalate, nextTier := unblocker.ShouldEscalate(ctx, domain, currentTier)
 							if shouldEscalate {
 								task.ProxyTier = nextTier
-								// Clear old proxy - will be selected based on new tier
-								task.ProxyURL = ""
-								task.ProxyID = ""
+								// Select a proxy from the new tier immediately
+								if tieredProxy := e.recoveryManager.GetTieredProxyManager(); tieredProxy != nil {
+									if proxy, _, err := tieredProxy.GetProxyForTier(ctx, domain, nextTier); err == nil && proxy != nil {
+										task.ProxyURL = proxy.ProxyURL()
+										task.ProxyID = proxy.ID
+									} else {
+										// Fallback: clear proxy if no proxy available for new tier
+										task.ProxyURL = ""
+										task.ProxyID = ""
+									}
+								}
 								logger.Info("SmartUnblocker: Escalating tier for retry",
 									zap.String("task_id", task.TaskID),
 									zap.String("domain", domain),
 									zap.Int("from_tier", int(currentTier)),
 									zap.Int("to_tier", int(nextTier)),
+									zap.String("proxy_id", task.ProxyID),
 								)
 							}
 						}
@@ -544,7 +567,14 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		if e.recoveryManager != nil {
 			if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
 				failDuration := time.Since(startTime)
-				unblocker.RecordResult(ctx, task.ExecutionID, domain, currentTier, false, 0, failDuration)
+				// Get status code from page if available, default to 0 (unknown) for failure
+				failStatusCode := 0
+				if currentPage != nil {
+					if sc := currentPage.StatusCode(); sc > 0 {
+						failStatusCode = sc
+					}
+				}
+				unblocker.RecordResult(ctx, task.ExecutionID, domain, currentTier, false, failStatusCode, failDuration)
 			}
 		}
 
@@ -570,6 +600,16 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 						zap.String("priority", string(incident.Priority)),
 					)
 				}
+
+				// Record the failure outcome for rule stats and AI learning
+				// before clearing history
+				failDuration := time.Since(startTime)
+				if err := e.recoveryManager.RecordRecoveryFailure(ctx, task.TaskID, failDuration); err != nil {
+					logger.Warn("Failed to record recovery failure outcome", zap.Error(err))
+				}
+
+				// Now clear history since task is going to DLQ
+				e.recoveryManager.ClearHistory(task.TaskID)
 			}
 
 			if dlqErr := e.pubsubClient.PublishToDLQ(ctx, task, err.Error()); dlqErr != nil {
@@ -587,6 +627,38 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	duration := time.Since(startTime)
 	if e.recoveryManager != nil {
 		e.recoveryManager.RecordSuccess(ctx, task.URL)
+
+		// If this was a recovery retry (tier escalated), persist the learned optimal tier
+		if task.RetryCount > 0 && currentTier > models.TierDirect {
+			if tieredProxy := e.recoveryManager.GetTieredProxyManager(); tieredProxy != nil {
+				if err := tieredProxy.SetDomainTier(ctx, domain, currentTier); err != nil {
+					logger.Warn("Failed to persist learned tier", zap.Error(err))
+				} else {
+					logger.Info("Recovery successful - persisted optimal tier",
+						zap.String("domain", domain),
+						zap.Int("tier", int(currentTier)),
+						zap.Int("retry_count", task.RetryCount),
+					)
+				}
+			}
+		}
+
+		// If this was a recovery retry, record the successful outcome
+		// This updates rule stats, AI learning, and domain health BEFORE clearing history
+		if task.RetryCount > 0 {
+			if err := e.recoveryManager.RecordRecoverySuccess(ctx, task.TaskID, duration); err != nil {
+				logger.Warn("Failed to record recovery success",
+					zap.String("task_id", task.TaskID),
+					zap.Error(err),
+				)
+			} else {
+				logger.Debug("Recovery outcome recorded as success",
+					zap.String("task_id", task.TaskID),
+					zap.Int("retry_count", task.RetryCount),
+				)
+			}
+		}
+
 		e.recoveryManager.ClearHistory(task.TaskID)
 
 		// Record proxy success if proxy was used
@@ -599,7 +671,14 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		// SmartUnblocker: Record result for tier learning
 		// This helps the system learn which tier works best for each domain
 		if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
-			unblocker.RecordResult(ctx, task.ExecutionID, domain, currentTier, true, 200, duration)
+			// Get status code from page if available, default to 200 for success
+			statusCode := 200
+			if currentPage != nil {
+				if sc := currentPage.StatusCode(); sc > 0 {
+					statusCode = sc
+				}
+			}
+			unblocker.RecordResult(ctx, task.ExecutionID, domain, currentTier, true, statusCode, duration)
 		}
 	}
 

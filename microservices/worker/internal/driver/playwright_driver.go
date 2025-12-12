@@ -110,6 +110,7 @@ type PlaywrightPage struct {
 	closed        bool
 	mu            sync.Mutex
 	bfFingerprint *services.Fingerprint // BrowserForge fingerprint for session caching
+	statusCode    int                   // HTTP status code from last navigation
 }
 
 // NewPlaywrightPage creates a new PlaywrightPage from an existing playwright.Page
@@ -163,8 +164,22 @@ func (p *PlaywrightPage) Goto(url string, options ...PageOption) error {
 		pwOpts.WaitUntil = &val
 	}
 
-	_, err := p.page.Goto(url, pwOpts)
-	return err
+	resp, err := p.page.Goto(url, pwOpts)
+	if err != nil {
+		return err
+	}
+
+	// Store status code from navigation response
+	if resp != nil {
+		p.statusCode = resp.Status()
+	}
+
+	return nil
+}
+
+// StatusCode returns the HTTP status code from the last navigation
+func (p *PlaywrightPage) StatusCode() int {
+	return p.statusCode
 }
 
 func (p *PlaywrightPage) Content() (string, error) {

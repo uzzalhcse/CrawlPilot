@@ -45,8 +45,14 @@ func NewErrorDetector() *ErrorDetector {
 			"bot detected",
 			"automated access",
 			"unusual traffic",
+			// Cloudflare interstitial detection
+			"just a moment",
+			"checking your browser",
+			"cf_chl_opt",
+			"challenge-running",
+			"ray id",
 		},
-		statusCodes: []int{403, 406, 451},
+		statusCodes: []int{403, 406, 451, 503}, // Added 503 for Cloudflare challenges
 	}
 
 	// Rate limited patterns

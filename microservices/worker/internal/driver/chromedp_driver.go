@@ -185,6 +185,13 @@ func (p *ChromedpPage) DriverName() string {
 	return "chromedp"
 }
 
+// StatusCode returns the HTTP status code from the last navigation.
+// Note: chromedp doesn't easily expose this without setting up network event listeners.
+// Returns 0 (unknown) - use HTTP or Playwright driver if status codes are needed.
+func (p *ChromedpPage) StatusCode() int {
+	return 0
+}
+
 func (p *ChromedpPage) Goto(url string, options ...PageOption) error {
 	opts := &PageOptions{
 		Timeout: 30 * time.Second,

@@ -144,10 +144,11 @@ func (d *CamoufoxDriver) SetSessionChecker(checker browser.SessionChecker) {
 
 // CamoufoxPage implements the Page interface
 type CamoufoxPage struct {
-	page     playwright.Page
-	camoufox *camoufox.Camoufox
-	closed   bool
-	mu       sync.Mutex
+	page       playwright.Page
+	camoufox   *camoufox.Camoufox
+	closed     bool
+	mu         sync.Mutex
+	statusCode int // HTTP status code from last navigation
 }
 
 func (p *CamoufoxPage) Close() error {
@@ -182,8 +183,22 @@ func (p *CamoufoxPage) Goto(url string, options ...PageOption) error {
 		pwOpts.WaitUntil = &val
 	}
 
-	_, err := p.page.Goto(url, pwOpts)
-	return err
+	resp, err := p.page.Goto(url, pwOpts)
+	if err != nil {
+		return err
+	}
+
+	// Store status code from navigation response
+	if resp != nil {
+		p.statusCode = resp.Status()
+	}
+
+	return nil
+}
+
+// StatusCode returns the HTTP status code from the last navigation
+func (p *CamoufoxPage) StatusCode() int {
+	return p.statusCode
 }
 
 // SolveCaptcha attempts to detect and solve CAPTCHA challenges on the current page.

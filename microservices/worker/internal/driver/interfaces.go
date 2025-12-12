@@ -48,6 +48,7 @@ type Page interface {
 	Title() (string, error)
 	URL() (string, error)
 	Screenshot(options ...ScreenshotOption) ([]byte, error)
+	StatusCode() int // Returns the HTTP status code from the last navigation (0 if not available)
 
 	// Interaction
 	Click(selector string, options ...ElementOption) error

@@ -15,10 +15,17 @@ func Init(development bool) error {
 	if development {
 		config = zap.NewDevelopmentConfig()
 		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		// Disable stack traces for cleaner logs (only show for Fatal)
+		config.DisableStacktrace = true
+		// Disable caller info (the "logger/logger.go:63" part)
+		config.DisableCaller = true
 	} else {
 		config = zap.NewProductionConfig()
 		config.EncoderConfig.TimeKey = "timestamp"
 		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+		// In production, keep stack traces only for Error and above
+		config.DisableStacktrace = false
+		config.Development = false
 	}
 
 	log, err = config.Build()

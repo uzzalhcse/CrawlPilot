@@ -242,6 +242,26 @@ func (c *Cache) SCard(ctx context.Context, key string) (int64, error) {
 }
 
 // =====================================================
+// LIST OPERATIONS (for atomic append to recovery history)
+// =====================================================
+
+// RPush appends values to the end of a list (atomic operation)
+func (c *Cache) RPush(ctx context.Context, key string, values ...interface{}) (int64, error) {
+	return c.client.RPush(ctx, key, values...).Result()
+}
+
+// LRange returns a range of elements from a list
+// Use 0, -1 to get all elements
+func (c *Cache) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	return c.client.LRange(ctx, key, start, stop).Result()
+}
+
+// LLen returns the length of a list
+func (c *Cache) LLen(ctx context.Context, key string) (int64, error) {
+	return c.client.LLen(ctx, key).Result()
+}
+
+// =====================================================
 // PIPELINE OPERATIONS (for high-throughput batching)
 // =====================================================
 

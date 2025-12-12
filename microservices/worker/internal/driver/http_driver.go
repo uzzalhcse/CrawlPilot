@@ -150,6 +150,7 @@ type HttpPage struct {
 	url         string
 	body        string
 	browserName string // For user agent generation matching JA3
+	statusCode  int    // HTTP status code from last navigation
 }
 
 func (p *HttpPage) Goto(url string, options ...PageOption) error {
@@ -175,6 +176,9 @@ func (p *HttpPage) Goto(url string, options ...PageOption) error {
 	}
 	defer resp.Body.Close()
 
+	// Store status code for retrieval via StatusCode()
+	p.statusCode = resp.StatusCode
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
@@ -195,6 +199,11 @@ func (p *HttpPage) Goto(url string, options ...PageOption) error {
 	p.doc = doc
 
 	return nil
+}
+
+// StatusCode returns the HTTP status code from the last navigation
+func (p *HttpPage) StatusCode() int {
+	return p.statusCode
 }
 
 func (p *HttpPage) Content() (string, error) {
