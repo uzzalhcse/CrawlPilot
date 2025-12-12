@@ -17,7 +17,8 @@ import (
 // Implements the Crawlee tiered proxy pattern for cost-effective anti-bot handling
 type TieredProxyManager struct {
 	*DistributedProxyManager
-	config *TieredProxyConfig
+	config         *TieredProxyConfig
+	knownProtected *KnownProtectedDomains // Skip Tier 0 for known protected domains
 }
 
 // TieredProxyConfig configures the tiered proxy system
@@ -50,6 +51,7 @@ func NewTieredProxyManager(c *cache.Cache, baseConfig *ProxyRotationConfig, tier
 	return &TieredProxyManager{
 		DistributedProxyManager: NewDistributedProxyManager(c, baseConfig),
 		config:                  tieredConfig,
+		knownProtected:          NewKnownProtectedDomains(c),
 	}
 }
 
@@ -113,53 +115,48 @@ func (m *TieredProxyManager) GetProxyForTier(ctx context.Context, domain string,
 }
 
 // selectProxyByTier selects a proxy from the specified tier
+// FIXED: No longer falls back to in-memory filtering which caused race conditions
+// All proxies MUST be in tier-specific pools (seeded on startup)
 func (m *TieredProxyManager) selectProxyByTier(ctx context.Context, domain string, tier int) (string, error) {
 	// Key for tier-specific proxies
 	tierPoolKey := fmt.Sprintf("proxy:pool:tier:%d", tier)
 
-	// Get available proxies from tier
+	// Get available proxies from tier pool directly
 	proxies, err := m.getAvailableFromSet(ctx, tierPoolKey, domain, 10)
-	if err != nil || len(proxies) == 0 {
-		// Try main pool filtered by tier
-		return m.selectFromMainPoolByTier(ctx, domain, tier)
+	if err != nil {
+		return "", fmt.Errorf("failed to get proxies for tier %d: %w", tier, err)
+	}
+	if len(proxies) == 0 {
+		// No fallback to main pool - tier pools should be complete
+		// Log and return error so caller can escalate to next tier
+		logger.Debug("No available proxies in tier pool",
+			zap.Int("tier", tier),
+			zap.String("domain", domain),
+		)
+		return "", fmt.Errorf("no proxies available for tier %d", tier)
 	}
 
 	// Random selection from available
 	return proxies[rand.Intn(len(proxies))], nil
 }
 
-// selectFromMainPoolByTier selects from main pool filtering by tier
-func (m *TieredProxyManager) selectFromMainPoolByTier(ctx context.Context, domain string, tier int) (string, error) {
-	// Get all proxies and filter by tier
-	allProxies, err := m.getAvailableFromSet(ctx, keyProxyPool, domain, 100)
-	if err != nil {
-		return "", err
-	}
-
-	// Filter by tier
-	var tierProxies []string
-	for _, proxyID := range allProxies {
-		proxy, err := m.getProxyData(ctx, proxyID)
-		if err != nil {
-			continue
-		}
-		if proxy.Tier == tier {
-			tierProxies = append(tierProxies, proxyID)
-		}
-	}
-
-	if len(tierProxies) == 0 {
-		return "", fmt.Errorf("no proxies available for tier %d", tier)
-	}
-
-	return tierProxies[rand.Intn(len(tierProxies))], nil
-}
-
 // GetOptimalTierForDomain returns the recommended tier for a domain
+// IMPROVED: Checks known protected domains to skip Tier 0 waste
 func (m *TieredProxyManager) GetOptimalTierForDomain(ctx context.Context, domain string) models.ProxyTier {
-	tierKey := fmt.Sprintf(keyDomainTier, domain)
+	// First: Check if domain is known to require proxies (skip Tier 0)
+	if m.knownProtected != nil {
+		minTier := m.knownProtected.GetMinimumTier(ctx, domain)
+		if minTier > models.TierDirect {
+			logger.Debug("Domain requires minimum tier (known protected)",
+				zap.String("domain", domain),
+				zap.Int("min_tier", int(minTier)),
+			)
+			return minTier
+		}
+	}
 
-	// Check cached tier
+	// Second: Check cached/learned tier from previous requests
+	tierKey := fmt.Sprintf(keyDomainTier, domain)
 	tierStr, err := m.cache.Get(ctx, tierKey)
 	if err == nil && tierStr != "" {
 		var tier int
@@ -167,7 +164,7 @@ func (m *TieredProxyManager) GetOptimalTierForDomain(ctx context.Context, domain
 		return models.ProxyTier(tier)
 	}
 
-	// Default: start at Tier 0 (direct) - optimistic approach
+	// Default: start at Tier 0 (direct) - optimistic for unknown domains
 	return models.TierDirect
 }
 
@@ -217,6 +214,10 @@ func (m *TieredProxyManager) ShouldEscalateTier(ctx context.Context, domain stri
 			zap.Int("to_tier", int(nextTier)),
 			zap.Int("failures", failures),
 		)
+		// Learn that this domain requires at least the next tier
+		if m.knownProtected != nil {
+			m.knownProtected.LearnMinimumTier(ctx, domain, nextTier)
+		}
 		return true, nextTier
 	}
 
@@ -252,6 +253,7 @@ func (m *TieredProxyManager) GetTierStats(ctx context.Context, domain string) ma
 }
 
 // SeedProxiesWithTiers seeds proxies with tier information
+// IMPROVED: Skips unhealthy/invalid proxies to prevent seeding dead proxies
 func (m *TieredProxyManager) SeedProxiesWithTiers(ctx context.Context, proxies []Proxy) error {
 	// Clear existing pools to remove stale proxies from previous runs
 	m.cache.Delete(ctx, keyProxyPool)
@@ -261,7 +263,16 @@ func (m *TieredProxyManager) SeedProxiesWithTiers(ctx context.Context, proxies [
 		m.cache.Delete(ctx, tierPoolKey)
 	}
 
+	seededCount := 0
+	skippedUnhealthy := 0
+
 	for _, proxy := range proxies {
+		// FIXED: Skip unhealthy or invalid proxies
+		if !proxy.IsHealthy || !proxy.Valid {
+			skippedUnhealthy++
+			continue
+		}
+
 		// Store proxy data
 		dataKey := fmt.Sprintf(keyProxyData, proxy.ID)
 		data, _ := json.Marshal(proxy)
@@ -279,10 +290,20 @@ func (m *TieredProxyManager) SeedProxiesWithTiers(ctx context.Context, proxies [
 		if err := m.cache.ZAdd(ctx, tierPoolKey, 0, proxy.ID); err != nil {
 			return err
 		}
+
+		seededCount++
+	}
+
+	if skippedUnhealthy > 0 {
+		logger.Warn("Skipped unhealthy/invalid proxies during seeding",
+			zap.Int("skipped", skippedUnhealthy),
+		)
 	}
 
 	logger.Info("Proxies seeded with tiers",
-		zap.Int("count", len(proxies)),
+		zap.Int("seeded", seededCount),
+		zap.Int("skipped_unhealthy", skippedUnhealthy),
+		zap.Int("total_input", len(proxies)),
 	)
 
 	return nil

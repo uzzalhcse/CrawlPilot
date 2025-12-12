@@ -118,6 +118,19 @@ func (c *Cache) IncrBy(ctx context.Context, key string, value int64) (int64, err
 	return c.client.IncrBy(ctx, key, value).Result()
 }
 
+// IncrByAndExpire atomically increments a counter and sets TTL in one round-trip
+// Returns the new value after increment
+func (c *Cache) IncrByAndExpire(ctx context.Context, key string, value int64, ttl time.Duration) (int64, error) {
+	pipe := c.client.Pipeline()
+	incrCmd := pipe.IncrBy(ctx, key, value)
+	pipe.Expire(ctx, key, ttl)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return incrCmd.Val(), nil
+}
+
 // DecrBy decrements a counter by a specific amount
 func (c *Cache) DecrBy(ctx context.Context, key string, value int64) (int64, error) {
 	return c.client.DecrBy(ctx, key, value).Result()

@@ -25,11 +25,12 @@ type RecoveryManager struct {
 	probeProvider    llm.Provider // Separate provider for probe agent (may be same as agent's)
 	learning         *LearningSystem
 	domainHealth     *DomainHealth
-	proxyManager     *ProxyManager                     // Local proxy manager (deprecated, use distributed)
-	distributedProxy *DistributedProxyManager          // Redis-based distributed proxy rotation
-	tieredProxy      *TieredProxyManager               // Tiered proxy escalation (Crawlee pattern)
-	smartUnblocker   *SmartUnblocker                   // Smart unblocker with domain learning
-	errorTracker     *ErrorTracker                     // Smart triggering with sliding window
+	proxyManager     *ProxyManager            // Local proxy manager (deprecated, use distributed)
+	distributedProxy *DistributedProxyManager // Redis-based distributed proxy rotation
+	tieredProxy      *TieredProxyManager      // Tiered proxy escalation (Crawlee pattern)
+	smartUnblocker   *SmartUnblocker          // Smart unblocker with domain learning
+	errorTracker     *ErrorTracker            // Smart triggering with sliding window
+
 	configManager    *ConfigManager                    // Dynamic config from database (frontend-manageable)
 	incidentReporter *IncidentReporter                 // Creates reports for human investigation
 	coordinator      *RecoveryCoordinator              // Distributed coordination to prevent redundant work
@@ -142,6 +143,8 @@ func NewRecoveryManager(
 	}
 	errorTracker := NewErrorTracker(cache, trackerConfig)
 
+	ctx := context.Background()
+
 	// Initialize incident reporter for human escalation
 	incidentReporter := NewIncidentReporter(pool, config.SlackWebhookURL)
 
@@ -152,8 +155,16 @@ func NewRecoveryManager(
 		distributedProxy.SetDBPool(pool)
 	}
 
-	// Initialize tiered proxy manager (Crawlee pattern: escalation tiers)
-	tieredProxy := NewTieredProxyManager(cache, DefaultProxyRotationConfig(), DefaultTieredProxyConfig())
+	// Initialize tiered proxy manager with configurable settings
+	tieredProxyConfig := configManager.GetTieredProxyConfig(ctx)
+	tieredProxy := NewTieredProxyManager(cache, DefaultProxyRotationConfig(), tieredProxyConfig)
+
+	// Configure known protected domains from database (or use defaults)
+	protectedDomains := configManager.GetProtectedDomains(ctx)
+	if protectedDomains != nil && tieredProxy.knownProtected != nil {
+		// Replace with configured domains
+		tieredProxy.knownProtected = NewKnownProtectedDomainsWithConfig(cache, protectedDomains)
+	}
 
 	// Initialize smart unblocker with domain learning and DB persistence
 	smartUnblocker := NewSmartUnblocker(pool, cache, tieredProxy, DefaultSmartUnblockerConfig())
@@ -315,6 +326,7 @@ func NewRecoveryManager(
 		tieredProxy:      tieredProxy,
 		smartUnblocker:   smartUnblocker,
 		errorTracker:     errorTracker,
+
 		configManager:    configManager,
 		incidentReporter: incidentReporter,
 		coordinator:      coordinator,

@@ -172,6 +172,93 @@
       </div>
     </div>
 
+    <div class="bg-card border rounded-lg p-6">
+      <h3 class="text-sm font-semibold mb-4">Tiered Proxy System</h3>
+      <p class="text-xs text-muted-foreground mb-4">
+        Configure how the system escalates through proxy tiers when requests are blocked. 
+        Tier 0 = Direct, Tier 1 = Datacenter, Tier 2 = Residential, Tier 3 = Mobile.
+      </p>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-muted-foreground mb-1.5">Escalate After Failures</label>
+          <input
+            v-model.number="config['tiered_proxy.escalate_after_failures']"
+            type="number"
+            min="1"
+            max="10"
+            class="w-full px-3 py-2 text-sm bg-background border rounded-md focus:ring-1 focus:ring-primary focus:border-primary"
+          />
+          <p class="text-[10px] text-muted-foreground mt-1">
+            Number of failures before escalating to next proxy tier. <br/>
+            <span class="italic">Example: 2 means after 2 failures on Tier 0, try Tier 1.</span>
+          </p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted-foreground mb-1.5">Tier Cooldown (min)</label>
+          <input
+            v-model.number="config['tiered_proxy.tier_cooldown_minutes']"
+            type="number"
+            min="1"
+            class="w-full px-3 py-2 text-sm bg-background border rounded-md focus:ring-1 focus:ring-primary focus:border-primary"
+          />
+          <p class="text-[10px] text-muted-foreground mt-1">
+            Time to wait before retrying a lower tier. <br/>
+            <span class="italic">Example: 10 means wait 10 minutes before trying Tier 0 again.</span>
+          </p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted-foreground mb-1.5">Min Samples for Confidence</label>
+          <input
+            v-model.number="config['tiered_proxy.min_samples_for_confidence']"
+            type="number"
+            min="5"
+            class="w-full px-3 py-2 text-sm bg-background border rounded-md focus:ring-1 focus:ring-primary focus:border-primary"
+          />
+          <p class="text-[10px] text-muted-foreground mt-1">
+            Minimum requests before considering a tier stable for a domain.
+          </p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted-foreground mb-1.5">Success Rate Threshold</label>
+          <input
+            v-model.number="config['tiered_proxy.success_rate_threshold']"
+            type="number"
+            step="0.05"
+            min="0.5"
+            max="1"
+            class="w-full px-3 py-2 text-sm bg-background border rounded-md focus:ring-1 focus:ring-primary focus:border-primary"
+          />
+          <p class="text-[10px] text-muted-foreground mt-1">
+            Success rate to consider a tier working for a domain. <br/>
+            <span class="italic">Example: 0.8 means 80% success rate is acceptable.</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-card border rounded-lg p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Protected Domains</h3>
+          <p class="text-xs text-muted-foreground mt-1">
+            Domains that bypass Tier 0 (direct) and start at a higher proxy tier.
+            Format: one domain per line, optionally with tier (e.g., "amazon.com:2").
+          </p>
+        </div>
+      </div>
+      <textarea
+        v-model="protectedDomainsText"
+        rows="8"
+        class="w-full px-3 py-2 text-sm bg-background border rounded-md focus:ring-1 focus:ring-primary focus:border-primary font-mono"
+        placeholder="amazon.com:2
+linkedin.com:2
+booking.com:2"
+      ></textarea>
+      <p class="text-[10px] text-muted-foreground mt-2">
+        Tiers: 0=Direct, 1=Datacenter, 2=Residential, 3=Mobile. Default tier if not specified: 2 (Residential).
+      </p>
+    </div>
+
     <div class="flex justify-end">
       <Button @click="saveConfig" variant="default" size="sm" :disabled="loading">
         <Save class="w-4 h-4 mr-2" />
@@ -182,13 +269,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, onMounted, ref } from 'vue'
+import { reactive, onMounted, ref, computed } from 'vue'
 import { useErrorRecoveryStore } from '@/stores/errorRecovery'
 import { Button } from '@/components/ui/button'
 import { Save } from 'lucide-vue-next'
 
 const store = useErrorRecoveryStore()
 const loading = ref(false)
+const protectedDomainsText = ref('')
 
 // Initialize with defaults matching backend migration
 const config = reactive<Record<string, any>>({
@@ -204,14 +292,46 @@ const config = reactive<Record<string, any>>({
   'learning.enabled': true,
   'learning.promotion_threshold': 3,
   'learning.cleanup_days': 7,
+  // Tiered proxy settings
+  'tiered_proxy.escalate_after_failures': 2,
+  'tiered_proxy.tier_cooldown_minutes': 10,
+  'tiered_proxy.min_samples_for_confidence': 20,
+  'tiered_proxy.success_rate_threshold': 0.8,
 })
+
+// Parse protected domains text to JSON object
+function parseProtectedDomains(text: string): Record<string, number> {
+  const result: Record<string, number> = {}
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l)
+  for (const line of lines) {
+    const parts = line.split(':')
+    const domain = parts[0].trim().toLowerCase()
+    const tier = parts[1] ? parseInt(parts[1].trim()) : 2 // Default to tier 2 (Residential)
+    if (domain) {
+      result[domain] = tier
+    }
+  }
+  return result
+}
+
+// Convert protected domains JSON to text
+function protectedDomainsToText(domains: Record<string, number> | null): string {
+  if (!domains || Object.keys(domains).length === 0) return ''
+  return Object.entries(domains)
+    .map(([domain, tier]) => `${domain}:${tier}`)
+    .join('\n')
+}
 
 async function saveConfig() {
   loading.value = true
   try {
-    // Convert boolean strings back to booleans if needed, or ensure correct types
-    // The v-model handles types for inputs, but let's be safe
-    await store.updateMultipleConfigs(config)
+    // Add protected domains as JSON
+    const protectedDomains = parseProtectedDomains(protectedDomainsText.value)
+    const configToSave = {
+      ...config,
+      'protected_domains': JSON.stringify(protectedDomains)
+    }
+    await store.updateMultipleConfigs(configToSave)
   } finally {
     loading.value = false
   }
@@ -238,6 +358,19 @@ onMounted(async () => {
             config[key] = val
         }
       })
+      
+      // Handle protected_domains separately (it's a JSON object)
+      if (fetchedConfig['protected_domains']) {
+        let domains = fetchedConfig['protected_domains']
+        if (typeof domains === 'string') {
+          try {
+            domains = JSON.parse(domains)
+          } catch (e) {
+            domains = {}
+          }
+        }
+        protectedDomainsText.value = protectedDomainsToText(domains)
+      }
     }
   } catch (error) {
     console.error('Failed to load configs', error)

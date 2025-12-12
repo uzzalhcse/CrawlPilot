@@ -79,7 +79,7 @@ func TestErrorPattern_Detection(t *testing.T) {
 			htmlBody:   "",
 			errMsg:     "dial tcp: i/o timeout",
 			statusCode: 0,
-			expected:   PatternTimeout, // timeout has higher confidence due to "timeout" substring
+			expected:   PatternTimeout,
 		},
 		{
 			name:       "Connection refused",
@@ -544,5 +544,286 @@ func TestConcurrentRedisOperations(t *testing.T) {
 		require.NoError(t, err)
 		expected := int64(numGoroutines * incrementsPerGoroutine)
 		assert.Equal(t, expected, count, "Concurrent increments should be atomic")
+	})
+}
+
+// ============================================================================
+// Known Protected Domains Tests
+// ============================================================================
+
+func TestKnownProtectedDomains_StaticList(t *testing.T) {
+	kpd := NewKnownProtectedDomains(nil)
+
+	testCases := []struct {
+		domain      string
+		shouldBeSet bool
+	}{
+		{"amazon.com", true},
+		{"linkedin.com", true},
+		{"tiktok.com", true},
+		{"unknown-domain.com", false},
+	}
+
+	ctx := context.Background()
+	for _, tc := range testCases {
+		t.Run(tc.domain, func(t *testing.T) {
+			tier := kpd.GetMinimumTier(ctx, tc.domain)
+			if tc.shouldBeSet {
+				assert.Greater(t, int(tier), 0, "Protected domain should have tier > 0")
+			} else {
+				assert.Equal(t, 0, int(tier), "Unknown domain should have tier 0")
+			}
+		})
+	}
+}
+
+func TestKnownProtectedDomains_ParentDomainMatch(t *testing.T) {
+	kpd := NewKnownProtectedDomains(nil)
+	ctx := context.Background()
+
+	// Subdomains should match parent domain
+	testCases := []struct {
+		domain   string
+		expected bool
+	}{
+		{"www.amazon.com", true},      // Should match amazon.com
+		{"shop.amazon.com", true},     // Should match amazon.com
+		{"api.linkedin.com", true},    // Should match linkedin.com
+		{"random.unknown.com", false}, // No match
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.domain, func(t *testing.T) {
+			tier := kpd.GetMinimumTier(ctx, tc.domain)
+			if tc.expected {
+				assert.Greater(t, int(tier), 0, "Subdomain of protected domain should have tier > 0")
+			} else {
+				assert.Equal(t, 0, int(tier), "Unknown subdomain should have tier 0")
+			}
+		})
+	}
+}
+
+func TestKnownProtectedDomains_NormalizeDomain(t *testing.T) {
+	kpd := NewKnownProtectedDomains(nil)
+	ctx := context.Background()
+
+	// Test case normalization
+	testCases := []struct {
+		input    string
+		expected bool
+	}{
+		{"AMAZON.COM", true},     // Uppercase should work
+		{"Amazon.Com", true},     // Mixed case should work
+		{"www.AMAZON.COM", true}, // www prefix with uppercase
+		{"amazon.com:443", true}, // With port - should be stripped
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			tier := kpd.GetMinimumTier(ctx, tc.input)
+			if tc.expected {
+				assert.Greater(t, int(tier), 0, "Domain should be normalized and matched")
+			}
+		})
+	}
+}
+
+func TestKnownProtectedDomains_AddStaticDomain(t *testing.T) {
+	kpd := NewKnownProtectedDomains(nil)
+	ctx := context.Background()
+
+	// Domain should not be protected initially
+	tier := kpd.GetMinimumTier(ctx, "mysite.com")
+	assert.Equal(t, 0, int(tier))
+
+	// Add domain at runtime
+	kpd.AddStaticDomain("mysite.com", 2)
+
+	// Now it should be protected
+	tier = kpd.GetMinimumTier(ctx, "mysite.com")
+	assert.Equal(t, 2, int(tier))
+}
+
+func TestKnownProtectedDomains_GetAllStaticDomains(t *testing.T) {
+	kpd := NewKnownProtectedDomains(nil)
+
+	domains := kpd.GetAllStaticDomains()
+	assert.NotEmpty(t, domains)
+	assert.Contains(t, domains, "amazon.com")
+	assert.Contains(t, domains, "linkedin.com")
+}
+
+func TestKnownProtectedDomains_IsProtected(t *testing.T) {
+	kpd := NewKnownProtectedDomains(nil)
+	ctx := context.Background()
+
+	assert.True(t, kpd.IsProtected(ctx, "amazon.com"))
+	assert.True(t, kpd.IsProtected(ctx, "linkedin.com"))
+	assert.False(t, kpd.IsProtected(ctx, "random-unknown-site.com"))
+}
+
+// ============================================================================
+// Tiered Proxy Config Tests
+// ============================================================================
+
+func TestDefaultTieredProxyConfig(t *testing.T) {
+	config := DefaultTieredProxyConfig()
+
+	assert.Equal(t, 2, config.EscalateAfterFailures)
+	assert.Equal(t, 10*time.Minute, config.TierCooldown)
+	assert.Equal(t, 20, config.MinSamplesForConfidence)
+	assert.Equal(t, 0.8, config.SuccessRateThreshold)
+}
+
+func TestProxyRotationConfig_Defaults(t *testing.T) {
+	config := DefaultProxyRotationConfig()
+
+	assert.Equal(t, 30*time.Second, config.LeaseDuration)
+	assert.Equal(t, 60*time.Second, config.CooldownDuration)
+	assert.Equal(t, StrategyDomainAffinity, config.Strategy)
+	assert.Equal(t, 5, config.MaxFailuresPerHour)
+	assert.Equal(t, 5*time.Minute, config.HealthCheckTTL)
+	assert.Equal(t, 0.7, config.DomainAffinityWeight)
+	assert.Equal(t, 20, config.MaxProxiesPerDomain)
+}
+
+func TestProxyRotationStrategy_StringValues(t *testing.T) {
+	testCases := []struct {
+		strategy RotationStrategy
+		expected string
+	}{
+		{StrategyRoundRobin, "round_robin"},
+		{StrategyLeastUsed, "least_used"},
+		{StrategyRandom, "random"},
+		{StrategyDomainAffinity, "domain_affinity"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.expected, func(t *testing.T) {
+			assert.Equal(t, tc.expected, string(tc.strategy))
+		})
+	}
+}
+
+// ============================================================================
+// Proxy Types Tests
+// ============================================================================
+
+func TestProxyURL(t *testing.T) {
+	testCases := []struct {
+		name     string
+		proxy    Proxy
+		expected string
+	}{
+		{
+			name: "With auth",
+			proxy: Proxy{
+				Server:   "proxy.example.com:8080",
+				Username: "user",
+				Password: "pass",
+			},
+			expected: "http://user:pass@proxy.example.com:8080",
+		},
+		{
+			name: "Without auth",
+			proxy: Proxy{
+				Server: "proxy.example.com:8080",
+			},
+			expected: "http://proxy.example.com:8080",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			url := tc.proxy.ProxyURL()
+			assert.Equal(t, tc.expected, url)
+		})
+	}
+}
+
+// ============================================================================
+// Proxy Auth Failed Pattern Tests
+// ============================================================================
+
+func TestProxyAuthFailedPattern(t *testing.T) {
+	detector := NewErrorDetector()
+
+	testCases := []struct {
+		name       string
+		errMsg     string
+		statusCode int
+		expected   ErrorPattern
+	}{
+		{
+			name:       "407 status code",
+			errMsg:     "",
+			statusCode: 407,
+			expected:   PatternProxyAuthFailed,
+		},
+		{
+			name:       "Invalid auth credentials error",
+			errMsg:     "net::ERR_INVALID_AUTH_CREDENTIALS",
+			statusCode: 0,
+			expected:   PatternProxyAuthFailed,
+		},
+		{
+			name:       "Proxy authentication required",
+			errMsg:     "proxy authentication required",
+			statusCode: 0,
+			expected:   PatternProxyAuthFailed, // Matched by "proxy" + "authentication" combo
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var err error
+			if tc.errMsg != "" {
+				err = &testError{msg: tc.errMsg}
+			}
+			detected := detector.Detect(err, "https://example.com", tc.statusCode, "")
+
+			require.NotNil(t, detected)
+			assert.Equal(t, tc.expected, detected.Pattern)
+		})
+	}
+}
+
+// ============================================================================
+// Integration Tests with Redis (skipped in short mode)
+// ============================================================================
+
+func TestKnownProtectedDomains_WithRedis(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	client := redis.NewClient(&redis.Options{
+		Addr: "localhost:6380",
+	})
+	defer client.Close()
+
+	ctx := context.Background()
+	if err := client.Ping(ctx).Err(); err != nil {
+		t.Skip("Redis not available")
+	}
+
+	t.Run("Real Redis - learned tier persistence", func(t *testing.T) {
+		domain := "learned-test-" + strconv.FormatInt(time.Now().UnixNano(), 10) + ".com"
+		key := "protected:learned:" + domain
+
+		defer client.Del(ctx, key)
+
+		// Set learned tier
+		client.Set(ctx, key, "2", 24*time.Hour)
+
+		// Verify it persists
+		tier, err := client.Get(ctx, key).Result()
+		require.NoError(t, err)
+		assert.Equal(t, "2", tier)
+
+		// Verify TTL is set
+		ttl, _ := client.TTL(ctx, key).Result()
+		assert.Greater(t, ttl, time.Duration(0))
 	})
 }

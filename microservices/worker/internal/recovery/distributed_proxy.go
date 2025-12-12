@@ -393,10 +393,9 @@ func (m *DistributedProxyManager) RecordFailure(ctx context.Context, proxyID, do
 		return nil
 	}
 
-	// Increment hourly failure count (needs return value, can't pipeline)
+	// Increment hourly failure count (using pipelined IncrByAndExpire)
 	hourlyKey := fmt.Sprintf("proxy:hourly_fail:%s:%d", proxyID, time.Now().Hour())
-	count, _ := m.cache.Increment(ctx, hourlyKey)
-	m.cache.Expire(ctx, hourlyKey, 2*time.Hour)
+	count, _ := m.cache.IncrByAndExpire(ctx, hourlyKey, 1, 2*time.Hour)
 
 	// Check if should disable
 	if int(count) >= m.config.MaxFailuresPerHour {

@@ -279,3 +279,57 @@ func (cm *ConfigManager) IsProxyEnabled(ctx context.Context) bool {
 func (cm *ConfigManager) GetProxyMaxFailures(ctx context.Context) int {
 	return cm.GetInt(ctx, "proxy.max_failures_before_disable", 5)
 }
+
+// GetTieredProxyConfig builds TieredProxyConfig from database settings
+func (cm *ConfigManager) GetTieredProxyConfig(ctx context.Context) *TieredProxyConfig {
+	return &TieredProxyConfig{
+		EscalateAfterFailures:   cm.GetInt(ctx, "tiered_proxy.escalate_after_failures", 2),
+		TierCooldown:            time.Duration(cm.GetInt(ctx, "tiered_proxy.tier_cooldown_minutes", 10)) * time.Minute,
+		MinSamplesForConfidence: cm.GetInt(ctx, "tiered_proxy.min_samples_for_confidence", 20),
+		SuccessRateThreshold:    cm.GetFloat(ctx, "tiered_proxy.success_rate_threshold", 0.8),
+	}
+}
+
+// GetProtectedDomains loads protected domains from database
+// Returns map of domain -> minimum tier
+// Falls back to empty map if not configured (will use hardcoded defaults)
+func (cm *ConfigManager) GetProtectedDomains(ctx context.Context) map[string]int {
+	val := cm.Get(ctx, "protected_domains")
+	if val == nil {
+		return nil // Use default hardcoded list
+	}
+
+	// Try to parse as JSON map
+	result := make(map[string]int)
+	switch v := val.(type) {
+	case map[string]interface{}:
+		for domain, tier := range v {
+			switch t := tier.(type) {
+			case float64:
+				result[domain] = int(t)
+			case int:
+				result[domain] = t
+			}
+		}
+	case string:
+		// Try to parse as JSON string
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(v), &parsed); err == nil {
+			for domain, tier := range parsed {
+				if t, ok := tier.(float64); ok {
+					result[domain] = int(t)
+				}
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		return nil // Use default hardcoded list
+	}
+	return result
+}
+
+// GetDuration returns a duration config value from minutes
+func (cm *ConfigManager) GetDurationMinutes(ctx context.Context, key string, defaultMinutes int) time.Duration {
+	return time.Duration(cm.GetInt(ctx, key, defaultMinutes)) * time.Minute
+}

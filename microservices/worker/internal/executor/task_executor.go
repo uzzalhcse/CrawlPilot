@@ -1304,35 +1304,69 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 						zap.String("source", plan.Source),
 						zap.String("reason", plan.Reason),
 					)
-					// Execute the recovery plan
-					if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
-						logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
-					} else if plan.ShouldRetry && plan.Action == recovery.ActionSwitchProxy {
-						// Proxy was switched - republish task to get fresh browser context with new proxy
-						if proxyURL, ok := plan.Params["proxy_url"].(string); ok {
-							task.ProxyURL = proxyURL
-						}
-						if proxyID, ok := plan.Params["proxy_id"].(string); ok {
-							task.ProxyID = proxyID
-						}
 
-						// Republish task for fresh execution with new proxy
-						task.RetryCount++
-						if e.pubsubClient != nil && task.RetryCount <= e.retryConfig.MaxRetries {
-							logger.Info("Republishing task with new proxy for retry",
-								zap.String("task_id", task.TaskID),
-								zap.String("node_id", node.ID),
-								zap.String("proxy_id", task.ProxyID),
-								zap.Int("retry_count", task.RetryCount),
-							)
-							if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
-								logger.Error("Failed to republish task for proxy retry", zap.Error(pubErr))
-							} else {
-								// Record recovery success - task will be retried with new proxy
-								e.recoveryManager.RecordRecoverySuccess(ctx, task.TaskID, 0)
-								// Return early - a new task message will handle the retry
-								return execCtx.Page, result, nil
+					// For blocking actions, stop phase execution immediately
+					// Don't try to extract data from a blocked page
+					switch plan.Action {
+					case recovery.ActionSendToDLQ:
+						// Task is being sent to DLQ - stop execution immediately
+						logger.Info("Recovery action is send_to_dlq - stopping phase execution",
+							zap.String("task_id", task.TaskID),
+							zap.String("node_id", node.ID),
+						)
+						return execCtx.Page, result, nil
+
+					case recovery.ActionSwitchProxy:
+						// Execute the recovery plan
+						if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
+							logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
+						} else if plan.ShouldRetry {
+							// Proxy was switched - republish task to get fresh browser context with new proxy
+							if proxyURL, ok := plan.Params["proxy_url"].(string); ok {
+								task.ProxyURL = proxyURL
 							}
+							if proxyID, ok := plan.Params["proxy_id"].(string); ok {
+								task.ProxyID = proxyID
+							}
+
+							// Republish task for fresh execution with new proxy
+							task.RetryCount++
+							if e.pubsubClient != nil && task.RetryCount <= e.retryConfig.MaxRetries {
+								logger.Info("Republishing task with new proxy for retry",
+									zap.String("task_id", task.TaskID),
+									zap.String("node_id", node.ID),
+									zap.String("proxy_id", task.ProxyID),
+									zap.Int("retry_count", task.RetryCount),
+								)
+								if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
+									logger.Error("Failed to republish task for proxy retry", zap.Error(pubErr))
+								} else {
+									// Record recovery success - task will be retried with new proxy
+									e.recoveryManager.RecordRecoverySuccess(ctx, task.TaskID, 0)
+									// Return early - a new task message will handle the retry
+									return execCtx.Page, result, nil
+								}
+							}
+						}
+						// If we didn't return above, the proxy switch didn't result in retry
+						// Still stop execution - don't try to extract from blocked page
+						logger.Info("Proxy switch recovery - stopping phase execution",
+							zap.String("task_id", task.TaskID),
+							zap.String("node_id", node.ID),
+						)
+						return execCtx.Page, result, nil
+
+					case recovery.ActionAddDelay, recovery.ActionRetry:
+						// These are non-blocking - execute plan but continue to next node
+						if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
+							logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
+						}
+						// Continue to next node
+
+					default:
+						// Unknown action - execute plan but continue
+						if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
+							logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
 						}
 					}
 				} else {
@@ -1342,7 +1376,7 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 				}
 			}
 
-			// Continue with other nodes (non-fatal)
+			// Continue with other nodes (non-fatal) - only reached for non-blocking recovery actions
 			continue
 		}
 
