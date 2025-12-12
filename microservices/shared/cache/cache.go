@@ -306,6 +306,21 @@ func (p *Pipeliner) SAdd(ctx context.Context, key string, members ...interface{}
 	p.pipe.SAdd(ctx, key, members...)
 }
 
+// ZIncrBy queues a sorted set increment in the pipeline
+func (p *Pipeliner) ZIncrBy(ctx context.Context, key string, incr float64, member string) {
+	p.pipe.ZIncrBy(ctx, key, incr, member)
+}
+
+// Set queues a string set in the pipeline
+func (p *Pipeliner) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+	p.pipe.Set(ctx, key, value, ttl)
+}
+
+// SetNX queues a set-if-not-exists in the pipeline
+func (p *Pipeliner) SetNX(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+	p.pipe.SetNX(ctx, key, value, ttl)
+}
+
 // Exec executes all queued commands in a single round-trip
 // Returns the number of completed commands and any error
 func (p *Pipeliner) Exec(ctx context.Context) (int, error) {

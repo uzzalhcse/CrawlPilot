@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"go.uber.org/zap"
@@ -22,7 +23,8 @@ import (
 type DistributedProxyManager struct {
 	cache   *cache.Cache
 	config  *ProxyRotationConfig
-	localID string // Unique ID for this worker instance
+	localID string        // Unique ID for this worker instance
+	dbPool  *pgxpool.Pool // Optional: database pool for syncing proxy state
 }
 
 // ProxyRotationConfig configures the distributed proxy manager
@@ -100,6 +102,12 @@ func NewDistributedProxyManager(c *cache.Cache, config *ProxyRotationConfig) *Di
 		config:  config,
 		localID: localID,
 	}
+}
+
+// SetDBPool sets the database pool for syncing proxy state to the database
+// This should be called after creation to enable database updates
+func (m *DistributedProxyManager) SetDBPool(pool *pgxpool.Pool) {
+	m.dbPool = pool
 }
 
 // Redis key helpers
@@ -325,23 +333,25 @@ func (m *DistributedProxyManager) releaseLease(ctx context.Context, proxyID stri
 }
 
 // RecordSuccess records a successful request with a proxy
+// OPTIMIZED: Uses pipeline to batch 6 Redis calls into 1 round-trip
 func (m *DistributedProxyManager) RecordSuccess(ctx context.Context, proxyID, domain string) error {
-	// Release lease
+	// Release lease (separate call - needs SetNX check)
 	m.releaseLease(ctx, proxyID)
 
-	// Update health metrics
+	// PIPELINE: Batch all updates into single round-trip
 	healthKey := fmt.Sprintf(keyProxyHealth, proxyID)
-	m.cache.HIncrBy(ctx, healthKey, "total_requests", 1)
-	m.cache.HIncrBy(ctx, healthKey, "success_count", 1)
-	m.cache.HSet(ctx, healthKey, "last_success", time.Now().Format(time.RFC3339))
-
-	// Add/update domain affinity (higher score = better for this domain)
 	domainKey := fmt.Sprintf(keyProxyDomain, domain)
-	m.cache.ZIncrBy(ctx, domainKey, 1, proxyID)
-	m.cache.Expire(ctx, domainKey, 24*time.Hour) // Keep domain affinity for 24h
 
-	// Update usage counter in main pool (lower score = less used = preferred)
-	m.cache.ZIncrBy(ctx, keyProxyPool, 1, proxyID)
+	pipe := m.cache.Pipeline()
+	pipe.HIncrBy(ctx, healthKey, "total_requests", 1)
+	pipe.HIncrBy(ctx, healthKey, "success_count", 1)
+	pipe.HSet(ctx, healthKey, "last_success", time.Now().Format(time.RFC3339))
+	pipe.ZIncrBy(ctx, domainKey, 1, proxyID)
+	pipe.Expire(ctx, domainKey, 24*time.Hour)
+	pipe.ZIncrBy(ctx, keyProxyPool, 1, proxyID)
+	if _, err := pipe.Exec(ctx); err != nil {
+		logger.Warn("Pipeline error in RecordSuccess", zap.Error(err))
+	}
 
 	logger.Debug("Proxy success recorded",
 		zap.String("proxy_id", proxyID),
@@ -352,20 +362,30 @@ func (m *DistributedProxyManager) RecordSuccess(ctx context.Context, proxyID, do
 }
 
 // RecordFailure records a failed request with a proxy
+// OPTIMIZED: Uses pipeline where possible to reduce round-trips
 func (m *DistributedProxyManager) RecordFailure(ctx context.Context, proxyID, domain string, pattern ErrorPattern) error {
-	// Release lease
+	// Release lease (separate call)
 	m.releaseLease(ctx, proxyID)
 
-	// Update health metrics
 	healthKey := fmt.Sprintf(keyProxyHealth, proxyID)
-	m.cache.HIncrBy(ctx, healthKey, "total_requests", 1)
-	m.cache.HIncrBy(ctx, healthKey, "failure_count", 1)
-	m.cache.HSet(ctx, healthKey, "last_failure", time.Now().Format(time.RFC3339))
+	domainKey := fmt.Sprintf(keyProxyDomain, domain)
+	cooldownKey := fmt.Sprintf(keyProxyCooldown, proxyID, domain)
+	cooldownDuration := m.getCooldownDuration(pattern)
+
+	// PIPELINE: Batch health metrics updates
+	pipe := m.cache.Pipeline()
+	pipe.HIncrBy(ctx, healthKey, "total_requests", 1)
+	pipe.HIncrBy(ctx, healthKey, "failure_count", 1)
+	pipe.HSet(ctx, healthKey, "last_failure", time.Now().Format(time.RFC3339))
+	pipe.ZIncrBy(ctx, domainKey, -0.5, proxyID) // Decrease domain affinity
+	pipe.Set(ctx, cooldownKey, "1", cooldownDuration)
+	if _, err := pipe.Exec(ctx); err != nil {
+		logger.Warn("Pipeline error in RecordFailure", zap.Error(err))
+	}
 
 	// Immediately disable proxies with auth failures (bad credentials)
-	// These should not be retried as they'll never work
 	if pattern == PatternProxyAuthFailed {
-		m.disableProxy(ctx, proxyID, 24*time.Hour) // Disable for 24 hours
+		m.disableProxy(ctx, proxyID, 24*time.Hour)
 		logger.Warn("Proxy disabled due to authentication failure (bad credentials)",
 			zap.String("proxy_id", proxyID),
 			zap.String("domain", domain),
@@ -373,7 +393,7 @@ func (m *DistributedProxyManager) RecordFailure(ctx context.Context, proxyID, do
 		return nil
 	}
 
-	// Increment hourly failure count
+	// Increment hourly failure count (needs return value, can't pipeline)
 	hourlyKey := fmt.Sprintf("proxy:hourly_fail:%s:%d", proxyID, time.Now().Hour())
 	count, _ := m.cache.Increment(ctx, hourlyKey)
 	m.cache.Expire(ctx, hourlyKey, 2*time.Hour)
@@ -382,15 +402,6 @@ func (m *DistributedProxyManager) RecordFailure(ctx context.Context, proxyID, do
 	if int(count) >= m.config.MaxFailuresPerHour {
 		m.disableProxy(ctx, proxyID, 30*time.Minute)
 	}
-
-	// Set cooldown for this domain
-	cooldownKey := fmt.Sprintf(keyProxyCooldown, proxyID, domain)
-	cooldownDuration := m.getCooldownDuration(pattern)
-	m.cache.Set(ctx, cooldownKey, "1", cooldownDuration)
-
-	// Decrease domain affinity
-	domainKey := fmt.Sprintf(keyProxyDomain, domain)
-	m.cache.ZIncrBy(ctx, domainKey, -0.5, proxyID) // Decrease but don't remove
 
 	logger.Debug("Proxy failure recorded",
 		zap.String("proxy_id", proxyID),
@@ -418,16 +429,59 @@ func (m *DistributedProxyManager) getCooldownDuration(pattern ErrorPattern) time
 	}
 }
 
-// disableProxy temporarily disables a proxy
+// disableProxy temporarily disables a proxy in Redis and optionally syncs to database
+// OPTIMIZED: Uses pipeline for Redis, async for DB write (non-blocking)
 func (m *DistributedProxyManager) disableProxy(ctx context.Context, proxyID string, duration time.Duration) {
 	healthKey := fmt.Sprintf(keyProxyHealth, proxyID)
-	m.cache.HSet(ctx, healthKey, "is_disabled", "true")
-	m.cache.HSet(ctx, healthKey, "disabled_until", time.Now().Add(duration).Format(time.RFC3339))
 
-	logger.Warn("Proxy disabled due to high failure rate",
-		zap.String("proxy_id", proxyID),
-		zap.Duration("duration", duration),
-	)
+	// Race condition protection: use SetNX to ensure only one worker disables the proxy
+	lockKey := fmt.Sprintf("proxy:disable_lock:%s", proxyID)
+	acquired, _ := m.cache.SetNX(ctx, lockKey, m.localID, duration)
+	if !acquired {
+		// Another worker is already handling this, just update local Redis state
+		pipe := m.cache.Pipeline()
+		pipe.HSet(ctx, healthKey, "is_disabled", "true")
+		pipe.HSet(ctx, healthKey, "disabled_until", time.Now().Add(duration).Format(time.RFC3339))
+		if _, err := pipe.Exec(ctx); err != nil {
+			logger.Warn("Pipeline error in disableProxy (secondary)", zap.Error(err))
+		}
+		return
+	}
+
+	// PIPELINE: Update Redis health state
+	pipe := m.cache.Pipeline()
+	pipe.HSet(ctx, healthKey, "is_disabled", "true")
+	pipe.HSet(ctx, healthKey, "disabled_until", time.Now().Add(duration).Format(time.RFC3339))
+	if _, err := pipe.Exec(ctx); err != nil {
+		logger.Warn("Pipeline error in disableProxy", zap.Error(err))
+	}
+
+	// ASYNC: Sync to database without blocking the hot path
+	if m.dbPool != nil {
+		go func(proxyID string, duration time.Duration) {
+			dbCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			query := `UPDATE proxies SET is_healthy = false, updated_at = NOW() WHERE id = $1`
+			_, dbErr := m.dbPool.Exec(dbCtx, query, proxyID)
+			if dbErr != nil {
+				logger.Warn("Failed to sync proxy disable to database",
+					zap.String("proxy_id", proxyID),
+					zap.Error(dbErr),
+				)
+			} else {
+				logger.Info("Proxy disabled and synced to database",
+					zap.String("proxy_id", proxyID),
+					zap.Duration("duration", duration),
+				)
+			}
+		}(proxyID, duration)
+	} else {
+		logger.Warn("Proxy disabled (Redis only - no DB pool)",
+			zap.String("proxy_id", proxyID),
+			zap.Duration("duration", duration),
+		)
+	}
 }
 
 // getHealth gets health metrics for a proxy

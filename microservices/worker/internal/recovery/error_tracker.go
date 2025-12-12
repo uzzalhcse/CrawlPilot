@@ -65,6 +65,7 @@ func (t *ErrorTracker) keyFor(domain string) string {
 }
 
 // RecordSuccess records a successful request - ATOMIC
+// OPTIMIZED: Uses pipeline to batch 4 Redis calls into 1 round-trip
 func (t *ErrorTracker) RecordSuccess(ctx context.Context, domain string) error {
 	if t.cache == nil {
 		return nil
@@ -72,23 +73,15 @@ func (t *ErrorTracker) RecordSuccess(ctx context.Context, domain string) error {
 
 	key := t.keyFor(domain)
 
-	// Atomic increment success count
-	if _, err := t.cache.HIncrBy(ctx, key, fieldSuccessCount, 1); err != nil {
-		return err
-	}
+	// PIPELINE: Batch all updates into single round-trip
+	pipe := t.cache.Pipeline()
+	pipe.HIncrBy(ctx, key, fieldSuccessCount, 1)
+	pipe.HSet(ctx, key, fieldConsecutiveErrs, "0")
+	pipe.HSet(ctx, key, fieldLastUpdated, time.Now().Format(time.RFC3339))
+	pipe.Expire(ctx, key, t.config.WindowTTL)
+	_, err := pipe.Exec(ctx)
 
-	// Atomic reset consecutive errors
-	if err := t.cache.HSet(ctx, key, fieldConsecutiveErrs, "0"); err != nil {
-		return err
-	}
-
-	// Update timestamp
-	t.cache.HSet(ctx, key, fieldLastUpdated, time.Now().Format(time.RFC3339))
-
-	// Set TTL to keep data fresh
-	t.cache.Expire(ctx, key, t.config.WindowTTL)
-
-	return nil
+	return err
 }
 
 // RecordFailure records a failed request and returns whether recovery should trigger - ATOMIC

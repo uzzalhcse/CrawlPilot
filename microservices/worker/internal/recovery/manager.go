@@ -147,6 +147,10 @@ func NewRecoveryManager(
 
 	// Initialize distributed proxy manager for Redis-based coordination
 	distributedProxy := NewDistributedProxyManager(cache, DefaultProxyRotationConfig())
+	// Wire up database pool for syncing proxy state (disabled proxies)
+	if distributedProxy != nil && pool != nil {
+		distributedProxy.SetDBPool(pool)
+	}
 
 	// Initialize tiered proxy manager (Crawlee pattern: escalation tiers)
 	tieredProxy := NewTieredProxyManager(cache, DefaultProxyRotationConfig(), DefaultTieredProxyConfig())
