@@ -198,12 +198,8 @@ func NewRecoveryManager(
 				if err != nil {
 					continue
 				}
-				if lastVerified != nil {
-					p.LastVerified = *lastVerified
-				}
-				if lastUsed != nil {
-					p.LastUsed = *lastUsed
-				}
+				p.LastVerified = lastVerified
+				p.LastUsed = lastUsed
 				if createdAt != nil {
 					p.CreatedAt = *createdAt
 				}

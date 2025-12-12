@@ -66,17 +66,48 @@ func (pm *ProxyManager) loadProxies(ctx context.Context) error {
 
 	for rows.Next() {
 		p := &Proxy{}
+		// Use temporary pointers for nullable fields
+		var username, password, countryCode, cityName, asnName, proxyType *string
+		var asnNumber *int
+		var lastVerified, lastUsed *time.Time
+
 		err := rows.Scan(
-			&p.ID, &p.ProxyID, &p.Server, &p.Username, &p.Password,
-			&p.ProxyAddress, &p.Port, &p.Valid, &p.LastVerified,
-			&p.CountryCode, &p.CityName, &p.ASNName, &p.ASNNumber,
-			&p.ConfidenceHigh, &p.ProxyType, &p.FailureCount, &p.SuccessCount,
-			&p.LastUsed, &p.IsHealthy, &p.CreatedAt, &p.UpdatedAt,
+			&p.ID, &p.ProxyID, &p.Server, &username, &password,
+			&p.ProxyAddress, &p.Port, &p.Valid, &lastVerified,
+			&countryCode, &cityName, &asnName, &asnNumber,
+			&p.ConfidenceHigh, &proxyType, &p.FailureCount, &p.SuccessCount,
+			&lastUsed, &p.IsHealthy, &p.CreatedAt, &p.UpdatedAt,
 		)
 		if err != nil {
 			logger.Warn("Failed to scan proxy row", zap.Error(err))
 			continue
 		}
+
+		// Assign nullable fields
+		if username != nil {
+			p.Username = *username
+		}
+		if password != nil {
+			p.Password = *password
+		}
+		if countryCode != nil {
+			p.CountryCode = *countryCode
+		}
+		if cityName != nil {
+			p.CityName = *cityName
+		}
+		if asnName != nil {
+			p.ASNName = *asnName
+		}
+		if asnNumber != nil {
+			p.ASNNumber = *asnNumber
+		}
+		if proxyType != nil {
+			p.ProxyType = *proxyType
+		}
+		p.LastVerified = lastVerified
+		p.LastUsed = lastUsed
+
 		pm.proxies = append(pm.proxies, p)
 	}
 

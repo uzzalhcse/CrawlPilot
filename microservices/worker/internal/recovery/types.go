@@ -162,28 +162,28 @@ type LearnedAction struct {
 
 // Proxy represents a proxy server configuration
 type Proxy struct {
-	ID             string    `json:"id" db:"id"`
-	ProxyID        string    `json:"proxy_id" db:"proxy_id"`
-	Server         string    `json:"server" db:"server"`
-	Username       string    `json:"username" db:"username"`
-	Password       string    `json:"password" db:"password"`
-	ProxyAddress   string    `json:"proxy_address" db:"proxy_address"`
-	Port           int       `json:"port" db:"port"`
-	Valid          bool      `json:"valid" db:"valid"`
-	LastVerified   time.Time `json:"last_verification" db:"last_verified"`
-	CountryCode    string    `json:"country_code" db:"country_code"`
-	CityName       string    `json:"city_name" db:"city_name"`
-	ASNName        string    `json:"asn_name" db:"asn_name"`
-	ASNNumber      int       `json:"asn_number" db:"asn_number"`
-	ConfidenceHigh bool      `json:"high_country_confidence" db:"confidence_high"`
-	ProxyType      string    `json:"proxy_type" db:"proxy_type"` // static, rotating
-	Tier           int       `json:"tier" db:"tier"`             // 1=datacenter, 2=residential, 3=mobile
-	FailureCount   int       `json:"failure_count" db:"failure_count"`
-	SuccessCount   int       `json:"success_count" db:"success_count"`
-	LastUsed       time.Time `json:"last_used" db:"last_used"`
-	IsHealthy      bool      `json:"is_healthy" db:"is_healthy"`
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	ID             string     `json:"id" db:"id"`
+	ProxyID        string     `json:"proxy_id" db:"proxy_id"`
+	Server         string     `json:"server" db:"server"`
+	Username       string     `json:"username" db:"username"`
+	Password       string     `json:"password" db:"password"`
+	ProxyAddress   string     `json:"proxy_address" db:"proxy_address"`
+	Port           int        `json:"port" db:"port"`
+	Valid          bool       `json:"valid" db:"valid"`
+	LastVerified   *time.Time `json:"last_verification" db:"last_verified"`
+	CountryCode    string     `json:"country_code" db:"country_code"`
+	CityName       string     `json:"city_name" db:"city_name"`
+	ASNName        string     `json:"asn_name" db:"asn_name"`
+	ASNNumber      int        `json:"asn_number" db:"asn_number"`
+	ConfidenceHigh bool       `json:"high_country_confidence" db:"confidence_high"`
+	ProxyType      string     `json:"proxy_type" db:"proxy_type"` // static, rotating
+	Tier           int        `json:"tier" db:"tier"`             // 1=datacenter, 2=residential, 3=mobile
+	FailureCount   int        `json:"failure_count" db:"failure_count"`
+	SuccessCount   int        `json:"success_count" db:"success_count"`
+	LastUsed       *time.Time `json:"last_used" db:"last_used"`
+	IsHealthy      bool       `json:"is_healthy" db:"is_healthy"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // ProxyURL returns the full proxy URL with authentication
