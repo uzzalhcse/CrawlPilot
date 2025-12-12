@@ -160,12 +160,9 @@ func NewRecoveryManager(
 	tieredProxyConfig := configManager.GetTieredProxyConfig(ctx)
 	tieredProxy := NewTieredProxyManager(cache, DefaultProxyRotationConfig(), tieredProxyConfig)
 
-	// Configure known protected domains from database (or use defaults)
-	protectedDomains := configManager.GetProtectedDomains(ctx)
-	if protectedDomains != nil && tieredProxy.knownProtected != nil {
-		// Replace with configured domains
-		tieredProxy.knownProtected = NewKnownProtectedDomainsWithConfig(cache, protectedDomains)
-	}
+	// Configure known protected domains - load from domain_strategies table (single source of truth)
+	// This replaces the old config-based approach with DB-based learning
+	tieredProxy.knownProtected = NewKnownProtectedDomainsFromDB(ctx, cache, pool)
 
 	// Initialize smart unblocker with domain learning and DB persistence
 	smartUnblocker := NewSmartUnblocker(pool, cache, tieredProxy, DefaultSmartUnblockerConfig())

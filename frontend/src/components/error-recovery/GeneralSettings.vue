@@ -236,28 +236,8 @@
       </div>
     </div>
 
-    <div class="bg-card border rounded-lg p-6">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h3 class="text-sm font-semibold">Protected Domains</h3>
-          <p class="text-xs text-muted-foreground mt-1">
-            Domains that bypass Tier 0 (direct) and start at a higher proxy tier.
-            Format: one domain per line, optionally with tier (e.g., "amazon.com:2").
-          </p>
-        </div>
-      </div>
-      <textarea
-        v-model="protectedDomainsText"
-        rows="8"
-        class="w-full px-3 py-2 text-sm bg-background border rounded-md focus:ring-1 focus:ring-primary focus:border-primary font-mono"
-        placeholder="amazon.com:2
-linkedin.com:2
-booking.com:2"
-      ></textarea>
-      <p class="text-[10px] text-muted-foreground mt-2">
-        Tiers: 0=Direct, 1=Datacenter, 2=Residential, 3=Mobile. Default tier if not specified: 2 (Residential).
-      </p>
-    </div>
+    <!-- Protected Domains section removed - now managed via domain_strategies table -->
+    <!-- TODO: Create a dedicated "Domain Strategies" page to view/manage learned domain tiers -->
 
     <div class="flex justify-end">
       <Button @click="saveConfig" variant="default" size="sm" :disabled="loading">
@@ -276,7 +256,6 @@ import { Save } from 'lucide-vue-next'
 
 const store = useErrorRecoveryStore()
 const loading = ref(false)
-const protectedDomainsText = ref('')
 
 // Initialize with defaults matching backend migration
 const config = reactive<Record<string, any>>({
@@ -299,39 +278,10 @@ const config = reactive<Record<string, any>>({
   'tiered_proxy.success_rate_threshold': 0.8,
 })
 
-// Parse protected domains text to JSON object
-function parseProtectedDomains(text: string): Record<string, number> {
-  const result: Record<string, number> = {}
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l)
-  for (const line of lines) {
-    const parts = line.split(':')
-    const domain = parts[0].trim().toLowerCase()
-    const tier = parts[1] ? parseInt(parts[1].trim()) : 2 // Default to tier 2 (Residential)
-    if (domain) {
-      result[domain] = tier
-    }
-  }
-  return result
-}
-
-// Convert protected domains JSON to text
-function protectedDomainsToText(domains: Record<string, number> | null): string {
-  if (!domains || Object.keys(domains).length === 0) return ''
-  return Object.entries(domains)
-    .map(([domain, tier]) => `${domain}:${tier}`)
-    .join('\n')
-}
-
 async function saveConfig() {
   loading.value = true
   try {
-    // Add protected domains as JSON
-    const protectedDomains = parseProtectedDomains(protectedDomainsText.value)
-    const configToSave = {
-      ...config,
-      'protected_domains': JSON.stringify(protectedDomains)
-    }
-    await store.updateMultipleConfigs(configToSave)
+    await store.updateMultipleConfigs(config)
   } finally {
     loading.value = false
   }
@@ -358,19 +308,6 @@ onMounted(async () => {
             config[key] = val
         }
       })
-      
-      // Handle protected_domains separately (it's a JSON object)
-      if (fetchedConfig['protected_domains']) {
-        let domains = fetchedConfig['protected_domains']
-        if (typeof domains === 'string') {
-          try {
-            domains = JSON.parse(domains)
-          } catch (e) {
-            domains = {}
-          }
-        }
-        protectedDomainsText.value = protectedDomainsToText(domains)
-      }
     }
   } catch (error) {
     console.error('Failed to load configs', error)

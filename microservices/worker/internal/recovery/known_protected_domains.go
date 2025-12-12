@@ -6,8 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
+	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
+	"go.uber.org/zap"
 )
 
 // KnownProtectedDomains maintains a list of domains that never work with Tier 0 (direct).
@@ -20,91 +23,46 @@ type KnownProtectedDomains struct {
 	learnedCache  sync.Map                    // domain -> learned minimum tier
 }
 
-// defaultProtectedDomains is the fallback list if database is not configured
-// These are major sites with strong anti-bot protection
-var defaultProtectedDomains = map[string]models.ProxyTier{
-	// E-commerce (aggressive bot protection)
-	"amazon.com":    models.TierResidential,
-	"amazon.co.uk":  models.TierResidential,
-	"amazon.de":     models.TierResidential,
-	"amazon.co.jp":  models.TierResidential,
-	"ebay.com":      models.TierDatacenter,
-	"walmart.com":   models.TierResidential,
-	"target.com":    models.TierResidential,
-	"bestbuy.com":   models.TierResidential,
-	"homedepot.com": models.TierDatacenter,
-	"lowes.com":     models.TierDatacenter,
-	"costco.com":    models.TierResidential,
-	"wayfair.com":   models.TierResidential,
-	"etsy.com":      models.TierDatacenter,
-
-	// Social media
-	"linkedin.com":  models.TierResidential,
-	"facebook.com":  models.TierResidential,
-	"instagram.com": models.TierResidential,
-	"twitter.com":   models.TierResidential,
-	"x.com":         models.TierResidential,
-	"tiktok.com":    models.TierMobile,
-
-	// Tech companies with strong protection
-	"google.com":    models.TierResidential,
-	"microsoft.com": models.TierDatacenter,
-	"apple.com":     models.TierResidential,
-
-	// Travel (notorious for anti-bot)
-	"booking.com":     models.TierResidential,
-	"expedia.com":     models.TierResidential,
-	"airbnb.com":      models.TierResidential,
-	"tripadvisor.com": models.TierResidential,
-	"hotels.com":      models.TierResidential,
-	"kayak.com":       models.TierResidential,
-
-	// Real estate (strong protection)
-	"zillow.com":  models.TierResidential,
-	"redfin.com":  models.TierResidential,
-	"realtor.com": models.TierResidential,
-	"trulia.com":  models.TierResidential,
-
-	// Job sites
-	"indeed.com":    models.TierResidential,
-	"glassdoor.com": models.TierResidential,
-	"monster.com":   models.TierDatacenter,
-
-	// Financial
-	"bloomberg.com": models.TierDatacenter,
-	"reuters.com":   models.TierDatacenter,
-
-	// Cloudflare-protected by default
-	"cloudflare.com": models.TierResidential,
-}
-
 // Redis key for learned protected domains
 const keyLearnedProtectedDomain = "protected:learned:%s"
 
-// NewKnownProtectedDomains creates a new known protected domains tracker
+// NewKnownProtectedDomains creates an empty tracker (for testing or when DB not available)
 func NewKnownProtectedDomains(c *cache.Cache) *KnownProtectedDomains {
 	return &KnownProtectedDomains{
 		cache:         c,
-		staticDomains: defaultProtectedDomains,
+		staticDomains: make(map[string]models.ProxyTier),
 	}
 }
 
-// NewKnownProtectedDomainsWithConfig creates tracker with domains from ConfigManager
-// If database has protected_domains configured, uses those; otherwise uses defaults
-func NewKnownProtectedDomainsWithConfig(c *cache.Cache, configuredDomains map[string]int) *KnownProtectedDomains {
+// NewKnownProtectedDomainsFromDB creates tracker by loading from domain_strategies table
+// This is the ONLY source of truth - no hardcoded defaults
+func NewKnownProtectedDomainsFromDB(ctx context.Context, c *cache.Cache, pool *pgxpool.Pool) *KnownProtectedDomains {
 	kpd := &KnownProtectedDomains{
 		cache:         c,
 		staticDomains: make(map[string]models.ProxyTier),
 	}
 
-	if configuredDomains != nil && len(configuredDomains) > 0 {
-		// Use configured domains from database
-		for domain, tier := range configuredDomains {
-			kpd.staticDomains[domain] = models.ProxyTier(tier)
+	// Load learned strategies from domain_strategies table
+	if pool != nil {
+		query := `SELECT domain, recommended_tier FROM domain_strategies WHERE learning_status IN ('stable', 'learning')`
+		rows, err := pool.Query(ctx, query)
+		if err != nil {
+			logger.Warn("Failed to load domain strategies from DB", zap.Error(err))
+		} else {
+			defer rows.Close()
+			loadedCount := 0
+			for rows.Next() {
+				var domain string
+				var tier int
+				if err := rows.Scan(&domain, &tier); err == nil && tier > 0 {
+					kpd.staticDomains[domain] = models.ProxyTier(tier)
+					loadedCount++
+				}
+			}
+			if loadedCount > 0 {
+				logger.Info("Loaded domain strategies from DB", zap.Int("count", loadedCount))
+			}
 		}
-	} else {
-		// Fall back to hardcoded defaults
-		kpd.staticDomains = defaultProtectedDomains
 	}
 
 	return kpd

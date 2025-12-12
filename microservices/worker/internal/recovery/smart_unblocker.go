@@ -62,7 +62,7 @@ func DefaultSmartUnblockerConfig() *SmartUnblockerConfig {
 		MinSamplesForStable: 100,
 		ConfidenceThreshold: 0.7,
 		LearningTTL:         24 * time.Hour,
-		PersistThreshold:    50,
+		PersistThreshold:    10,
 		StartAtTierZero:     true,
 		MaxAdaptiveDelayMs:  5000,
 		DelayIncrementMs:    500,
