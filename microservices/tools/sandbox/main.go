@@ -189,8 +189,8 @@ func main() {
 	// Dashboard
 	app.Get("/admin", dashboard)
 
-	fmt.Println("🛒 Amazom E-Commerce Sandbox Running on http://localhost:9999")
-	app.Listen(":9999")
+	fmt.Println("🛒 Amazom E-Commerce Sandbox Running on http://localhost:8585")
+	app.Listen(":8585")
 }
 
 // ==========================================
@@ -919,11 +919,11 @@ func dashboard(c *fiber.Ctx) error {
                 <div class="space-y-3 font-mono text-xs">
                     <div>
                         <span class="text-gray-400"># Good request (low score):</span>
-                        <pre class="bg-gray-900 p-2 rounded mt-1 text-green-400 overflow-x-auto">curl -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -c cookies.txt -b cookies.txt http://localhost:9999/dp/ELEC001</pre>
+                        <pre class="bg-gray-900 p-2 rounded mt-1 text-green-400 overflow-x-auto">curl -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -c cookies.txt -b cookies.txt http://localhost:8585/dp/ELEC001</pre>
                     </div>
                     <div>
                         <span class="text-gray-400"># Bad request (high score - will get blocked fast):</span>
-                        <pre class="bg-gray-900 p-2 rounded mt-1 text-red-400 overflow-x-auto">for i in {1..100}; do curl -s http://localhost:9999/s?k=test > /dev/null; done</pre>
+                        <pre class="bg-gray-900 p-2 rounded mt-1 text-red-400 overflow-x-auto">for i in {1..100}; do curl -s http://localhost:8585/s?k=test > /dev/null; done</pre>
                     </div>
                     <div>
                         <span class="text-gray-400"># Watch score increase in real-time in this dashboard!</span>

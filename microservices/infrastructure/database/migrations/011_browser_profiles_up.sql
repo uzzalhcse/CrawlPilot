@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS browser_profiles (
     CONSTRAINT browser_profiles_status_check 
         CHECK (status IN ('active', 'inactive', 'archived', 'running')),
     CONSTRAINT browser_profiles_driver_check 
-        CHECK (driver_type IN ('playwright', 'chromedp', 'http')),
+        CHECK (driver_type IN ('playwright', 'chromedp', 'http', 'camoufox')),
     CONSTRAINT browser_profiles_browser_check 
         CHECK (browser_type IN ('chromium', 'firefox', 'webkit')),
     -- Validation: chromedp only works with chromium

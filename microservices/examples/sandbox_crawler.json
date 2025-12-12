@@ -3,7 +3,7 @@
     "description": "Full site crawler that hovers over all category dropdowns to collect subcategories",
     "config": {
         "start_urls": [
-            "http://localhost:9999"
+            "http://34.85.113.40:8585"
         ],
         "max_depth": 3,
         "rate_limit_delay": 500,
@@ -85,7 +85,7 @@
                             "marker": "product",
                             "limit": 0
                         },
-                        "probe_url": "http://localhost:9999/category/electronics/phones"
+                        "probe_url": "http://34.85.113.40:8585/category/electronics/phones"
                     }
                 ],
                 "url_filter": {
@@ -108,8 +108,7 @@
                         "type": "navigate",
                         "name": "Navigate to Product Page",
                         "params": {
-                            "url": "{{current_url}}",
-                            "driver": "http"
+                            "url": "{{current_url}}"
                         }
                     },
                     {
@@ -159,7 +158,7 @@
                                 }
                             }
                         },
-                        "probe_url": "http://localhost:9999/dp/ELEC001"
+                        "probe_url": "http://34.85.113.40:8585/dp/ELEC001"
                     }
                 ],
                 "url_filter": {
