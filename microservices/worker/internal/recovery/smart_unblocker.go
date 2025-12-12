@@ -46,7 +46,6 @@ type SmartUnblockerConfig struct {
 
 	// De-escalation (bidirectional learning)
 	DeescalationConfidenceThreshold float64 // Min confidence to de-escalate tier in DB (default: 0.7)
-	DeescalationMinSamples          int     // Min successful requests before de-escalating (default: 5)
 
 	// Optimistic Mode
 	StartAtTierZero bool // Start new domains at Tier 0 (default: true)
@@ -68,7 +67,6 @@ func DefaultSmartUnblockerConfig() *SmartUnblockerConfig {
 		LearningTTL:                     24 * time.Hour,
 		PersistThreshold:                10,
 		DeescalationConfidenceThreshold: 0.7,
-		DeescalationMinSamples:          5,
 		StartAtTierZero:                 true,
 		MaxAdaptiveDelayMs:              5000,
 		DelayIncrementMs:                500,

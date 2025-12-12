@@ -18,10 +18,10 @@ import (
 type KnownProtectedDomains struct {
 	cache *cache.Cache
 
-	// In-memory cache for hot path
-	staticDomains   map[string]models.ProxyTier // Hardcoded/configured domains
+	// In-memory caches for hot path (both updated on de-escalation)
+	staticDomains   map[string]models.ProxyTier // Loaded from DB at startup, updated on de-escalation
 	staticDomainsMu sync.RWMutex                // Mutex for staticDomains (critical for 10k/sec concurrency)
-	learnedCache    sync.Map                    // domain -> learned minimum tier (already thread-safe)
+	learnedCache    sync.Map                    // domain -> learned tier during runtime (ephemeral)
 }
 
 // Redis key for learned protected domains

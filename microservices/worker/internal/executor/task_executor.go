@@ -830,33 +830,11 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	)
 
 	// Track task completion for distributed completion detection
+	// Note: PersistLearnedStrategies is triggered via CompletionTracker.OnComplete callback
 	if e.completionTracker != nil {
-		isComplete, err := e.completionTracker.TaskCompleted(ctx, task.ExecutionID)
+		_, err := e.completionTracker.TaskCompleted(ctx, task.ExecutionID)
 		if err != nil {
 			logger.Warn("Failed to track task completion", zap.Error(err))
-		}
-		if isComplete {
-			logger.Info("Execution complete - signaling orchestrator",
-				zap.String("execution_id", task.ExecutionID),
-			)
-
-			// SmartUnblocker: Persist learned strategies to database
-			// This saves tier learning for future executions
-			if e.recoveryManager != nil {
-				if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
-					go func() {
-						persistCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-						defer cancel()
-						if err := unblocker.PersistLearnedStrategies(persistCtx, task.ExecutionID); err != nil {
-							logger.Warn("Failed to persist learned strategies", zap.Error(err))
-						} else {
-							logger.Info("Persisted learned domain strategies",
-								zap.String("execution_id", task.ExecutionID),
-							)
-						}
-					}()
-				}
-			}
 		}
 	}
 
