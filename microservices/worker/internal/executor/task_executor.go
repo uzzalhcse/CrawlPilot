@@ -55,6 +55,10 @@ type TaskExecutor struct {
 	probeAgent       *recovery.ProbeAgent       // AI agent for probe fix analysis
 	probeBaseline    *recovery.ProbeBaseline    // Baseline comparison for probes
 	incidentReporter *recovery.IncidentReporter // Creates incidents for human review
+
+	// Snapshot configuration
+	snapshotConfig *config.SnapshotConfig // Snapshot storage config (local vs GCS)
+	gcpConfig      *config.GCPConfig      // GCP config for project ID and bucket
 }
 
 // NewTaskExecutor creates a new task executor
@@ -62,6 +66,7 @@ func NewTaskExecutor(
 	cfg *config.BrowserConfig,
 	gcpCfg *config.GCPConfig,
 	recoveryCfg *config.RecoveryConfig,
+	snapshotCfg *config.SnapshotConfig,
 	pubsubClient *queue.PubSubClient,
 	redisCache *cache.Cache,
 	orchestratorURL string,
@@ -288,6 +293,8 @@ func NewTaskExecutor(
 		probeAgent:           probeAgent,
 		probeBaseline:        probeBaseline,
 		incidentReporter:     incidentReporter,
+		snapshotConfig:       snapshotCfg,
+		gcpConfig:            gcpCfg,
 	}, nil
 }
 

@@ -1,6 +1,10 @@
 package handlers
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/uzzalhcse/crawlify/microservices/orchestrator/internal/repository"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
@@ -463,4 +467,75 @@ func (h *ProbeHandler) RejectAutoFix(c *fiber.Ctx) error {
 		"id":      fixID,
 		"status":  "rejected",
 	})
+}
+
+// GetSnapshotFile handles GET /api/v1/snapshots/file
+// Serves local snapshot files (screenshots, DOM) for viewing in the UI
+// Query params: path (the local file path from probe snapshot)
+func (h *ProbeHandler) GetSnapshotFile(c *fiber.Ctx) error {
+	filePath := c.Query("path")
+	if filePath == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "path query parameter is required",
+		})
+	}
+
+	// Security: Ensure path contains "snapshots" directory to prevent path traversal
+	// This works for both absolute paths (like /home/.../snapshots/...) and relative paths
+	if !strings.Contains(filePath, "snapshots") {
+		logger.Warn("Attempt to access file outside snapshots directory",
+			zap.String("path", filePath),
+		)
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "access denied - only snapshot files can be served",
+		})
+	}
+
+	// Clean the path to prevent directory traversal
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "invalid path",
+		})
+	}
+
+	// If path is not absolute, try to make it absolute based on project structure
+	if !filepath.IsAbs(cleanPath) {
+		// Try current working directory
+		if cwd, err := os.Getwd(); err == nil {
+			// Check if we're in a microservices subdirectory
+			if strings.Contains(cwd, "/microservices/") {
+				parts := strings.Split(cwd, "/microservices/")
+				cleanPath = filepath.Join(parts[0], cleanPath)
+			} else {
+				cleanPath = filepath.Join(cwd, cleanPath)
+			}
+		}
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
+		logger.Debug("Snapshot file not found",
+			zap.String("path", cleanPath),
+		)
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "snapshot file not found",
+			"path":  cleanPath,
+		})
+	}
+
+	// Determine content type based on file extension
+	ext := strings.ToLower(filepath.Ext(cleanPath))
+	switch ext {
+	case ".png":
+		c.Set("Content-Type", "image/png")
+	case ".jpg", ".jpeg":
+		c.Set("Content-Type", "image/jpeg")
+	case ".html":
+		c.Set("Content-Type", "text/html; charset=utf-8")
+	default:
+		c.Set("Content-Type", "application/octet-stream")
+	}
+
+	return c.SendFile(cleanPath)
 }

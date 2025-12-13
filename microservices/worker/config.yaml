@@ -1,3 +1,12 @@
+# Environment: local, staging, production (affects snapshot storage)
+environment: local
+
+# Snapshot storage configuration
+snapshot:
+  storage_type: local           # "local" (filesystem) or "gcs" (Google Cloud Storage)
+  local_base_path: ./snapshots  # Local storage path (relative to project root)
+  gcs_prefix: probes/           # GCS path prefix (used when storage_type: gcs)
+
 server:
   port: 8282  # Changed from 8081 to avoid conflict with orchestrator
   host: 0.0.0.0

@@ -9,12 +9,30 @@ import (
 
 // Config holds all application configuration
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	GCP      GCPConfig      `mapstructure:"gcp"`
-	Browser  BrowserConfig  `mapstructure:"browser"`
-	Recovery RecoveryConfig `mapstructure:"recovery"`
+	Environment string         `mapstructure:"environment"` // "local", "staging", "production"
+	Server      ServerConfig   `mapstructure:"server"`
+	Database    DatabaseConfig `mapstructure:"database"`
+	Redis       RedisConfig    `mapstructure:"redis"`
+	GCP         GCPConfig      `mapstructure:"gcp"`
+	Browser     BrowserConfig  `mapstructure:"browser"`
+	Recovery    RecoveryConfig `mapstructure:"recovery"`
+	Snapshot    SnapshotConfig `mapstructure:"snapshot"`
+}
+
+// IsLocal returns true if running in local environment
+func (c *Config) IsLocal() bool {
+	return c.Environment == "" || c.Environment == "local"
+}
+
+// SnapshotConfig holds probe snapshot storage configuration
+type SnapshotConfig struct {
+	// StorageType: "local" (filesystem) or "gcs" (Google Cloud Storage)
+	// Default: auto-determined from environment (local=filesystem, staging/prod=gcs)
+	StorageType string `mapstructure:"storage_type"`
+	// LocalBasePath is the base directory for local storage (default: ./snapshots)
+	LocalBasePath string `mapstructure:"local_base_path"`
+	// GCSPrefix is the path prefix in the GCS bucket (default: probes/)
+	GCSPrefix string `mapstructure:"gcs_prefix"`
 }
 
 // ServerConfig holds HTTP server configuration

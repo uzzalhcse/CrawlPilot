@@ -41,6 +41,41 @@ func (c *GCSClient) Close() error {
 	return c.client.Close()
 }
 
+// UploadBytes uploads raw bytes to GCS with specified content type
+// Returns the GCS path (gs://bucket/path)
+func (c *GCSClient) UploadBytes(ctx context.Context, objectPath string, data []byte, contentType string) (string, error) {
+	obj := c.client.Bucket(c.bucket).Object(objectPath)
+	w := obj.NewWriter(ctx)
+	w.ContentType = contentType
+	w.Metadata = map[string]string{
+		"uploaded_at": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if _, err := w.Write(data); err != nil {
+		w.Close()
+		return "", fmt.Errorf("failed to write to GCS: %w", err)
+	}
+
+	if err := w.Close(); err != nil {
+		return "", fmt.Errorf("failed to close GCS writer: %w", err)
+	}
+
+	gcsPath := fmt.Sprintf("gs://%s/%s", c.bucket, objectPath)
+
+	logger.Debug("Uploaded bytes to GCS",
+		zap.String("path", gcsPath),
+		zap.Int("size", len(data)),
+		zap.String("content_type", contentType),
+	)
+
+	return gcsPath, nil
+}
+
+// Bucket returns the bucket name for URL construction
+func (c *GCSClient) Bucket() string {
+	return c.bucket
+}
+
 // UploadExtractedItems uploads extracted items as JSONL
 func (c *GCSClient) UploadExtractedItems(ctx context.Context, executionID string, items []map[string]interface{}) (string, error) {
 	if len(items) == 0 {

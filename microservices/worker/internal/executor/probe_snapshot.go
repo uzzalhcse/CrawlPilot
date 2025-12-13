@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uzzalhcse/crawlify/microservices/shared/config"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 	"github.com/uzzalhcse/crawlify/microservices/worker/internal/driver"
@@ -17,24 +18,68 @@ import (
 
 // ProbeSnapshotConfig holds configuration for snapshot capture
 type ProbeSnapshotConfig struct {
+	// Environment determines storage type ("local", "staging", "production")
+	Environment string
 	// LocalBasePath is the base directory for local storage
 	LocalBasePath string
-	// GCSBucket is the GCS bucket for cloud storage (optional)
+	// GCSBucket is the GCS bucket for cloud storage
 	GCSBucket string
+	// GCPProjectID is needed for console URLs
+	GCPProjectID string
 	// MaxDOMSize limits DOM capture size (default 2MB)
 	MaxDOMSize int64
 	// MaxContextSize limits selector context size (default 500 chars)
 	MaxContextSize int
 }
 
-// DefaultProbeSnapshotConfig returns default snapshot configuration
+// DefaultProbeSnapshotConfig returns default snapshot configuration (local only)
 func DefaultProbeSnapshotConfig() ProbeSnapshotConfig {
+	basePath := "snapshots"
+
+	// Try to get the working directory for an absolute path
+	if cwd, err := os.Getwd(); err == nil {
+		if strings.Contains(cwd, "/microservices/") {
+			parts := strings.Split(cwd, "/microservices/")
+			basePath = parts[0] + "/snapshots"
+		} else {
+			basePath = cwd + "/snapshots"
+		}
+	}
+
 	return ProbeSnapshotConfig{
-		LocalBasePath:  "snapshots",
-		GCSBucket:      "", // Empty means local only
+		Environment:    "local",
+		LocalBasePath:  basePath,
+		GCSBucket:      "",
+		GCPProjectID:   "",
 		MaxDOMSize:     2 * 1024 * 1024,
 		MaxContextSize: 500,
 	}
+}
+
+// ProbeSnapshotConfigFromConfig creates a snapshot config from app config
+func ProbeSnapshotConfigFromConfig(cfg *config.Config) ProbeSnapshotConfig {
+	baseConfig := DefaultProbeSnapshotConfig()
+
+	if cfg == nil {
+		return baseConfig
+	}
+
+	baseConfig.Environment = cfg.Environment
+	baseConfig.GCSBucket = cfg.GCP.StorageBucket
+	baseConfig.GCPProjectID = cfg.GCP.ProjectID
+
+	return baseConfig
+}
+
+// IsLocal returns true if using local storage
+func (c *ProbeSnapshotConfig) IsLocal() bool {
+	return c.Environment == "" || c.Environment == "local"
+}
+
+// GCSConsolePath generates a GCS console URL for a given object path
+func (c *ProbeSnapshotConfig) GCSConsolePath(objectPath string) string {
+	return fmt.Sprintf("https://console.cloud.google.com/storage/browser/_details/%s/%s?project=%s",
+		c.GCSBucket, objectPath, c.GCPProjectID)
 }
 
 // captureNodeSnapshot captures full page DOM and screenshot when a node fails
@@ -43,23 +88,53 @@ func (e *TaskExecutor) captureNodeSnapshot(ctx context.Context, page driver.Page
 		return nil, fmt.Errorf("page is nil, cannot capture snapshot")
 	}
 
-	config := DefaultProbeSnapshotConfig()
+	// Build snapshot config from app config (passed via TaskExecutor)
+	snapshotConfig := DefaultProbeSnapshotConfig()
+	if e.snapshotConfig != nil {
+		// Use storage type from config
+		if e.snapshotConfig.StorageType != "" {
+			if e.snapshotConfig.StorageType == "gcs" {
+				snapshotConfig.Environment = "production" // Force GCS mode
+			} else {
+				snapshotConfig.Environment = "local"
+			}
+		}
+		// Override local base path if set
+		if e.snapshotConfig.LocalBasePath != "" {
+			localPath := e.snapshotConfig.LocalBasePath
+			// Convert relative path to absolute
+			if !filepath.IsAbs(localPath) {
+				if cwd, err := os.Getwd(); err == nil {
+					// Check if we're in a microservices subdirectory
+					if strings.Contains(cwd, "/microservices/") {
+						parts := strings.Split(cwd, "/microservices/")
+						localPath = filepath.Join(parts[0], strings.TrimPrefix(localPath, "./"))
+					} else {
+						localPath = filepath.Join(cwd, strings.TrimPrefix(localPath, "./"))
+					}
+				}
+			}
+			snapshotConfig.LocalBasePath = localPath
+		}
+	}
+	// Use GCP config for bucket and project ID
+	if e.gcpConfig != nil {
+		snapshotConfig.GCSBucket = e.gcpConfig.StorageBucket
+		snapshotConfig.GCPProjectID = e.gcpConfig.ProjectID
+	}
+
 	snapshot := &models.ProbeSnapshot{
 		CapturedAt: time.Now().Unix(),
 	}
 
-	// Create directory structure: base/workflow_id/execution_id/phase_id/node_id/
-	snapshotDir := filepath.Join(
-		config.LocalBasePath,
+	// Define the path structure for both local and GCS
+	snapshotRelPath := filepath.Join(
+		"probes",
 		task.WorkflowID,
 		task.ExecutionID,
 		task.PhaseID,
 		nodeID,
 	)
-
-	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create snapshot directory: %w", err)
-	}
 
 	// Capture page URL and title
 	snapshot.PageURL = task.URL
@@ -68,32 +143,65 @@ func (e *TaskExecutor) captureNodeSnapshot(ctx context.Context, page driver.Page
 		snapshot.PageTitle = title
 	}
 
-	// Capture DOM
-	domPath := filepath.Join(snapshotDir, "dom.html")
-	if err := e.captureDOM(ctx, page, domPath, config.MaxDOMSize); err != nil {
-		logger.Warn("Failed to capture DOM",
-			zap.String("node_id", nodeID),
-			zap.Error(err),
-		)
-	} else {
-		snapshot.DOMPath = domPath
-		if fi, err := os.Stat(domPath); err == nil {
-			snapshot.DOMSize = fi.Size()
+	// For local environment: store locally
+	if snapshotConfig.IsLocal() || e.gcsClient == nil {
+		localDir := filepath.Join(snapshotConfig.LocalBasePath, snapshotRelPath)
+		if err := os.MkdirAll(localDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create snapshot directory: %w", err)
 		}
-	}
 
-	// Capture screenshot
-	screenshotPath := filepath.Join(snapshotDir, "screenshot.png")
-	width, height, err := e.captureScreenshot(ctx, page, screenshotPath)
-	if err != nil {
-		logger.Warn("Failed to capture screenshot",
-			zap.String("node_id", nodeID),
-			zap.Error(err),
-		)
+		// Capture DOM locally
+		domPath := filepath.Join(localDir, "dom.html")
+		if err := e.captureDOM(ctx, page, domPath, snapshotConfig.MaxDOMSize); err != nil {
+			logger.Warn("Failed to capture DOM", zap.String("node_id", nodeID), zap.Error(err))
+		} else {
+			snapshot.DOMPath = domPath
+			if fi, err := os.Stat(domPath); err == nil {
+				snapshot.DOMSize = fi.Size()
+			}
+		}
+
+		// Capture screenshot locally
+		screenshotPath := filepath.Join(localDir, "screenshot.png")
+		width, height, err := e.captureScreenshot(ctx, page, screenshotPath)
+		if err != nil {
+			logger.Warn("Failed to capture screenshot", zap.String("node_id", nodeID), zap.Error(err))
+		} else {
+			snapshot.ScreenshotPath = screenshotPath
+			snapshot.ImageWidth = width
+			snapshot.ImageHeight = height
+		}
 	} else {
-		snapshot.ScreenshotPath = screenshotPath
-		snapshot.ImageWidth = width
-		snapshot.ImageHeight = height
+		// For staging/production: upload to GCS and store console URLs
+		// Capture DOM to temp file then upload
+		domData, err := page.Content()
+		if err == nil {
+			if int64(len(domData)) > snapshotConfig.MaxDOMSize {
+				domData = domData[:snapshotConfig.MaxDOMSize] + "\n<!-- TRUNCATED -->"
+			}
+			gcsPath := snapshotRelPath + "/dom.html"
+			if _, err := e.gcsClient.UploadBytes(ctx, gcsPath, []byte(domData), "text/html"); err != nil {
+				logger.Warn("Failed to upload DOM to GCS", zap.String("path", gcsPath), zap.Error(err))
+			} else {
+				snapshot.DOMPath = snapshotConfig.GCSConsolePath(gcsPath)
+				snapshot.DOMSize = int64(len(domData))
+			}
+		}
+
+		// Capture screenshot and upload
+		imgData, err := page.Screenshot(driver.WithFullPage(true))
+		if err == nil {
+			gcsPath := snapshotRelPath + "/screenshot.png"
+			if _, err := e.gcsClient.UploadBytes(ctx, gcsPath, imgData, "image/png"); err != nil {
+				logger.Warn("Failed to upload screenshot to GCS", zap.String("path", gcsPath), zap.Error(err))
+			} else {
+				snapshot.ScreenshotPath = snapshotConfig.GCSConsolePath(gcsPath)
+				snapshot.ImageWidth = 1920
+				snapshot.ImageHeight = 1080
+			}
+		} else {
+			logger.Warn("Failed to capture screenshot", zap.String("node_id", nodeID), zap.Error(err))
+		}
 	}
 
 	logger.Debug("Node snapshot captured",
@@ -101,6 +209,7 @@ func (e *TaskExecutor) captureNodeSnapshot(ctx context.Context, page driver.Page
 		zap.String("dom_path", snapshot.DOMPath),
 		zap.String("screenshot_path", snapshot.ScreenshotPath),
 		zap.Int64("dom_size", snapshot.DOMSize),
+		zap.Bool("is_local", snapshotConfig.IsLocal()),
 	)
 
 	return snapshot, nil

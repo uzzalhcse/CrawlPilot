@@ -10,6 +10,15 @@
 #     --cpu 2 \
 #     --timeout 300
 
+# Environment: local, staging, production (affects snapshot storage)
+environment: production
+
+# Snapshot storage configuration (uses GCS in production)
+snapshot:
+  storage_type: gcs             # Uses GCS bucket from gcp.storage_bucket
+  local_base_path: ./snapshots  # Fallback for local testing
+  gcs_prefix: probes/           # GCS path prefix
+
 server:
   port: 8080  # Cloud Run uses PORT env var
   host: 0.0.0.0

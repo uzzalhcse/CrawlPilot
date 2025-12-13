@@ -99,6 +99,73 @@ const handleRunProbe = async () => {
 const openSnapshot = (snapshot: ProbeSnapshot) => {
   selectedSnapshot.value = snapshot
   showSnapshotDialog.value = true
+  // Fetch DOM content for preview (only for local paths, not GCS URLs)
+  if (!isGcsUrl(snapshot.dom_path)) {
+    fetchDomContent(snapshot.dom_path)
+  } else {
+    domContent.value = 'DOM stored in GCS. Click "Open in GCS Console" to view.'
+  }
+}
+
+// Check if path is a GCS console URL (used in staging/production)
+const isGcsUrl = (path: string) => {
+  return path && (path.startsWith('https://console.cloud.google.com') || path.startsWith('gs://'))
+}
+
+// Build URL to fetch snapshot file from backend (for local paths)
+const getSnapshotFileUrl = (path: string) => {
+  if (isGcsUrl(path)) {
+    return path // Return GCS URL directly
+  }
+  return `/api/v1/snapshots/file?path=${encodeURIComponent(path)}`
+}
+
+// Ref to store DOM content for preview
+const domContent = ref('')
+const domPreview = computed(() => {
+  if (!domContent.value) return 'Loading DOM content...'
+  // Limit preview to first 5000 chars
+  if (domContent.value.length > 5000) {
+    return domContent.value.substring(0, 5000) + '\n\n... (truncated)'
+  }
+  return domContent.value
+})
+
+// Fetch DOM content from backend (for local storage only)
+const fetchDomContent = async (path: string) => {
+  if (!path) {
+    domContent.value = ''
+    return
+  }
+  if (isGcsUrl(path)) {
+    domContent.value = 'DOM stored in GCS. Click "Open in GCS Console" to view.'
+    return
+  }
+  try {
+    const response = await fetch(getSnapshotFileUrl(path))
+    if (response.ok) {
+      domContent.value = await response.text()
+    } else {
+      domContent.value = 'Failed to load DOM content'
+    }
+  } catch (error) {
+    domContent.value = 'Error loading DOM content'
+  }
+}
+
+// Download/open snapshot in new tab
+const downloadSnapshot = (type: 'screenshot' | 'dom') => {
+  if (!selectedSnapshot.value) return
+  const path = type === 'screenshot' 
+    ? selectedSnapshot.value.screenshot_path 
+    : selectedSnapshot.value.dom_path
+  window.open(getSnapshotFileUrl(path), '_blank')
+}
+
+// Handle image load error
+const handleImageError = (event: Event) => {
+  const img = event.target as HTMLImageElement
+  img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect fill="%23f3f4f6" width="100%" height="100%"/><text fill="%239ca3af" x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="sans-serif" font-size="14">Screenshot not available</text></svg>'
 }
 
 const getStatusColor = (status: string) => {
@@ -402,26 +469,64 @@ onMounted(fetchData)
 
     <!-- Snapshot Dialog -->
     <Dialog v-model:open="showSnapshotDialog">
-      <DialogContent class="max-w-4xl max-h-[90vh] overflow-auto">
+      <DialogContent class="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Node Snapshot</DialogTitle>
         </DialogHeader>
-        <div v-if="selectedSnapshot" class="space-y-4">
-          <div class="bg-muted rounded-lg p-4 space-y-2">
-            <div class="text-sm font-medium">Snapshot Details</div>
-            <div class="text-xs text-muted-foreground space-y-1">
-              <div><span class="font-medium">Page URL:</span> {{ selectedSnapshot.page_url }}</div>
-              <div><span class="font-medium">Page Title:</span> {{ selectedSnapshot.page_title }}</div>
-              <div><span class="font-medium">DOM Size:</span> {{ (selectedSnapshot.dom_size / 1024).toFixed(1) }} KB</div>
-              <div><span class="font-medium">Image Size:</span> {{ selectedSnapshot.image_width }}x{{ selectedSnapshot.image_height }}</div>
+        <div v-if="selectedSnapshot" class="flex-1 overflow-y-auto space-y-4">
+          <!-- Snapshot Metadata -->
+          <div class="bg-muted rounded-lg p-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <div class="text-xs text-muted-foreground">Page Title</div>
+                <div class="font-medium truncate" :title="selectedSnapshot.page_title">{{ selectedSnapshot.page_title || 'N/A' }}</div>
+              </div>
+              <div>
+                <div class="text-xs text-muted-foreground">Page URL</div>
+                <a :href="selectedSnapshot.page_url" target="_blank" class="font-medium text-primary truncate block hover:underline" :title="selectedSnapshot.page_url">{{ selectedSnapshot.page_url }}</a>
+              </div>
+              <div>
+                <div class="text-xs text-muted-foreground">DOM Size</div>
+                <div class="font-medium">{{ (selectedSnapshot.dom_size / 1024).toFixed(1) }} KB</div>
+              </div>
+              <div>
+                <div class="text-xs text-muted-foreground">Screenshot Size</div>
+                <div class="font-medium">{{ selectedSnapshot.image_width }}x{{ selectedSnapshot.image_height }}</div>
+              </div>
             </div>
           </div>
-          <div class="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 p-3 rounded-lg text-xs">
-            <strong>Note:</strong> Snapshots are stored locally. To view them:
-            <ul class="mt-1 list-disc list-inside">
-              <li>Screenshot: <code class="bg-muted px-1 rounded">{{ selectedSnapshot.screenshot_path }}</code></li>
-              <li>DOM: <code class="bg-muted px-1 rounded">{{ selectedSnapshot.dom_path }}</code></li>
-            </ul>
+
+          <!-- Screenshot Preview -->
+          <div v-if="selectedSnapshot.screenshot_path" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold">Screenshot</h3>
+              <Button variant="outline" size="sm" @click="downloadSnapshot('screenshot')">
+                <ExternalLink class="w-3 h-3 mr-1" />
+                Open Full Size
+              </Button>
+            </div>
+            <div class="border rounded-lg overflow-hidden bg-muted/30">
+              <img 
+                :src="getSnapshotFileUrl(selectedSnapshot.screenshot_path)" 
+                :alt="selectedSnapshot.page_title || 'Screenshot'"
+                class="w-full max-h-[400px] object-contain"
+                @error="handleImageError"
+              />
+            </div>
+          </div>
+
+          <!-- DOM Preview -->
+          <div v-if="selectedSnapshot.dom_path" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold">HTML DOM</h3>
+              <Button variant="outline" size="sm" @click="downloadSnapshot('dom')">
+                <ExternalLink class="w-3 h-3 mr-1" />
+                Open in New Tab
+              </Button>
+            </div>
+            <div class="border rounded-lg bg-muted/30 max-h-[300px] overflow-auto">
+              <pre class="text-xs font-mono p-4 whitespace-pre-wrap break-all">{{ domPreview }}</pre>
+            </div>
           </div>
         </div>
       </DialogContent>

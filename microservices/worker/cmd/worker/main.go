@@ -80,7 +80,7 @@ func main() {
 		logger.Warn("ORCHESTRATOR_URL not set in config, using default", zap.String("url", orchestratorURL))
 	}
 
-	taskExecutor, err := executor.NewTaskExecutor(&cfg.Browser, &cfg.GCP, &cfg.Recovery, pubsubClient, redisCache, orchestratorURL, db)
+	taskExecutor, err := executor.NewTaskExecutor(&cfg.Browser, &cfg.GCP, &cfg.Recovery, &cfg.Snapshot, pubsubClient, redisCache, orchestratorURL, db)
 	if err != nil {
 		logger.Fatal("Failed to create task executor", zap.Error(err))
 	}

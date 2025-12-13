@@ -303,6 +303,10 @@ func main() {
 	probes.Post("/auto-fixes/:id/approve", probeHandler.ApproveAutoFix)
 	probes.Post("/auto-fixes/:id/reject", probeHandler.RejectAutoFix)
 
+	// Snapshot file serving endpoint
+	snapshots := api.Group("/snapshots")
+	snapshots.Get("/file", probeHandler.GetSnapshotFile)
+
 	// Initialize schedule repository, service, and handler
 	scheduleRepo := repository.NewScheduleRepository(db)
 	scheduleSvc := service.NewScheduleService(scheduleRepo)
