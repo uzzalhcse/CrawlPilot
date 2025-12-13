@@ -149,9 +149,9 @@ func (r *RecoveryAttemptRepository) UpdateAttempt(ctx context.Context, id string
 			retry_delay_ms = NULLIF($6, 0),
 			duration_ms = NULLIF($7, 0),
 			proxy_id = NULLIF($8, ''),
-			proxy_tier = NULLIF($9, 0),
-			tier_from = NULLIF($10, 0),
-			tier_to = NULLIF($11, 0),
+			proxy_tier = NULLIF($9, -1),
+			tier_from = NULLIF($10, -1),
+			tier_to = NULLIF($11, -1),
 			retry_count = NULLIF($12, 0)
 		WHERE id = $13
 	`
@@ -223,9 +223,9 @@ func (r *RecoveryAttemptRepository) UpdateAttemptsBatch(ctx context.Context, upd
 			retry_delay_ms = COALESCE(NULLIF(v.retry_delay_ms, 0), t.retry_delay_ms),
 			duration_ms = COALESCE(NULLIF(v.duration_ms, 0), t.duration_ms),
 			proxy_id = COALESCE(NULLIF(v.proxy_id, ''), t.proxy_id),
-			proxy_tier = COALESCE(NULLIF(v.proxy_tier, 0), t.proxy_tier),
-			tier_from = COALESCE(NULLIF(v.tier_from, 0), t.tier_from),
-			tier_to = COALESCE(NULLIF(v.tier_to, 0), t.tier_to),
+			proxy_tier = COALESCE(NULLIF(v.proxy_tier, -1), t.proxy_tier),
+			tier_from = COALESCE(NULLIF(v.tier_from, -1), t.tier_from),
+			tier_to = COALESCE(NULLIF(v.tier_to, -1), t.tier_to),
 			retry_count = COALESCE(NULLIF(v.retry_count, 0), t.retry_count),
 			updated_at = NOW()
 		FROM (VALUES %s) AS v(id, action, source, status, rule_id, ai_reasoning, retry_delay_ms, duration_ms, proxy_id, proxy_tier, tier_from, tier_to, retry_count)

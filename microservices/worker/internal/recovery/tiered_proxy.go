@@ -203,6 +203,13 @@ func (m *TieredProxyManager) SetDBPool(pool *pgxpool.Pool) {
 func (m *TieredProxyManager) SetDomainTierWithDB(ctx context.Context, domain string, tier models.ProxyTier, confidence float64) error {
 	domain = normalizeDomainName(domain)
 
+	logger.Debug("SetDomainTierWithDB called",
+		zap.String("domain", domain),
+		zap.Int("tier", int(tier)),
+		zap.Float64("confidence", confidence),
+		zap.Bool("dbPool_nil", m.dbPool == nil),
+	)
+
 	// 1. Set in Redis cache (fast path)
 	tierKey := fmt.Sprintf(keyDomainTier, domain)
 	if err := m.cache.Set(ctx, tierKey, fmt.Sprintf("%d", tier), 24*time.Hour); err != nil {
@@ -216,38 +223,44 @@ func (m *TieredProxyManager) SetDomainTierWithDB(ctx context.Context, domain str
 	}
 
 	// 3. Persist to database (durable storage)
-	if m.dbPool != nil {
-		query := `
-			INSERT INTO domain_strategies (domain, recommended_tier, tier_confidence, learning_status, sample_size)
-			VALUES ($1, $2, $3, 'stable', 1)
-			ON CONFLICT (domain) DO UPDATE SET
-				recommended_tier = CASE 
-					-- De-escalate: Use new tier if it's lower
-					WHEN EXCLUDED.recommended_tier < domain_strategies.recommended_tier THEN EXCLUDED.recommended_tier
-					-- Escalate: Use new tier if it's higher and has better confidence
-					WHEN EXCLUDED.recommended_tier > domain_strategies.recommended_tier 
-						 AND EXCLUDED.tier_confidence >= domain_strategies.tier_confidence THEN EXCLUDED.recommended_tier
-					ELSE domain_strategies.recommended_tier
-				END,
-				tier_confidence = GREATEST(EXCLUDED.tier_confidence, domain_strategies.tier_confidence),
-				learning_status = 'stable',
-				sample_size = domain_strategies.sample_size + 1,
-				updated_at = NOW()
-		`
-		if _, err := m.dbPool.Exec(ctx, query, domain, tier, confidence); err != nil {
-			logger.Warn("Failed to persist tier to DB",
-				zap.String("domain", domain),
-				zap.Int("tier", int(tier)),
-				zap.Error(err),
-			)
-			// Don't fail - Redis write may have succeeded
-		} else {
-			logger.Info("Persisted domain tier to DB",
-				zap.String("domain", domain),
-				zap.Int("tier", int(tier)),
-				zap.Float64("confidence", confidence),
-			)
-		}
+	if m.dbPool == nil {
+		logger.Warn("SetDomainTierWithDB: dbPool is nil, cannot persist to database",
+			zap.String("domain", domain),
+			zap.Int("tier", int(tier)),
+		)
+		return nil
+	}
+
+	query := `
+		INSERT INTO domain_strategies (domain, recommended_tier, tier_confidence, learning_status, sample_size)
+		VALUES ($1, $2, $3, 'stable', 1)
+		ON CONFLICT (domain) DO UPDATE SET
+			recommended_tier = CASE 
+				-- Always escalate: Use new tier if it's higher (we learned from failure)
+				WHEN EXCLUDED.recommended_tier > domain_strategies.recommended_tier THEN EXCLUDED.recommended_tier
+				-- De-escalate: Use new tier if it's lower AND has good confidence
+				WHEN EXCLUDED.recommended_tier < domain_strategies.recommended_tier 
+					AND EXCLUDED.tier_confidence >= 0.5 THEN EXCLUDED.recommended_tier
+				ELSE domain_strategies.recommended_tier
+			END,
+			tier_confidence = GREATEST(EXCLUDED.tier_confidence, domain_strategies.tier_confidence),
+			learning_status = 'stable',
+			sample_size = domain_strategies.sample_size + 1,
+			updated_at = NOW()
+	`
+	if _, err := m.dbPool.Exec(ctx, query, domain, tier, confidence); err != nil {
+		logger.Warn("Failed to persist tier to DB",
+			zap.String("domain", domain),
+			zap.Int("tier", int(tier)),
+			zap.Error(err),
+		)
+		// Don't fail - Redis write may have succeeded
+	} else {
+		logger.Info("Persisted domain tier to DB",
+			zap.String("domain", domain),
+			zap.Int("tier", int(tier)),
+			zap.Float64("confidence", confidence),
+		)
 	}
 
 	return nil
