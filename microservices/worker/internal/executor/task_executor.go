@@ -349,9 +349,23 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	domain := extractDomain(task.URL)
 	var currentTier models.ProxyTier = models.TierDirect // Track current tier for learning
 
+	// Check if proxy is explicitly enabled
+	// Priority: task metadata (scrape tasks) > workflow config (regular workflows)
+	useProxy := false // Default: no proxy unless explicitly enabled
+	if up, ok := task.Metadata["use_proxy"].(bool); ok {
+		useProxy = up
+	} else if task.WorkflowConfig != nil && task.WorkflowConfig.UseProxy {
+		useProxy = true
+		// Also use workflow's proxy tier if specified
+		if task.WorkflowConfig.ProxyTier > 0 && task.ProxyTier == models.TierDirect {
+			task.ProxyTier = models.ProxyTier(task.WorkflowConfig.ProxyTier)
+		}
+	}
+
 	// Smart Unblocker: Get optimal tier and proxy for this domain
 	// This provides tiered proxy escalation based on learned domain behavior
-	if e.recoveryManager != nil {
+	// Skip for scrape tasks where use_proxy=false
+	if e.recoveryManager != nil && useProxy {
 		if unblocker := e.recoveryManager.GetSmartUnblocker(); unblocker != nil {
 			// Check if tier was escalated during retry (from previous failure)
 			if task.ProxyTier > models.TierDirect {
@@ -757,7 +771,8 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	// Save extracted items: DB (primary) + optional GCS (archive)
 	if len(result.ExtractedItems) > 0 {
 		// Primary: Write to database using COPY protocol (high throughput)
-		if e.itemWriter != nil {
+		// Skip for Universal Scraper tasks - they store results in Redis instead
+		if e.itemWriter != nil && task.WorkflowID != models.UniversalScraperWorkflowID {
 			items := make([]storage.ExtractedItem, 0, len(result.ExtractedItems))
 			for _, data := range result.ExtractedItems {
 				items = append(items, storage.ExtractedItem{
@@ -1837,14 +1852,30 @@ func (e *TaskExecutor) getDriverForTask(task *models.Task) (driver.Driver, bool,
 
 	// Create driver from profile (standard path)
 	// For scrape tasks, respect the headless parameter from metadata
+	// Always pass proxy if set on task to ensure browser uses it at launch
 	var profileDriver driver.Driver
+
+	// Get headless setting - scrape tasks can override via metadata
+	useHeadless := e.browserConfig.Headless // Default from config
 	if headless, ok := task.Metadata["headless"].(bool); ok {
-		// Scrape task with explicit headless setting
-		profileDriver, err = e.driverFactory.CreateDriverFromProfileWithHeadless(profile, headless)
-	} else {
-		// Standard path - use profile's default headless setting
-		profileDriver, err = e.driverFactory.CreateDriverFromProfile(profile)
+		useHeadless = headless
 	}
+
+	// Build proxy config if task has proxy
+	var proxyConfig *browser.ProxyConfig
+	if task.ProxyURL != "" {
+		proxyConfig = &browser.ProxyConfig{
+			Server: task.ProxyURL,
+		}
+		// Parse username/password from URL if present
+		if parsed, err := url.Parse(task.ProxyURL); err == nil && parsed.User != nil {
+			proxyConfig.Username = parsed.User.Username()
+			proxyConfig.Password, _ = parsed.User.Password()
+		}
+	}
+
+	// Use proxy-aware factory method (works for camoufox, playwright, etc.)
+	profileDriver, err = e.driverFactory.CreateDriverFromProfileWithProxy(profile, useHeadless, proxyConfig)
 	if err != nil {
 		logger.Warn("Failed to create profile driver, using default",
 			zap.String("profile_id", profileID),

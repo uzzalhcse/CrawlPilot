@@ -13,6 +13,8 @@ type ScrapeRequest struct {
 	Timeout         int             `json:"timeout"`           // Timeout in seconds
 	WaitForSelector string          `json:"wait_for_selector"` // CSS selector to wait for
 	Headless        bool            `json:"headless"`          // Run browser in headless mode
+	UseProxy        bool            `json:"use_proxy"`         // Whether to use a proxy
+	ProxyTier       int             `json:"proxy_tier"`        // Proxy tier (1=datacenter, 2=residential, 3=mobile)
 	Status          string          `json:"status"`            // pending, running, completed, failed
 	CreatedAt       time.Time       `json:"created_at"`
 }
@@ -39,6 +41,8 @@ type ScrapeRequestInput struct {
 	Timeout         int    `json:"timeout"`           // Timeout in seconds (default: 30)
 	WaitForSelector string `json:"wait_for_selector"` // Optional CSS selector to wait for
 	Headless        *bool  `json:"headless"`          // Run browser in headless mode (default: true)
+	UseProxy        bool   `json:"use_proxy"`         // Whether to use a proxy
+	ProxyTier       int    `json:"proxy_tier"`        // Proxy tier (1=datacenter, 2=residential, 3=mobile)
 }
 
 // ValidateAndSetDefaults validates input and sets default values
@@ -86,8 +90,9 @@ const (
 	DriverCamoufox   = "camoufox"
 )
 
-// UniversalScraperWorkflowID is the synthetic workflow ID for scrape tasks
-const UniversalScraperWorkflowID = "universal-scraper"
+// UniversalScraperWorkflowID is the well-known UUID for synthetic scrape tasks
+// This is a fixed UUID v4 to ensure DB compatibility (workflow_id column expects UUID)
+const UniversalScraperWorkflowID = "00000000-0000-0000-0000-000000000001"
 
 // ToTask converts a ScrapeRequest into a synthetic Task
 // This allows Universal Scraper to reuse workflow infrastructure (recovery, proxy rotation, etc.)
@@ -149,6 +154,7 @@ func (r *ScrapeRequest) ToTask() *Task {
 		"output_format": r.OutputFormat,
 		"driver":        r.Driver,
 		"headless":      r.Headless,
+		"use_proxy":     r.UseProxy,
 	}
 
 	// Set BrowserProfileID on Task struct if profile is provided
@@ -165,8 +171,9 @@ func (r *ScrapeRequest) ToTask() *Task {
 		WorkflowID:       UniversalScraperWorkflowID,
 		URL:              r.URL,
 		PhaseID:          "scrape",
-		PhaseConfig:      phase,            // Current phase config
-		BrowserProfileID: browserProfileID, // Set profile ID for driver selection
+		PhaseConfig:      phase,                  // Current phase config
+		BrowserProfileID: browserProfileID,       // Set profile ID for driver selection
+		ProxyTier:        ProxyTier(r.ProxyTier), // Request specific proxy tier (0=auto, 1=datacenter, 2=residential, 3=mobile)
 		Depth:            0,
 		Metadata:         metadata,
 		WorkflowConfig:   workflowConfig,

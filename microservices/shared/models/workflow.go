@@ -22,6 +22,8 @@ type WorkflowConfig struct {
 	Headers            map[string]string `json:"headers,omitempty"`
 	DefaultDriver      string            `json:"default_driver,omitempty"`       // playwright, chromedp, http
 	DefaultBrowserName string            `json:"default_browser_name,omitempty"` // chrome, firefox, safari, edge, ios, android (for HTTP driver JA3)
+	UseProxy           bool              `json:"use_proxy,omitempty"`            // Enable proxy rotation for this workflow
+	ProxyTier          int               `json:"proxy_tier,omitempty"`           // Proxy tier (1=datacenter, 2=residential, 3=mobile)
 	Phases             []WorkflowPhase   `json:"phases"`
 }
 

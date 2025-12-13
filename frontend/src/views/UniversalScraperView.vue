@@ -33,10 +33,19 @@ const timeout = ref(30)
 const waitForSelector = ref('')
 const headless = ref(true)
 const error = ref('')
+const useProxy = ref(false)
+const proxyTier = ref(1)
+
+// Proxy tier options
+const proxyTiers = [
+  { value: 1, label: 'Tier 1 - Datacenter' },
+  { value: 2, label: 'Tier 2 - Residential' },
+  { value: 3, label: 'Tier 3 - Mobile' },
+]
 
 // Check if any advanced settings are modified from defaults
 const hasAdvancedSettings = computed(() => {
-  return timeout.value !== 30 || waitForSelector.value !== '' || !headless.value
+  return timeout.value !== 30 || waitForSelector.value !== '' || !headless.value || useProxy.value
 })
 
 // Driver & Profile selection
@@ -122,7 +131,9 @@ const runScraper = async () => {
       output_format: selectedOutputFormat.value,
       timeout: timeout.value,
       wait_for_selector: waitForSelector.value || undefined,
-      headless: selectedDriver.value !== 'http' ? headless.value : undefined
+      headless: selectedDriver.value !== 'http' ? headless.value : undefined,
+      use_proxy: useProxy.value,
+      proxy_tier: useProxy.value ? proxyTier.value : undefined
     })
 
     // Poll for result
@@ -290,29 +301,61 @@ const runScraper = async () => {
                 </div>
 
                 <!-- Wait For Selector (browser drivers only) -->
-                <div v-if="selectedDriver !== 'http'" class="pt-2 border-t border-dashed">
-                  <label class="text-xs font-medium text-muted-foreground mb-1.5 block">Wait For Selector</label>
+              <div v-if="selectedDriver !== 'http'" class="pt-2 border-t border-dashed">
+                <label class="text-xs font-medium text-muted-foreground mb-1.5 block">Wait For Selector</label>
+                <input
+                  v-model="waitForSelector"
+                  type="text"
+                  placeholder=".product-list, #main-content, [data-loaded]"
+                  class="w-full px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-xs"
+                />
+                <p class="text-[10px] text-muted-foreground/70 mt-1">Wait for element before extracting content</p>
+                
+                <!-- Headless Toggle -->
+                <label class="flex items-center gap-3 cursor-pointer group mt-4">
                   <input
-                    v-model="waitForSelector"
-                    type="text"
-                    placeholder=".product-list, #main-content, [data-loaded]"
-                    class="w-full px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono text-xs"
+                    v-model="headless"
+                    type="checkbox"
+                    class="w-4 h-4 rounded border-input text-primary focus:ring-primary/50"
                   />
-                  <p class="text-[10px] text-muted-foreground/70 mt-1">Wait for element before extracting content</p>
-                  
-                  <!-- Headless Toggle -->
-                  <label class="flex items-center gap-3 cursor-pointer group mt-4">
-                    <input
-                      v-model="headless"
-                      type="checkbox"
-                      class="w-4 h-4 rounded border-input text-primary focus:ring-primary/50"
-                    />
-                    <div>
-                      <span class="text-sm font-medium group-hover:text-foreground transition-colors">Headless Mode</span>
-                      <p class="text-[10px] text-muted-foreground/70">Run browser without visible window (faster)</p>
-                    </div>
-                  </label>
+                  <div>
+                    <span class="text-sm font-medium group-hover:text-foreground transition-colors">Headless Mode</span>
+                    <p class="text-[10px] text-muted-foreground/70">Run browser without visible window (faster)</p>
+                  </div>
+                </label>
+              </div>
+
+              <!-- Proxy Settings -->
+              <div class="pt-4 border-t border-dashed">
+                <label class="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    v-model="useProxy"
+                    type="checkbox"
+                    class="w-4 h-4 rounded border-input text-primary focus:ring-primary/50"
+                  />
+                  <div>
+                    <span class="text-sm font-medium group-hover:text-foreground transition-colors">Use Proxy</span>
+                    <p class="text-[10px] text-muted-foreground/70">Route request through a proxy server</p>
+                  </div>
+                </label>
+                
+                <!-- Proxy Tier Selection (shown when Use Proxy is checked) -->
+                <div v-if="useProxy" class="mt-3 ml-7">
+                  <label class="text-xs font-medium text-muted-foreground mb-1.5 block">Proxy Tier</label>
+                  <div class="relative">
+                    <select
+                      v-model="proxyTier"
+                      class="w-full px-3 py-2 text-sm bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer"
+                    >
+                      <option v-for="tier in proxyTiers" :key="tier.value" :value="tier.value">
+                        {{ tier.label }}
+                      </option>
+                    </select>
+                    <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                  <p class="text-[10px] text-muted-foreground/70 mt-1">Higher tiers are more expensive but less likely to be blocked</p>
                 </div>
+              </div>
               </div>
             </div>
           </div>

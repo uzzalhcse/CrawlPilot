@@ -373,6 +373,59 @@ function updateWorkflowConfig(key: keyof WorkflowConfig, value: any) {
 
           <Separator />
 
+          <!-- Proxy Settings -->
+          <div class="space-y-4">
+            <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+              Proxy Settings
+            </div>
+            
+            <!-- Use Proxy Toggle -->
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  :checked="workflowConfig?.use_proxy || false"
+                  @change="updateWorkflowConfig('use_proxy', ($event.target as HTMLInputElement).checked)"
+                  class="w-4 h-4 rounded border-input text-primary focus:ring-primary/50"
+                />
+                <div>
+                  <span class="text-sm font-medium group-hover:text-foreground transition-colors">Use Proxy</span>
+                  <p class="text-[10px] text-muted-foreground">Enable proxy rotation for this workflow</p>
+                </div>
+              </label>
+            </div>
+
+            <!-- Proxy Tier Selection (shown when Use Proxy is checked) -->
+            <div v-if="workflowConfig?.use_proxy" class="space-y-2">
+              <Label>Proxy Tier</Label>
+              <Select 
+                :model-value="String(workflowConfig?.proxy_tier || 1)" 
+                @update:model-value="(val) => updateWorkflowConfig('proxy_tier', Number(val))"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select proxy tier">
+                    {{ 
+                      workflowConfig?.proxy_tier === 2 ? 'Tier 2 - Residential'
+                        : workflowConfig?.proxy_tier === 3 ? 'Tier 3 - Mobile'
+                        : 'Tier 1 - Datacenter'
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Tier 1 - Datacenter</SelectItem>
+                  <SelectItem value="2">Tier 2 - Residential</SelectItem>
+                  <SelectItem value="3">Tier 3 - Mobile</SelectItem>
+                </SelectContent>
+              </Select>
+              <p class="text-[10px] text-muted-foreground">
+                Higher tiers are more expensive but less likely to be blocked.
+              </p>
+            </div>
+          </div>
+
+          <Separator />
+
           <!-- Crawling Configuration -->
           <div class="space-y-4">
              <div class="flex items-center gap-2 text-sm font-medium text-foreground">

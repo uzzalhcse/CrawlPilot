@@ -9,6 +9,8 @@ export interface ScrapeRequest {
     timeout?: number
     wait_for_selector?: string
     headless?: boolean
+    use_proxy?: boolean
+    proxy_tier?: number
 }
 
 export interface ScrapeResponse {

@@ -18,6 +18,8 @@ export interface WorkflowConfig {
   default_driver?: 'playwright' | 'chromedp' | 'http'
   default_browser_name?: 'chrome' | 'firefox' | 'safari' | 'edge' | 'ios' | 'android'
   description?: string
+  use_proxy?: boolean
+  proxy_tier?: number
   storage: StorageConfig
   // NEW: Phase-based format
   phases?: WorkflowPhase[]

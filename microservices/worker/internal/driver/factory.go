@@ -55,6 +55,31 @@ func (f *Factory) CreateDriverFromProfileWithHeadless(profile *models.BrowserPro
 	return f.createDriverWithConfig(&cfgCopy, profile)
 }
 
+// CreateDriverFromProfileWithProxy creates a driver with explicit headless and proxy override
+// Use this for scrape requests where proxy is selected at runtime by SmartUnblocker
+func (f *Factory) CreateDriverFromProfileWithProxy(profile *models.BrowserProfile, headless bool, proxyConfig *browser.ProxyConfig) (Driver, error) {
+	// Create config copy with overridden headless
+	cfgCopy := *f.config
+	cfgCopy.Headless = headless
+
+	if profile == nil {
+		profile = &models.BrowserProfile{DriverType: f.config.Driver}
+	}
+
+	// If proxy config provided, inject into profile for browser creation
+	if proxyConfig != nil && proxyConfig.Server != "" {
+		// Clone profile to not modify the original
+		profileCopy := *profile
+		profileCopy.ProxyEnabled = true
+		profileCopy.ProxyServer = proxyConfig.Server
+		profileCopy.ProxyUsername = proxyConfig.Username
+		profileCopy.ProxyPassword = proxyConfig.Password
+		profile = &profileCopy
+	}
+
+	return f.createDriverWithConfig(&cfgCopy, profile)
+}
+
 // CreateCamoufoxWithFingerprint creates a Camoufox driver with a locked fingerprint.
 // This is used for domain-locked CAPTCHA session sharing - all browsers for the same
 // domain use the same fingerprint to ensure cookies remain valid.

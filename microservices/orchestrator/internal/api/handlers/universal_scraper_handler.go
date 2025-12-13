@@ -57,6 +57,8 @@ func (h *UniversalScraperHandler) Scrape(c *fiber.Ctx) error {
 		Timeout:         input.Timeout,
 		WaitForSelector: input.WaitForSelector,
 		Headless:        headless,
+		UseProxy:        input.UseProxy,
+		ProxyTier:       input.ProxyTier,
 		Status:          models.ScrapeStatusPending,
 	}
 
