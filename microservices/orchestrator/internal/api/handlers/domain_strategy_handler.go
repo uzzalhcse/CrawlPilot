@@ -138,3 +138,70 @@ func (h *DomainStrategyHandler) GetStats(c *fiber.Ctx) error {
 
 	return c.JSON(stats)
 }
+
+// Update handles PATCH /api/v1/recovery/domains/:domain
+// Updates a domain strategy's settings
+func (h *DomainStrategyHandler) Update(c *fiber.Ctx) error {
+	domain := c.Params("domain")
+
+	// URL decode
+	decodedDomain, err := url.PathUnescape(domain)
+	if err != nil {
+		decodedDomain = domain
+	}
+
+	var update repository.DomainStrategyUpdate
+	if err := c.BodyParser(&update); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	strategy, err := h.strategyRepo.Update(c.Context(), decodedDomain, update)
+	if err != nil {
+		logger.Error("Failed to update domain strategy", zap.String("domain", decodedDomain), zap.Error(err))
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	logger.Info("Domain strategy updated",
+		zap.String("domain", decodedDomain),
+		zap.Any("update", update),
+	)
+	return c.JSON(strategy)
+}
+
+// Create handles POST /api/v1/recovery/domains
+// Creates or updates a domain strategy manually
+func (h *DomainStrategyHandler) Create(c *fiber.Ctx) error {
+	var req struct {
+		Domain          string `json:"domain"`
+		RecommendedTier int    `json:"recommended_tier"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	if req.Domain == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "domain is required",
+		})
+	}
+
+	strategy, err := h.strategyRepo.Create(c.Context(), req.Domain, req.RecommendedTier)
+	if err != nil {
+		logger.Error("Failed to create domain strategy", zap.String("domain", req.Domain), zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	logger.Info("Domain strategy created",
+		zap.String("domain", req.Domain),
+		zap.Int("recommended_tier", req.RecommendedTier),
+	)
+	return c.Status(fiber.StatusCreated).JSON(strategy)
+}

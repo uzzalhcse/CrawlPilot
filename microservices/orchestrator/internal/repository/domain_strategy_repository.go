@@ -217,3 +217,90 @@ func (r *DomainStrategyRepository) GetStats(ctx context.Context) (map[string]int
 		"avg_success_rate": avgRate,
 	}, nil
 }
+
+// DomainStrategyUpdate contains fields that can be updated
+type DomainStrategyUpdate struct {
+	RecommendedTier    *int    `json:"recommended_tier,omitempty"`
+	AdaptiveDelayMs    *int    `json:"adaptive_delay_ms,omitempty"`
+	MaxConcurrentReqs  *int    `json:"max_concurrent_requests,omitempty"`
+	LearningStatus     *string `json:"learning_status,omitempty"`
+	SessionRequirement *int    `json:"session_requirement,omitempty"`
+}
+
+// Update modifies a domain strategy
+func (r *DomainStrategyRepository) Update(ctx context.Context, domain string, update DomainStrategyUpdate) (*DomainStrategy, error) {
+	domain = normalizeDomain(domain)
+
+	// Build dynamic update query
+	setClauses := []string{}
+	args := []interface{}{}
+	argNum := 1
+
+	if update.RecommendedTier != nil {
+		setClauses = append(setClauses, fmt.Sprintf("recommended_tier = $%d", argNum))
+		args = append(args, *update.RecommendedTier)
+		argNum++
+	}
+	if update.AdaptiveDelayMs != nil {
+		setClauses = append(setClauses, fmt.Sprintf("adaptive_delay_ms = $%d", argNum))
+		args = append(args, *update.AdaptiveDelayMs)
+		argNum++
+	}
+	if update.MaxConcurrentReqs != nil {
+		setClauses = append(setClauses, fmt.Sprintf("max_concurrent_requests = $%d", argNum))
+		args = append(args, *update.MaxConcurrentReqs)
+		argNum++
+	}
+	if update.LearningStatus != nil {
+		setClauses = append(setClauses, fmt.Sprintf("learning_status = $%d", argNum))
+		args = append(args, *update.LearningStatus)
+		argNum++
+	}
+	if update.SessionRequirement != nil {
+		setClauses = append(setClauses, fmt.Sprintf("session_requirement = $%d", argNum))
+		args = append(args, *update.SessionRequirement)
+		argNum++
+	}
+
+	if len(setClauses) == 0 {
+		return nil, fmt.Errorf("no fields to update")
+	}
+
+	// Always update updated_at
+	setClauses = append(setClauses, "updated_at = NOW()")
+
+	query := fmt.Sprintf(`UPDATE domain_strategies SET %s WHERE domain = $%d RETURNING id, domain, recommended_tier`,
+		strings.Join(setClauses, ", "), argNum)
+	args = append(args, domain)
+
+	var id, domainOut string
+	var tier int
+	if err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&id, &domainOut, &tier); err != nil {
+		return nil, fmt.Errorf("domain not found or update failed: %w", err)
+	}
+
+	// Return full strategy
+	return r.GetByDomain(ctx, domain)
+}
+
+// Create creates a new domain strategy (for manual entry)
+func (r *DomainStrategyRepository) Create(ctx context.Context, domain string, recommendedTier int) (*DomainStrategy, error) {
+	domain = normalizeDomain(domain)
+
+	query := `INSERT INTO domain_strategies 
+		(domain, recommended_tier, tier_confidence, learning_status, sample_size)
+		VALUES ($1, $2, 1.0, 'stable', 0)
+		ON CONFLICT (domain) DO UPDATE SET 
+			recommended_tier = EXCLUDED.recommended_tier,
+			tier_confidence = 1.0,
+			learning_status = 'stable',
+			updated_at = NOW()
+		RETURNING id`
+
+	var id string
+	if err := r.db.Pool.QueryRow(ctx, query, domain, recommendedTier).Scan(&id); err != nil {
+		return nil, fmt.Errorf("failed to create domain strategy: %w", err)
+	}
+
+	return r.GetByDomain(ctx, domain)
+}

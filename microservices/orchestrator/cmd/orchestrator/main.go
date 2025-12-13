@@ -204,7 +204,9 @@ func main() {
 	// Domain strategies (learned anti-bot strategies)
 	recovery.Get("/domains", domainStrategyHandler.GetAll)
 	recovery.Get("/domains/stats", domainStrategyHandler.GetStats)
+	recovery.Post("/domains", domainStrategyHandler.Create) // Create new strategy
 	recovery.Get("/domains/:domain", domainStrategyHandler.GetByDomain)
+	recovery.Patch("/domains/:domain", domainStrategyHandler.Update) // Update strategy
 	recovery.Delete("/domains/:domain", domainStrategyHandler.Delete)
 	recovery.Delete("/domains", domainStrategyHandler.DeleteAll)
 

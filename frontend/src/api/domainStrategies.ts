@@ -63,3 +63,28 @@ export async function clearAllDomainStrategies(): Promise<{ success: boolean; de
     const response = await apiClient.delete('/recovery/domains', { data: { confirm: true } })
     return response.data
 }
+
+// Create a new domain strategy
+export interface CreateDomainStrategyRequest {
+    domain: string
+    recommended_tier: number
+}
+
+export async function createDomainStrategy(data: CreateDomainStrategyRequest): Promise<DomainStrategy> {
+    const response = await apiClient.post('/recovery/domains', data)
+    return response.data
+}
+
+// Update an existing domain strategy
+export interface UpdateDomainStrategyRequest {
+    recommended_tier?: number
+    adaptive_delay_ms?: number
+    max_concurrent_requests?: number
+    learning_status?: string
+    session_requirement?: number
+}
+
+export async function updateDomainStrategy(domain: string, data: UpdateDomainStrategyRequest): Promise<DomainStrategy> {
+    const response = await apiClient.patch(`/recovery/domains/${encodeURIComponent(domain)}`, data)
+    return response.data
+}

@@ -4,11 +4,15 @@ import {
   getDomainStrategies, 
   clearDomainStrategy, 
   clearAllDomainStrategies,
+  createDomainStrategy,
+  updateDomainStrategy,
   type DomainStrategy, 
   type DomainStrategyStats 
 } from '@/api/domainStrategies'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import DataTable from '@/components/ui/data-table.vue'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
@@ -21,6 +25,14 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { 
   Brain, 
   Loader2, 
@@ -30,7 +42,9 @@ import {
   Server,
   Home,
   Smartphone,
-  CheckCircle2
+  CheckCircle2,
+  Pencil,
+  Plus
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
@@ -42,6 +56,17 @@ const statusFilter = ref<string>('all')
 const searchQuery = ref('')
 const clearingDomain = ref<string | null>(null)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+
+// Edit/Create dialog state
+const showEditDialog = ref(false)
+const editingStrategy = ref<DomainStrategy | null>(null)
+const editForm = ref({
+  domain: '',
+  recommended_tier: '1',
+  adaptive_delay_ms: 0,
+  session_requirement: '0'
+})
+const saving = ref(false)
 
 const tableColumns = [
   { key: 'domain', label: 'Domain', sortable: true, align: 'left' as const },
@@ -79,6 +104,8 @@ const filteredStrategies = computed(() => {
   
   return result
 })
+
+const isCreating = computed(() => editingStrategy.value === null)
 
 const fetchData = async () => {
   loading.value = true
@@ -123,6 +150,66 @@ const handleClearAllWithConfirm = async () => {
     await fetchData()
   } catch (error) {
     toast.error('Failed to clear all domains')
+  }
+}
+
+// Edit/Create handlers
+const openCreateDialog = () => {
+  editingStrategy.value = null
+  editForm.value = {
+    domain: '',
+    recommended_tier: '1',
+    adaptive_delay_ms: 0,
+    session_requirement: '0'
+  }
+  showEditDialog.value = true
+}
+
+const openEditDialog = (strategy: DomainStrategy) => {
+  editingStrategy.value = strategy
+  editForm.value = {
+    domain: strategy.domain,
+    recommended_tier: String(strategy.recommended_tier),
+    adaptive_delay_ms: strategy.adaptive_delay_ms || 0,
+    session_requirement: String(strategy.session_requirement || 0)
+  }
+  showEditDialog.value = true
+}
+
+const saveStrategy = async () => {
+  saving.value = true
+  try {
+    if (isCreating.value) {
+      await createDomainStrategy({
+        domain: editForm.value.domain,
+        recommended_tier: parseInt(editForm.value.recommended_tier)
+      })
+      toast.success(`Created strategy for ${editForm.value.domain}`)
+    } else {
+      await updateDomainStrategy(editingStrategy.value!.domain, {
+        recommended_tier: parseInt(editForm.value.recommended_tier),
+        adaptive_delay_ms: editForm.value.adaptive_delay_ms,
+        session_requirement: parseInt(editForm.value.session_requirement)
+      })
+      toast.success(`Updated strategy for ${editingStrategy.value!.domain}`)
+    }
+    showEditDialog.value = false
+    await fetchData()
+  } catch (error) {
+    toast.error(isCreating.value ? 'Failed to create strategy' : 'Failed to update strategy')
+  } finally {
+    saving.value = false
+  }
+}
+
+// Quick tier change handler
+const handleQuickTierChange = async (domain: string, newTier: string) => {
+  try {
+    await updateDomainStrategy(domain, { recommended_tier: parseInt(newTier) })
+    toast.success(`Updated tier for ${domain}`)
+    await fetchData()
+  } catch (error) {
+    toast.error('Failed to update tier')
   }
 }
 
@@ -222,6 +309,10 @@ onUnmounted(() => {
           <RefreshCw class="w-4 h-4" />
           Refresh
         </Button>
+        <Button @click="openCreateDialog" variant="default" size="sm" class="gap-2">
+          <Plus class="w-4 h-4" />
+          Add Domain
+        </Button>
       </template>
     </PageHeader>
 
@@ -280,14 +371,20 @@ onUnmounted(() => {
             </div>
           </td>
           <td class="px-6 py-3">
-            <Badge 
-              variant="outline"
-              :class="getTierColor(row.recommended_tier)"
-              class="text-xs font-medium gap-1"
-            >
-              <component :is="getTierIcon(row.recommended_tier)" class="w-3 h-3" />
-              {{ getTierLabel(row.recommended_tier) }}
-            </Badge>
+            <Select :model-value="String(row.recommended_tier)" @update:model-value="(val) => val && handleQuickTierChange(row.domain, String(val))">
+              <SelectTrigger class="w-[130px] h-8">
+                <div class="flex items-center gap-2">
+                  <component :is="getTierIcon(row.recommended_tier)" class="w-3 h-3" />
+                  <span class="text-xs">{{ getTierLabel(row.recommended_tier) }}</span>
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">Direct</SelectItem>
+                <SelectItem value="1">Datacenter</SelectItem>
+                <SelectItem value="2">Residential</SelectItem>
+                <SelectItem value="3">Mobile</SelectItem>
+              </SelectContent>
+            </Select>
           </td>
           <td class="px-6 py-3">
             <div class="flex items-center gap-2">
@@ -327,19 +424,108 @@ onUnmounted(() => {
             </div>
           </td>
           <td class="px-6 py-3 text-right">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              class="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
-              @click="handleClearDomain(row.domain)"
-              :disabled="clearingDomain === row.domain"
-            >
-              <Loader2 v-if="clearingDomain === row.domain" class="w-4 h-4 animate-spin" />
-              <Trash2 v-else class="w-4 h-4" />
-            </Button>
+            <div class="flex items-center justify-end gap-1">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                class="hover:bg-muted"
+                @click="openEditDialog(row)"
+              >
+                <Pencil class="w-4 h-4" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                class="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                @click="handleClearDomain(row.domain)"
+                :disabled="clearingDomain === row.domain"
+              >
+                <Loader2 v-if="clearingDomain === row.domain" class="w-4 h-4 animate-spin" />
+                <Trash2 v-else class="w-4 h-4" />
+              </Button>
+            </div>
           </td>
         </template>
       </DataTable>
     </div>
   </PageLayout>
+
+  <!-- Edit/Create Dialog -->
+  <Dialog v-model:open="showEditDialog">
+    <DialogContent class="sm:max-w-[425px]">
+      <DialogHeader>
+        <DialogTitle>{{ isCreating ? 'Add Domain Strategy' : 'Edit Domain Strategy' }}</DialogTitle>
+        <DialogDescription>
+          {{ isCreating ? 'Pre-configure proxy tier for a domain before crawling.' : 'Modify the proxy strategy for this domain.' }}
+        </DialogDescription>
+      </DialogHeader>
+
+      <div class="grid gap-4 py-4">
+        <!-- Domain (only editable when creating) -->
+        <div class="grid grid-cols-4 items-center gap-4">
+          <Label for="domain" class="text-right">Domain</Label>
+          <Input
+            id="domain"
+            v-model="editForm.domain"
+            :disabled="!isCreating"
+            placeholder="example.com"
+            class="col-span-3"
+          />
+        </div>
+
+        <!-- Recommended Tier -->
+        <div class="grid grid-cols-4 items-center gap-4">
+          <Label for="tier" class="text-right">Proxy Tier</Label>
+          <Select v-model="editForm.recommended_tier">
+            <SelectTrigger class="col-span-3">
+              <SelectValue placeholder="Select tier" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Tier 0 - Direct (No Proxy)</SelectItem>
+              <SelectItem value="1">Tier 1 - Datacenter</SelectItem>
+              <SelectItem value="2">Tier 2 - Residential</SelectItem>
+              <SelectItem value="3">Tier 3 - Mobile</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <!-- Adaptive Delay (for editing) -->
+        <div v-if="!isCreating" class="grid grid-cols-4 items-center gap-4">
+          <Label for="delay" class="text-right">Delay (ms)</Label>
+          <Input
+            id="delay"
+            v-model.number="editForm.adaptive_delay_ms"
+            type="number"
+            min="0"
+            placeholder="0"
+            class="col-span-3"
+          />
+        </div>
+
+        <!-- Session Requirement (for editing) -->
+        <div v-if="!isCreating" class="grid grid-cols-4 items-center gap-4">
+          <Label for="session" class="text-right">Session</Label>
+          <Select v-model="editForm.session_requirement">
+            <SelectTrigger class="col-span-3">
+              <SelectValue placeholder="Session requirement" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Unknown</SelectItem>
+              <SelectItem value="1">Required</SelectItem>
+              <SelectItem value="2">Optional</SelectItem>
+              <SelectItem value="3">Not Needed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" @click="showEditDialog = false">Cancel</Button>
+        <Button @click="saveStrategy" :disabled="saving || (isCreating && !editForm.domain)">
+          <Loader2 v-if="saving" class="w-4 h-4 mr-2 animate-spin" />
+          {{ isCreating ? 'Create' : 'Save Changes' }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
