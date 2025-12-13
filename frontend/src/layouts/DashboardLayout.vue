@@ -22,6 +22,7 @@ import {
   Activity,
   Sparkles,
   History,
+  Brain,
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -43,6 +44,7 @@ const antiBotItems = [
   { icon: Shield, label: 'Error Recovery', route: '/error-recovery' },
   { icon: AlertTriangle, label: 'Incidents', route: '/incidents' },
   { icon: History, label: 'Recovery History', route: '/recovery-history' },
+  { icon: Brain, label: 'Domain Strategies', route: '/domain-strategies' },
 ]
 
 const bottomItems = [

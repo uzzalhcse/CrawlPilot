@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { 
   getRecoveryAttempts, 
   getRecoveryAttemptStats,
@@ -8,7 +8,12 @@ import {
 } from '@/api/recovery'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import DataTable from '@/components/ui/data-table.vue'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger
+} from '@/components/ui/accordion'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import StatsBar from '@/components/layout/StatsBar.vue'
@@ -21,14 +26,10 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { 
-  Activity, 
   CheckCircle2, 
   Loader2, 
   SlidersHorizontal,
-  RefreshCw,
-  Bot,
-  Cog,
-  Zap
+  RefreshCw
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
@@ -38,24 +39,16 @@ const attemptStats = ref<RecoveryAttemptStats | null>(null)
 const totalAttempts = ref(0)
 const statusFilter = ref<string>('all')
 const searchQuery = ref('')
-let refreshInterval: ReturnType<typeof setInterval> | null = null
-
-const tableColumns = [
-  { key: 'domain', label: 'Domain', sortable: true, align: 'left' as const },
-  { key: 'error_pattern', label: 'Error', align: 'left' as const },
-  { key: 'action', label: 'Action', align: 'left' as const },
-  { key: 'source', label: 'Source', align: 'left' as const },
-  { key: 'status', label: 'Status', align: 'left' as const },
-  { key: 'created_at', label: 'Time', align: 'left' as const }
-]
 
 const stats = computed(() => {
   if (!attemptStats.value) return []
   const s = attemptStats.value
   const successRate = s.success_rate?.toFixed(1) || '0'
+  const detected = attempts.value.filter(a => a.status === 'detected').length
   return [
     { label: 'Total', value: s.total },
-    { label: 'Pending', value: s.pending, color: 'text-yellow-600 dark:text-yellow-400' },
+    { label: 'Detected', value: detected, color: 'text-cyan-600 dark:text-cyan-400' },
+    { label: 'Pending', value: s.pending || 0, color: 'text-yellow-600 dark:text-yellow-400' },
     { label: 'Success', value: s.success, color: 'text-green-600 dark:text-green-400' },
     { label: 'Failed', value: s.failed, color: 'text-red-600 dark:text-red-400' },
     { label: 'Success Rate', value: `${successRate}%`, color: 'text-blue-600 dark:text-blue-400' }
@@ -106,6 +99,7 @@ const handleRefresh = async () => {
 
 const getStatusColor = (status: string) => {
   switch(status) {
+    case 'detected': return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20'
     case 'pending': return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20'
     case 'success': return 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
     case 'failed': return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
@@ -113,21 +107,13 @@ const getStatusColor = (status: string) => {
   }
 }
 
-const getSourceColor = (source: string) => {
-  switch(source) {
-    case 'rule': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
-    case 'ai': return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'
-    case 'default': return 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20'
-    default: return 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20'
-  }
-}
-
-const getSourceIcon = (source: string) => {
-  switch(source) {
-    case 'rule': return Cog
-    case 'ai': return Bot
-    case 'default': return Zap
-    default: return Activity
+const getStatusDot = (status: string) => {
+  switch(status) {
+    case 'detected': return 'bg-cyan-500'
+    case 'pending': return 'bg-yellow-500'
+    case 'success': return 'bg-green-500'
+    case 'failed': return 'bg-red-500'
+    default: return 'bg-gray-500'
   }
 }
 
@@ -155,21 +141,33 @@ const formatErrorPattern = (pattern: string) => {
   return pattern.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-const formatAction = (action: string) => {
-  if (!action) return 'Pending'
+const formatAction = (action?: string, status?: string) => {
+  if (status === 'detected' || (!action && status === 'detected')) return 'No Action'
+  if (!action || action === 'pending') return 'Pending'
   return action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+const getTierLabel = (tier: number) => {
+  switch(tier) {
+    case 0: return 'Direct'
+    case 1: return 'DC'
+    case 2: return 'Res'
+    case 3: return 'Mobile'
+    default: return tier ? `T${tier}` : '-'
+  }
+}
+
+const getTierColor = (tier: number) => {
+  switch(tier) {
+    case 1: return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+    case 2: return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'
+    case 3: return 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20'
+    default: return 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20'
+  }
 }
 
 onMounted(() => {
   fetchData()
-  // Auto-refresh every 10 seconds
-  refreshInterval = setInterval(fetchData, 10000)
-})
-
-onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
 })
 </script>
 
@@ -179,11 +177,10 @@ onUnmounted(() => {
     <PageHeader 
       title="Recovery History" 
       description="Track error recovery attempts and their outcomes in real-time"
-      :show-help-icon="true"
     >
       <template #actions>
-        <Button @click="handleRefresh" variant="outline" size="sm" class="gap-2">
-          <RefreshCw class="w-4 h-4" />
+        <Button variant="outline" size="sm" @click="handleRefresh">
+          <RefreshCw class="w-4 h-4 mr-2" />
           Refresh
         </Button>
       </template>
@@ -192,11 +189,10 @@ onUnmounted(() => {
     <!-- Stats -->
     <StatsBar :stats="stats" />
 
-    <!-- Filters -->
+    <!-- Filter -->
     <FilterBar 
-      search-placeholder="Search by domain, URL, or pattern..." 
-      :search-value="searchQuery"
-      @update:search-value="searchQuery = $event"
+      v-model="searchQuery"
+      placeholder="Search by domain, URL, or pattern..."
     >
       <template #filters>
         <Select v-model="statusFilter">
@@ -208,6 +204,7 @@ onUnmounted(() => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="detected">Detected</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="success">Success</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
@@ -216,7 +213,7 @@ onUnmounted(() => {
       </template>
     </FilterBar>
 
-    <!-- Table -->
+    <!-- Content -->
     <div class="flex-1 overflow-auto">
       <div v-if="loading" class="flex items-center justify-center py-12">
         <Loader2 class="h-8 w-8 animate-spin text-primary" />
@@ -228,59 +225,128 @@ onUnmounted(() => {
         <p class="text-sm text-muted-foreground mt-1">Recovery attempts will appear here when errors are detected.</p>
       </div>
 
-      <DataTable
-        v-else
-        :data="filteredAttempts"
-        :columns="tableColumns"
-      >
-        <template #row="{ row }">
-          <td class="px-6 py-3">
-            <div class="min-w-0">
-              <div class="font-medium text-sm truncate">{{ row.domain || 'Unknown' }}</div>
-              <div class="text-xs text-muted-foreground truncate max-w-[200px]">{{ row.url }}</div>
-            </div>
-          </td>
-          <td class="px-6 py-3">
-            <Badge variant="outline" class="text-xs font-medium">
-              {{ formatErrorPattern(row.error_pattern) }}
-            </Badge>
-          </td>
-          <td class="px-6 py-3">
-            <div class="text-sm">
-              {{ formatAction(row.action) }}
-            </div>
-          </td>
-          <td class="px-6 py-3">
-            <Badge 
-              variant="outline"
-              :class="getSourceColor(row.source)"
-              class="text-xs font-medium capitalize gap-1"
-            >
-              <component :is="getSourceIcon(row.source)" class="w-3 h-3" />
-              {{ row.source || 'pending' }}
-            </Badge>
-          </td>
-          <td class="px-6 py-3">
-            <Badge 
-              variant="outline"
-              :class="getStatusColor(row.status)"
-              class="text-xs font-medium capitalize"
-            >
-              <div class="w-1.5 h-1.5 rounded-full mr-1.5" :class="{
-                'bg-yellow-500': row.status === 'pending',
-                'bg-green-500': row.status === 'success',
-                'bg-red-500': row.status === 'failed'
-              }"></div>
-              {{ row.status }}
-            </Badge>
-          </td>
-          <td class="px-6 py-3">
-            <div class="text-sm text-muted-foreground">
-              {{ formatDate(row.created_at) }}
-            </div>
-          </td>
-        </template>
-      </DataTable>
+      <!-- Accordion Table -->
+      <div v-else class="rounded-lg border border-border bg-card">
+        <!-- Table Header -->
+        <div class="grid grid-cols-12 gap-2 px-4 py-3 bg-muted/50 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <div class="col-span-3">Domain</div>
+          <div class="col-span-2">Error</div>
+          <div class="col-span-3">Reason</div>
+          <div class="col-span-1">Conf</div>
+          <div class="col-span-2">Status</div>
+          <div class="col-span-1">Time</div>
+        </div>
+
+        <!-- Accordion Rows -->
+        <Accordion type="single" collapsible class="w-full">
+          <AccordionItem 
+            v-for="attempt in filteredAttempts" 
+            :key="attempt.id" 
+            :value="attempt.id"
+            class="border-b border-border last:border-b-0"
+          >
+            <AccordionTrigger class="px-4 py-3 hover:bg-muted/30 transition-colors [&[data-state=open]]:bg-muted/30">
+              <div class="grid grid-cols-12 gap-2 w-full text-left items-center">
+                <!-- Domain -->
+                <div class="col-span-3 min-w-0">
+                  <div class="font-medium text-sm truncate">{{ attempt.domain || 'Unknown' }}</div>
+                  <div class="text-xs text-muted-foreground truncate">{{ attempt.url }}</div>
+                </div>
+                <!-- Error -->
+                <div class="col-span-2">
+                  <Badge variant="outline" class="text-xs font-medium">
+                    {{ formatErrorPattern(attempt.error_pattern) }}
+                  </Badge>
+                </div>
+                <!-- Reason -->
+                <div class="col-span-3">
+                  <div class="text-xs text-muted-foreground truncate" :title="attempt.trigger_reason">
+                    {{ attempt.trigger_reason || '-' }}
+                  </div>
+                </div>
+                <!-- Confidence -->
+                <div class="col-span-1">
+                  <div v-if="attempt.confidence" class="text-sm font-medium" :class="{
+                    'text-green-600': attempt.confidence >= 0.8,
+                    'text-yellow-600': attempt.confidence >= 0.5 && attempt.confidence < 0.8,
+                    'text-red-600': attempt.confidence < 0.5
+                  }">
+                    {{ (attempt.confidence * 100).toFixed(0) }}%
+                  </div>
+                  <span v-else class="text-muted-foreground text-xs">-</span>
+                </div>
+                <!-- Status -->
+                <div class="col-span-2">
+                  <Badge variant="outline" :class="getStatusColor(attempt.status)" class="text-xs font-medium capitalize">
+                    <div class="w-1.5 h-1.5 rounded-full mr-1.5" :class="getStatusDot(attempt.status)"></div>
+                    {{ attempt.status }}
+                  </Badge>
+                </div>
+                <!-- Time -->
+                <div class="col-span-1 text-sm text-muted-foreground">
+                  {{ formatDate(attempt.created_at) }}
+                </div>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent class="px-4 pb-4">
+              <div class="bg-muted/20 rounded-lg p-4 mt-2">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Action</div>
+                    <div class="font-medium">{{ formatAction(attempt.action, attempt.status) }}</div>
+                  </div>
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Proxy ID</div>
+                    <div class="font-mono text-xs">{{ attempt.proxy_id || '-' }}</div>
+                  </div>
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Proxy Tier</div>
+                    <div v-if="attempt.proxy_tier > 0">
+                      <Badge variant="outline" :class="getTierColor(attempt.proxy_tier)" class="text-xs">
+                        {{ getTierLabel(attempt.proxy_tier) }}
+                      </Badge>
+                    </div>
+                    <div v-else class="text-muted-foreground">-</div>
+                  </div>
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Tier Escalation</div>
+                    <div v-if="attempt.tier_from && attempt.tier_to">
+                      <Badge variant="outline" class="text-xs bg-blue-500/10 text-blue-600">
+                        {{ getTierLabel(attempt.tier_from) }} → {{ getTierLabel(attempt.tier_to) }}
+                      </Badge>
+                    </div>
+                    <div v-else class="text-muted-foreground">-</div>
+                  </div>
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Retry Count</div>
+                    <div>{{ attempt.retry_count || 0 }}</div>
+                  </div>
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Retry Delay</div>
+                    <div>{{ attempt.retry_delay_ms ? `${attempt.retry_delay_ms}ms` : '-' }}</div>
+                  </div>
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Duration</div>
+                    <div>{{ attempt.duration_ms ? `${attempt.duration_ms}ms` : '-' }}</div>
+                  </div>
+                  <div>
+                    <div class="text-muted-foreground text-xs mb-1">Source</div>
+                    <div class="capitalize">{{ attempt.source || '-' }}</div>
+                  </div>
+                </div>
+                <div class="mt-3 pt-3 border-t border-border">
+                  <div class="text-muted-foreground text-xs mb-1">Full URL</div>
+                  <div class="text-xs font-mono break-all">{{ attempt.url }}</div>
+                </div>
+                <div v-if="attempt.error_message" class="mt-3 pt-3 border-t border-border">
+                  <div class="text-muted-foreground text-xs mb-1">Error Message</div>
+                  <div class="text-xs font-mono text-red-500">{{ attempt.error_message }}</div>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </div>
     </div>
   </PageLayout>
 </template>

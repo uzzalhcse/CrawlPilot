@@ -30,14 +30,17 @@ func NewRecoveryReporter(orchestratorURL string) *RecoveryReporter {
 
 // CreateAttemptRequest is the request body for creating a recovery attempt
 type CreateAttemptRequest struct {
-	ExecutionID  string `json:"execution_id"`
-	TaskID       string `json:"task_id"`
-	WorkflowID   string `json:"workflow_id"`
-	URL          string `json:"url"`
-	Domain       string `json:"domain"`
-	ErrorPattern string `json:"error_pattern"`
-	ErrorMessage string `json:"error_message,omitempty"`
-	StatusCode   int    `json:"status_code,omitempty"`
+	ExecutionID   string  `json:"execution_id"`
+	TaskID        string  `json:"task_id"`
+	WorkflowID    string  `json:"workflow_id"`
+	URL           string  `json:"url"`
+	Domain        string  `json:"domain"`
+	ErrorPattern  string  `json:"error_pattern"`
+	ErrorMessage  string  `json:"error_message,omitempty"`
+	StatusCode    int     `json:"status_code,omitempty"`
+	Confidence    float64 `json:"confidence,omitempty"`
+	TriggerReason string  `json:"trigger_reason,omitempty"`
+	Status        string  `json:"status,omitempty"` // 'detected' (below threshold) or 'pending' (recovery triggered)
 }
 
 // CreateAttemptResponse is the response from creating a recovery attempt
@@ -99,6 +102,11 @@ type UpdateAttemptRequest struct {
 	AIReasoning  string `json:"ai_reasoning,omitempty"`
 	RetryDelayMs int    `json:"retry_delay_ms,omitempty"`
 	DurationMs   int    `json:"duration_ms,omitempty"`
+	ProxyID      string `json:"proxy_id,omitempty"`
+	ProxyTier    int    `json:"proxy_tier,omitempty"`
+	TierFrom     int    `json:"tier_from,omitempty"`
+	TierTo       int    `json:"tier_to,omitempty"`
+	RetryCount   int    `json:"retry_count,omitempty"`
 }
 
 // UpdateAttempt updates a recovery attempt with outcome (called after recovery execution)

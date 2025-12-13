@@ -360,41 +360,68 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 	// Record failure and check if recovery should trigger (smart triggering)
 	// All errors go through threshold checking - single failures don't trigger recovery
 	// This prevents false positives from naturally empty pages (e.g., subcategories with no products)
+	shouldTrigger := false
+	triggerReason := "Error detected but thresholds not met"
 	if m.errorTracker != nil {
-		shouldTrigger, reason := m.errorTracker.RecordFailure(ctx, detected.Domain, detected.Pattern)
-		if !shouldTrigger {
-			// Error rate/consecutive errors below threshold - don't trigger recovery yet
+		var reason string
+		shouldTrigger, reason = m.errorTracker.RecordFailure(ctx, detected.Domain, detected.Pattern)
+		if shouldTrigger {
+			triggerReason = reason
+			logger.Info("Recovery triggered",
+				zap.String("domain", detected.Domain),
+				zap.String("pattern", string(detected.Pattern)),
+				zap.String("trigger_reason", reason),
+			)
+		} else {
 			logger.Debug("Error recorded but recovery not triggered",
 				zap.String("domain", detected.Domain),
 				zap.String("pattern", string(detected.Pattern)),
 				zap.String("error", detected.RawError),
 				zap.String("reason", "thresholds not met"),
 			)
-			return nil, nil
 		}
-		logger.Info("Recovery triggered",
-			zap.String("domain", detected.Domain),
-			zap.String("pattern", string(detected.Pattern)),
-			zap.String("trigger_reason", reason),
-		)
 	}
 
 	// =====================================================
-	// Note: This is async fire-and-forget for high throughput
-	// We won't have an attemptID since we don't wait for response
+	// Record ALL error detections for tracking/debugging
+	// Status: 'detected' if below threshold, 'pending' if recovery triggered
 	// =====================================================
 	if m.recoveryReporter != nil {
-		createReq := &reporter.CreateAttemptRequest{
-			ExecutionID:  executionID,
-			TaskID:       taskID,
-			WorkflowID:   workflowID,
-			URL:          url,
-			Domain:       detected.Domain,
-			ErrorPattern: string(detected.Pattern),
-			ErrorMessage: detected.RawError,
-			StatusCode:   detected.StatusCode,
+		status := "detected" // Below threshold - just logging the error
+		if shouldTrigger {
+			status = "pending" // Recovery will be attempted
 		}
+		createReq := &reporter.CreateAttemptRequest{
+			ExecutionID:   executionID,
+			TaskID:        taskID,
+			WorkflowID:    workflowID,
+			URL:           url,
+			Domain:        detected.Domain,
+			ErrorPattern:  string(detected.Pattern),
+			ErrorMessage:  detected.RawError,
+			StatusCode:    detected.StatusCode,
+			Confidence:    detected.Confidence,
+			TriggerReason: triggerReason,
+			Status:        status,
+		}
+		logger.Debug("Queueing recovery attempt for reporting",
+			zap.String("task_id", taskID),
+			zap.String("domain", detected.Domain),
+			zap.String("pattern", string(detected.Pattern)),
+			zap.String("status", status),
+			zap.Bool("recovery_reporter_nil", m.recoveryReporter == nil),
+		)
 		m.recoveryReporter.CreateAttemptAsync(ctx, createReq)
+	} else {
+		logger.Warn("Recovery reporter is nil, cannot save recovery attempt",
+			zap.String("task_id", taskID),
+			zap.String("domain", detected.Domain),
+		)
+	}
+
+	// If thresholds not met, don't actually execute recovery
+	if !shouldTrigger {
+		return nil, nil
 	}
 
 	// For high-throughput, we skip individual attempt tracking via attemptID
@@ -580,6 +607,22 @@ func (m *RecoveryManager) RecordOutcome(ctx context.Context, attempt *RecoveryAt
 		if reasoning, ok := attempt.Plan.Params["ai_reasoning"].(string); ok {
 			updateReq.AIReasoning = reasoning
 		}
+		// Add proxy and tier info if available
+		if proxyID, ok := attempt.Plan.Params["proxy_id"].(string); ok {
+			updateReq.ProxyID = proxyID
+		}
+		if proxyTier, ok := attempt.Plan.Params["proxy_tier"].(int); ok {
+			updateReq.ProxyTier = proxyTier
+		}
+		if tierFrom, ok := attempt.Plan.Params["tier_from"].(int); ok {
+			updateReq.TierFrom = tierFrom
+		}
+		if tierTo, ok := attempt.Plan.Params["tier_to"].(int); ok {
+			updateReq.TierTo = tierTo
+		}
+		if retryCount, ok := attempt.Plan.Params["retry_count"].(int); ok {
+			updateReq.RetryCount = retryCount
+		}
 		m.recoveryReporter.UpdateAttemptAsync(ctx, attempt.Plan.AttemptID, updateReq)
 	}
 
@@ -616,12 +659,15 @@ func (m *RecoveryManager) ExecutePlan(ctx context.Context, plan *RecoveryPlan, t
 		if m.tieredProxy != nil {
 			// Check if we should escalate to a higher tier based on failure history
 			shouldEscalate, nextTier := m.tieredProxy.ShouldEscalateTier(ctx, domain, currentTier)
+			originalTier := currentTier
 			if shouldEscalate {
 				currentTier = nextTier
 				plan.Params["escalated_tier"] = nextTier
+				plan.Params["tier_from"] = int(originalTier)
+				plan.Params["tier_to"] = int(nextTier)
 				logger.Info("Escalating proxy tier for recovery",
 					zap.String("domain", domain),
-					zap.Int("from_tier", int(currentTier)-1),
+					zap.Int("from_tier", int(originalTier)),
 					zap.Int("to_tier", int(nextTier)),
 				)
 			}
@@ -631,7 +677,7 @@ func (m *RecoveryManager) ExecutePlan(ctx context.Context, plan *RecoveryPlan, t
 			if err == nil && proxy != nil {
 				plan.Params["proxy_url"] = proxy.ProxyURL()
 				plan.Params["proxy_id"] = proxy.ID
-				plan.Params["proxy_tier"] = currentTier
+				plan.Params["proxy_tier"] = int(currentTier)
 				if lease != nil {
 					plan.Params["lease_expires"] = lease.ExpiresAt
 				}
@@ -659,7 +705,7 @@ func (m *RecoveryManager) ExecutePlan(ctx context.Context, plan *RecoveryPlan, t
 			}
 			plan.Params["proxy_url"] = proxy.ProxyURL()
 			plan.Params["proxy_id"] = proxy.ID
-			plan.Params["proxy_tier"] = currentTier // Preserve tier even with fallback
+			plan.Params["proxy_tier"] = int(currentTier) // Preserve tier even with fallback
 			if lease != nil {
 				plan.Params["lease_expires"] = lease.ExpiresAt
 			}

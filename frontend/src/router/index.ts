@@ -119,6 +119,11 @@ const router = createRouter({
           component: () => import('@/views/RecoveryHistoryView.vue')
         },
         {
+          path: 'domain-strategies',
+          name: 'domain-strategies',
+          component: () => import('@/views/DomainStrategiesView.vue')
+        },
+        {
           path: 'universal-scraper',
           name: 'universal-scraper',
           component: () => import('@/views/UniversalScraperView.vue')

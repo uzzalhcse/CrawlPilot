@@ -16,24 +16,31 @@ type RecoveryAttemptRepository struct {
 
 // RecoveryAttempt represents a recovery attempt from the recovery_attempts table
 type RecoveryAttempt struct {
-	ID           string    `json:"id"`
-	ExecutionID  string    `json:"execution_id"`
-	TaskID       string    `json:"task_id"`
-	WorkflowID   string    `json:"workflow_id"`
-	URL          string    `json:"url"`
-	Domain       string    `json:"domain"`
-	ErrorPattern string    `json:"error_pattern"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	StatusCode   int       `json:"status_code,omitempty"`
-	Action       string    `json:"action,omitempty"`
-	Source       string    `json:"source"` // rule, ai, default, none, pending
-	RuleID       string    `json:"rule_id,omitempty"`
-	AIReasoning  string    `json:"ai_reasoning,omitempty"`
-	Status       string    `json:"status"` // pending, success, failed
-	RetryDelayMs int       `json:"retry_delay_ms,omitempty"`
-	DurationMs   int       `json:"duration_ms,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	ExecutionID   string    `json:"execution_id"`
+	TaskID        string    `json:"task_id"`
+	WorkflowID    string    `json:"workflow_id"`
+	URL           string    `json:"url"`
+	Domain        string    `json:"domain"`
+	ErrorPattern  string    `json:"error_pattern"`
+	ErrorMessage  string    `json:"error_message,omitempty"`
+	StatusCode    int       `json:"status_code,omitempty"`
+	Action        string    `json:"action,omitempty"`
+	Source        string    `json:"source"` // rule, ai, default, none, pending
+	RuleID        string    `json:"rule_id,omitempty"`
+	AIReasoning   string    `json:"ai_reasoning,omitempty"`
+	Status        string    `json:"status"` // pending, success, failed
+	RetryDelayMs  int       `json:"retry_delay_ms,omitempty"`
+	DurationMs    int       `json:"duration_ms,omitempty"`
+	ProxyID       string    `json:"proxy_id,omitempty"`
+	ProxyTier     int       `json:"proxy_tier,omitempty"`
+	TierFrom      int       `json:"tier_from,omitempty"`
+	TierTo        int       `json:"tier_to,omitempty"`
+	Confidence    float64   `json:"confidence,omitempty"`
+	TriggerReason string    `json:"trigger_reason,omitempty"`
+	RetryCount    int       `json:"retry_count,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // NewRecoveryAttemptRepository creates a new recovery attempt repository
@@ -43,19 +50,27 @@ func NewRecoveryAttemptRepository(db *database.DB) *RecoveryAttemptRepository {
 
 // CreateAttempt creates a new recovery attempt record (called immediately on error detection)
 func (r *RecoveryAttemptRepository) CreateAttempt(ctx context.Context, attempt *RecoveryAttempt) error {
+	// Default to 'pending' if no status provided
+	status := attempt.Status
+	if status == "" {
+		status = "pending"
+	}
 	query := `
 		INSERT INTO recovery_attempts (
 			execution_id, task_id, workflow_id, url, domain,
-			error_pattern, error_message, status_code, status, source
+			error_pattern, error_message, status_code, status, source,
+			confidence, trigger_reason
 		) VALUES (
 			$1, $2, NULLIF($3, '')::uuid, $4, $5,
-			$6, $7, $8, 'pending', 'pending'
+			$6, $7, $8, $9, 'pending',
+			$10, NULLIF($11, '')
 		) RETURNING id, created_at
 	`
 
 	return r.db.Pool.QueryRow(ctx, query,
 		attempt.ExecutionID, attempt.TaskID, attempt.WorkflowID, attempt.URL, attempt.Domain,
-		attempt.ErrorPattern, attempt.ErrorMessage, attempt.StatusCode,
+		attempt.ErrorPattern, attempt.ErrorMessage, attempt.StatusCode, status,
+		attempt.Confidence, attempt.TriggerReason,
 	).Scan(&attempt.ID, &attempt.CreatedAt)
 }
 
@@ -71,17 +86,24 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 	query := `
 		INSERT INTO recovery_attempts (
 			execution_id, task_id, workflow_id, url, domain,
-			error_pattern, error_message, status_code, status, source
+			error_pattern, error_message, status_code, status, source,
+			confidence, trigger_reason
 		) VALUES `
 
-	args := make([]interface{}, 0, len(attempts)*8)
+	paramsPerRow := 11 // Added status as dynamic parameter
+	args := make([]interface{}, 0, len(attempts)*paramsPerRow)
 	valueStrings := make([]string, 0, len(attempts))
 
 	for i, attempt := range attempts {
-		base := i * 8
+		base := i * paramsPerRow
+		// Default to 'detected' if no status provided (for below-threshold errors)
+		status := attempt.Status
+		if status == "" {
+			status = "detected"
+		}
 		valueStrings = append(valueStrings,
-			fmt.Sprintf("($%d, $%d, NULLIF($%d, '')::uuid, $%d, $%d, $%d, $%d, $%d, 'pending', 'pending')",
-				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8))
+			fmt.Sprintf("($%d, $%d, NULLIF($%d, '')::uuid, $%d, $%d, $%d, $%d, $%d, $%d, 'pending', $%d, NULLIF($%d, ''))",
+				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11))
 		args = append(args,
 			attempt.ExecutionID,
 			attempt.TaskID,
@@ -91,6 +113,9 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 			attempt.ErrorPattern,
 			attempt.ErrorMessage,
 			attempt.StatusCode,
+			status,
+			attempt.Confidence,
+			attempt.TriggerReason,
 		)
 	}
 
@@ -105,7 +130,7 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 }
 
 // UpdateAttempt updates a recovery attempt with the outcome
-func (r *RecoveryAttemptRepository) UpdateAttempt(ctx context.Context, id string, action, source, status, ruleID, aiReasoning string, retryDelayMs, durationMs int) error {
+func (r *RecoveryAttemptRepository) UpdateAttempt(ctx context.Context, id string, action, source, status, ruleID, aiReasoning string, retryDelayMs, durationMs int, proxyID string, proxyTier, tierFrom, tierTo, retryCount int) error {
 	query := `
 		UPDATE recovery_attempts SET
 			action = $1,
@@ -114,12 +139,95 @@ func (r *RecoveryAttemptRepository) UpdateAttempt(ctx context.Context, id string
 			rule_id = NULLIF($4, ''),
 			ai_reasoning = NULLIF($5, ''),
 			retry_delay_ms = NULLIF($6, 0),
-			duration_ms = NULLIF($7, 0)
-		WHERE id = $8
+			duration_ms = NULLIF($7, 0),
+			proxy_id = NULLIF($8, ''),
+			proxy_tier = NULLIF($9, 0),
+			tier_from = NULLIF($10, 0),
+			tier_to = NULLIF($11, 0),
+			retry_count = NULLIF($12, 0)
+		WHERE id = $13
 	`
 
-	_, err := r.db.Pool.Exec(ctx, query, action, source, status, ruleID, aiReasoning, retryDelayMs, durationMs, id)
+	_, err := r.db.Pool.Exec(ctx, query, action, source, status, ruleID, aiReasoning, retryDelayMs, durationMs, proxyID, proxyTier, tierFrom, tierTo, retryCount, id)
 	return err
+}
+
+// UpdateAttemptBatchItem represents a single update in a batch
+type UpdateAttemptBatchItem struct {
+	ID           string
+	Action       string
+	Source       string
+	Status       string
+	RuleID       string
+	AIReasoning  string
+	RetryDelayMs int
+	DurationMs   int
+	ProxyID      string
+	ProxyTier    int
+	TierFrom     int
+	TierTo       int
+	RetryCount   int
+}
+
+// UpdateAttemptsBatch updates multiple recovery attempts in a single query (high-throughput)
+// Uses UPDATE FROM VALUES pattern for O(1) DB queries instead of O(N)
+func (r *RecoveryAttemptRepository) UpdateAttemptsBatch(ctx context.Context, updates []UpdateAttemptBatchItem) (int, error) {
+	if len(updates) == 0 {
+		return 0, nil
+	}
+
+	// Build the VALUES clause with proper parameter indexing
+	// Each row has 13 parameters
+	paramsPerRow := 13
+	valueStrings := make([]string, 0, len(updates))
+	args := make([]interface{}, 0, len(updates)*paramsPerRow)
+
+	for i, u := range updates {
+		base := i * paramsPerRow
+		valueStrings = append(valueStrings,
+			fmt.Sprintf("($%d::uuid, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12, base+13))
+		args = append(args,
+			u.ID,
+			u.Action,
+			u.Source,
+			u.Status,
+			u.RuleID,
+			u.AIReasoning,
+			u.RetryDelayMs,
+			u.DurationMs,
+			u.ProxyID,
+			u.ProxyTier,
+			u.TierFrom,
+			u.TierTo,
+			u.RetryCount,
+		)
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE recovery_attempts AS t SET
+			action = COALESCE(NULLIF(v.action, ''), t.action),
+			source = COALESCE(NULLIF(v.source, ''), t.source),
+			status = v.status,
+			rule_id = COALESCE(NULLIF(v.rule_id, ''), t.rule_id),
+			ai_reasoning = COALESCE(NULLIF(v.ai_reasoning, ''), t.ai_reasoning),
+			retry_delay_ms = COALESCE(NULLIF(v.retry_delay_ms, 0), t.retry_delay_ms),
+			duration_ms = COALESCE(NULLIF(v.duration_ms, 0), t.duration_ms),
+			proxy_id = COALESCE(NULLIF(v.proxy_id, ''), t.proxy_id),
+			proxy_tier = COALESCE(NULLIF(v.proxy_tier, 0), t.proxy_tier),
+			tier_from = COALESCE(NULLIF(v.tier_from, 0), t.tier_from),
+			tier_to = COALESCE(NULLIF(v.tier_to, 0), t.tier_to),
+			retry_count = COALESCE(NULLIF(v.retry_count, 0), t.retry_count)
+		FROM (VALUES %s) AS v(id, action, source, status, rule_id, ai_reasoning, retry_delay_ms, duration_ms, proxy_id, proxy_tier, tier_from, tier_to, retry_count)
+		WHERE t.id = v.id
+	`, strings.Join(valueStrings, ", "))
+
+	result, err := r.db.Pool.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(result.RowsAffected()), nil
 }
 
 // GetAttempts returns recovery attempts with filtering
@@ -156,6 +264,10 @@ func (r *RecoveryAttemptRepository) GetAttempts(ctx context.Context, executionID
 	          COALESCE(action, ''), source, COALESCE(rule_id, ''),
 	          COALESCE(ai_reasoning, ''), status,
 	          COALESCE(retry_delay_ms, 0), COALESCE(duration_ms, 0),
+	          COALESCE(proxy_id, ''), COALESCE(proxy_tier, 0),
+	          COALESCE(tier_from, 0), COALESCE(tier_to, 0),
+	          COALESCE(confidence, 0), COALESCE(trigger_reason, ''),
+	          COALESCE(retry_count, 0),
 	          created_at, updated_at
 	          FROM recovery_attempts WHERE 1=1`
 
@@ -196,6 +308,10 @@ func (r *RecoveryAttemptRepository) GetAttempts(ctx context.Context, executionID
 			&a.Action, &a.Source, &a.RuleID,
 			&a.AIReasoning, &a.Status,
 			&a.RetryDelayMs, &a.DurationMs,
+			&a.ProxyID, &a.ProxyTier,
+			&a.TierFrom, &a.TierTo,
+			&a.Confidence, &a.TriggerReason,
+			&a.RetryCount,
 			&a.CreatedAt, &a.UpdatedAt,
 		); err != nil {
 			continue

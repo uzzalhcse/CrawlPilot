@@ -197,6 +197,17 @@ func main() {
 	recovery.Get("/attempts", recoveryAttemptHandler.GetAttempts)
 	recovery.Get("/attempts/stats", recoveryAttemptHandler.GetAttemptStats)
 
+	// Initialize domain strategy repository and handler
+	domainStrategyRepo := repository.NewDomainStrategyRepository(db)
+	domainStrategyHandler := handlers.NewDomainStrategyHandler(domainStrategyRepo)
+
+	// Domain strategies (learned anti-bot strategies)
+	recovery.Get("/domains", domainStrategyHandler.GetAll)
+	recovery.Get("/domains/stats", domainStrategyHandler.GetStats)
+	recovery.Get("/domains/:domain", domainStrategyHandler.GetByDomain)
+	recovery.Delete("/domains/:domain", domainStrategyHandler.Delete)
+	recovery.Delete("/domains", domainStrategyHandler.DeleteAll)
+
 	// Initialize incident repository and handler
 	incidentRepo := repository.NewIncidentRepository(db)
 	incidentHandler := handlers.NewIncidentHandler(incidentRepo)
@@ -275,6 +286,7 @@ func main() {
 	internal.Post("/recovery/attempt", recoveryAttemptHandler.CreateAttempt)
 	internal.Post("/recovery/attempts/batch", recoveryAttemptHandler.CreateAttemptsBatch) // High-throughput batch insert
 	internal.Patch("/recovery/attempt/:id", recoveryAttemptHandler.UpdateAttempt)
+	internal.Post("/recovery/attempts/batch-update", recoveryAttemptHandler.UpdateAttemptsBatch) // High-throughput batch update
 
 	// Public probe endpoints (for API consumers)
 	workflows.Get("/:id/probe/results", probeHandler.GetProbeResults)

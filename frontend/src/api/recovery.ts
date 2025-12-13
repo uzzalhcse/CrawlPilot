@@ -111,9 +111,16 @@ export interface RecoveryAttempt {
     source: string // rule, ai, default, none, pending
     rule_id: string
     ai_reasoning: string
-    status: 'pending' | 'success' | 'failed'
+    status: 'detected' | 'pending' | 'success' | 'failed'
     retry_delay_ms: number
     duration_ms: number
+    proxy_id: string
+    proxy_tier: number
+    tier_from: number
+    tier_to: number
+    confidence: number
+    trigger_reason: string
+    retry_count: number
     created_at: string
     updated_at: string
 }
