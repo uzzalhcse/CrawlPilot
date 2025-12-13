@@ -48,7 +48,6 @@ func (r *postgresBrowserProfileRepo) Create(ctx context.Context, profile *models
 			screen_width, screen_height, timezone, locale, languages,
 			do_not_track, disable_webrtc,
 			geolocation_latitude, geolocation_longitude, geolocation_accuracy,
-			proxy_enabled, proxy_type, proxy_server, proxy_username, proxy_password,
 			geo_ip, virtual_headless, force_scope_access, auto_captcha_solve,
 			block_images, block_webgl, humanize, include_default_addons,
 			enable_cache, user_data_dir, target_os,
@@ -59,11 +58,10 @@ func (r *postgresBrowserProfileRepo) Create(ctx context.Context, profile *models
 			$12, $13, $14, $15, $16,
 			$17, $18,
 			$19, $20, $21,
-			$22, $23, $24, $25, $26,
-			$27, $28, $29, $30,
-			$31, $32, $33, $34,
-			$35, $36, $37,
-			$38, $39, $40
+			$22, $23, $24, $25,
+			$26, $27, $28, $29,
+			$30, $31, $32,
+			$33, $34, $35
 		)
 	`
 
@@ -73,7 +71,6 @@ func (r *postgresBrowserProfileRepo) Create(ctx context.Context, profile *models
 		profile.ScreenWidth, profile.ScreenHeight, profile.Timezone, profile.Locale, string(languagesJSON),
 		profile.DoNotTrack, profile.DisableWebRTC,
 		profile.GeolocationLatitude, profile.GeolocationLongitude, profile.GeolocationAccuracy,
-		profile.ProxyEnabled, profile.ProxyType, profile.ProxyServer, profile.ProxyUsername, profile.ProxyPassword,
 		profile.GeoIP, profile.VirtualHeadless, profile.ForceScopeAccess, profile.AutoCaptchaSolve,
 		profile.BlockImages, profile.BlockWebGL, profile.Humanize, profile.IncludeDefaultAddons,
 		profile.EnableCache, profile.UserDataDir, profile.TargetOS,
@@ -94,7 +91,6 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 			screen_width, screen_height, timezone, locale, languages,
 			do_not_track, disable_webrtc,
 			geolocation_latitude, geolocation_longitude, geolocation_accuracy,
-			proxy_enabled, proxy_type, proxy_server, proxy_username, proxy_password,
 			geo_ip, virtual_headless, force_scope_access, auto_captcha_solve,
 			block_images, block_webgl, humanize, include_default_addons,
 			enable_cache, user_data_dir, target_os,
@@ -106,7 +102,6 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 	var profile models.BrowserProfile
 	var tagsJSON, launchArgsJSON, languagesJSON []byte
 	var folder, description, executablePath, cdpEndpoint, timezone, locale *string
-	var proxyType, proxyServer, proxyUsername, proxyPassword *string
 	var geoIP, userDataDir, targetOS *string
 
 	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
@@ -115,7 +110,6 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 		&profile.ScreenWidth, &profile.ScreenHeight, &timezone, &locale, &languagesJSON,
 		&profile.DoNotTrack, &profile.DisableWebRTC,
 		&profile.GeolocationLatitude, &profile.GeolocationLongitude, &profile.GeolocationAccuracy,
-		&profile.ProxyEnabled, &proxyType, &proxyServer, &proxyUsername, &proxyPassword,
 		&geoIP, &profile.VirtualHeadless, &profile.ForceScopeAccess, &profile.AutoCaptchaSolve,
 		&profile.BlockImages, &profile.BlockWebGL, &profile.Humanize, &profile.IncludeDefaultAddons,
 		&profile.EnableCache, &userDataDir, &targetOS,
@@ -148,18 +142,6 @@ func (r *postgresBrowserProfileRepo) Get(ctx context.Context, id string) (*model
 	if locale != nil {
 		profile.Locale = *locale
 	}
-	if proxyType != nil {
-		profile.ProxyType = *proxyType
-	}
-	if proxyServer != nil {
-		profile.ProxyServer = *proxyServer
-	}
-	if proxyUsername != nil {
-		profile.ProxyUsername = *proxyUsername
-	}
-	if proxyPassword != nil {
-		profile.ProxyPassword = *proxyPassword
-	}
 	if geoIP != nil {
 		profile.GeoIP = *geoIP
 	}
@@ -191,7 +173,6 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 			screen_width, screen_height, timezone, locale, languages,
 			do_not_track, disable_webrtc,
 			geolocation_latitude, geolocation_longitude, geolocation_accuracy,
-			proxy_enabled, proxy_type, proxy_server, proxy_username, proxy_password,
 			geo_ip, virtual_headless, force_scope_access, auto_captcha_solve,
 			block_images, block_webgl, humanize, include_default_addons,
 			enable_cache, user_data_dir, target_os,
@@ -246,7 +227,6 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 		var profile models.BrowserProfile
 		var tagsJSON, launchArgsJSON, languagesJSON []byte
 		var folder, description, executablePath, cdpEndpoint, timezone, locale *string
-		var proxyType, proxyServer, proxyUsername, proxyPassword *string
 		var geoIP, userDataDir, targetOS *string
 
 		err := rows.Scan(
@@ -255,7 +235,6 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 			&profile.ScreenWidth, &profile.ScreenHeight, &timezone, &locale, &languagesJSON,
 			&profile.DoNotTrack, &profile.DisableWebRTC,
 			&profile.GeolocationLatitude, &profile.GeolocationLongitude, &profile.GeolocationAccuracy,
-			&profile.ProxyEnabled, &proxyType, &proxyServer, &proxyUsername, &proxyPassword,
 			&geoIP, &profile.VirtualHeadless, &profile.ForceScopeAccess, &profile.AutoCaptchaSolve,
 			&profile.BlockImages, &profile.BlockWebGL, &profile.Humanize, &profile.IncludeDefaultAddons,
 			&profile.EnableCache, &userDataDir, &targetOS,
@@ -283,18 +262,6 @@ func (r *postgresBrowserProfileRepo) List(ctx context.Context, filters BrowserPr
 		}
 		if locale != nil {
 			profile.Locale = *locale
-		}
-		if proxyType != nil {
-			profile.ProxyType = *proxyType
-		}
-		if proxyServer != nil {
-			profile.ProxyServer = *proxyServer
-		}
-		if proxyUsername != nil {
-			profile.ProxyUsername = *proxyUsername
-		}
-		if proxyPassword != nil {
-			profile.ProxyPassword = *proxyPassword
 		}
 		if geoIP != nil {
 			profile.GeoIP = *geoIP
@@ -342,11 +309,10 @@ func (r *postgresBrowserProfileRepo) Update(ctx context.Context, profile *models
 			screen_width = $12, screen_height = $13, timezone = $14, locale = $15, languages = $16,
 			do_not_track = $17, disable_webrtc = $18,
 			geolocation_latitude = $19, geolocation_longitude = $20, geolocation_accuracy = $21,
-			proxy_enabled = $22, proxy_type = $23, proxy_server = $24, proxy_username = $25, proxy_password = $26,
-			geo_ip = $27, virtual_headless = $28, force_scope_access = $29, auto_captcha_solve = $30,
-			block_images = $31, block_webgl = $32, humanize = $33, include_default_addons = $34,
-			enable_cache = $35, user_data_dir = $36, target_os = $37,
-			updated_at = $38
+			geo_ip = $22, virtual_headless = $23, force_scope_access = $24, auto_captcha_solve = $25,
+			block_images = $26, block_webgl = $27, humanize = $28, include_default_addons = $29,
+			enable_cache = $30, user_data_dir = $31, target_os = $32,
+			updated_at = $33
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
@@ -356,7 +322,6 @@ func (r *postgresBrowserProfileRepo) Update(ctx context.Context, profile *models
 		profile.ScreenWidth, profile.ScreenHeight, profile.Timezone, profile.Locale, string(languagesJSON),
 		profile.DoNotTrack, profile.DisableWebRTC,
 		profile.GeolocationLatitude, profile.GeolocationLongitude, profile.GeolocationAccuracy,
-		profile.ProxyEnabled, profile.ProxyType, profile.ProxyServer, profile.ProxyUsername, profile.ProxyPassword,
 		profile.GeoIP, profile.VirtualHeadless, profile.ForceScopeAccess, profile.AutoCaptchaSolve,
 		profile.BlockImages, profile.BlockWebGL, profile.Humanize, profile.IncludeDefaultAddons,
 		profile.EnableCache, profile.UserDataDir, profile.TargetOS,

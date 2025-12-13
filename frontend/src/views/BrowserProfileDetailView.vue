@@ -25,8 +25,7 @@ const profile = computed(() => profilesStore.currentProfile)
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
-  { id: 'fingerprint', label: 'Fingerprint' },
-  { id: 'proxy', label: 'Proxy & Network' }
+  { id: 'fingerprint', label: 'Fingerprint' }
 ]
 
 const stats = computed(() => {
@@ -248,32 +247,6 @@ const formatDate = (dateString?: string) => {
                 {{ profile.disable_webrtc ? 'Disabled' : 'Enabled' }}
               </Badge>
             </div>
-          </div>
-        </div>
-
-        <!-- Proxy Tab -->
-        <div v-if="activeTab === 'proxy'" class="max-w-6xl">
-          <div v-if="profile.proxy_enabled" class="grid gap-6 md:grid-cols-2">
-            <div class="bg-card border rounded-lg p-6">
-              <h3 class="text-sm font-semibold mb-4 text-muted-foreground uppercase tracking-wide">Proxy Configuration</h3>
-              <div class="space-y-3">
-                <div>
-                  <div class="text-xs text-muted-foreground mb-1">Proxy Type</div>
-                  <div class="font-medium uppercase">{{ profile.proxy_type }}</div>
-                </div>
-                <div>
-                  <div class="text-xs text-muted-foreground mb-1">Proxy Server</div>
-                  <div class="font-mono text-sm">{{ profile.proxy_server }}</div>
-                </div>
-                <div v-if="profile.proxy_username">
-                  <div class="text-xs text-muted-foreground mb-1">Authentication</div>
-                  <div class="text-sm">Configured</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-else class="bg-card border rounded-lg p-12 text-center">
-            <p class="text-muted-foreground">No proxy configured for this profile</p>
           </div>
         </div>
       </div>

@@ -34,11 +34,6 @@ export interface BrowserProfile {
     geolocation_latitude?: number
     geolocation_longitude?: number
     geolocation_accuracy?: number
-    proxy_enabled: boolean
-    proxy_type?: string
-    proxy_server?: string
-    proxy_username?: string
-    proxy_password?: string
     cookies?: any
     local_storage?: any
     session_storage?: any
@@ -82,11 +77,6 @@ export interface CreateBrowserProfileRequest {
     geolocation_latitude?: number
     geolocation_longitude?: number
     geolocation_accuracy?: number
-    proxy_enabled?: boolean
-    proxy_type?: string
-    proxy_server?: string
-    proxy_username?: string
-    proxy_password?: string
     clear_on_close?: boolean
 }
 

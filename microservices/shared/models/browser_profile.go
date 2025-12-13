@@ -46,13 +46,6 @@ type BrowserProfile struct {
 	GeolocationLongitude *float64 `json:"geolocation_longitude,omitempty"`
 	GeolocationAccuracy  *int     `json:"geolocation_accuracy,omitempty"`
 
-	// Proxy Configuration
-	ProxyEnabled  bool   `json:"proxy_enabled"`
-	ProxyType     string `json:"proxy_type,omitempty"`
-	ProxyServer   string `json:"proxy_server,omitempty"`
-	ProxyUsername string `json:"proxy_username,omitempty"`
-	ProxyPassword string `json:"proxy_password,omitempty"`
-
 	// Metadata
 	UsageCount int        `json:"usage_count"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`

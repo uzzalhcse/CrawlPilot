@@ -171,19 +171,6 @@ func BuildCamoufoxOptions(profile *models.BrowserProfile, headless bool) (camouf
 		}
 	}
 
-	// Proxy configuration with URL validation
-	if profile.ProxyEnabled && profile.ProxyServer != "" {
-		proxyURL, err := EnsureScheme(profile.ProxyServer)
-		if err != nil {
-			return opts, fmt.Errorf("invalid proxy server URL: %w", err)
-		}
-		opts.Proxy = &camoufox.ProxyConfig{
-			Server:   proxyURL,
-			Username: profile.ProxyUsername,
-			Password: profile.ProxyPassword,
-		}
-	}
-
 	return opts, nil
 }
 
@@ -303,19 +290,6 @@ func BuildPlaywrightContextOptions(profile *models.BrowserProfile, fpService *Fi
 		contextOpts.Permissions = []string{"geolocation"}
 	}
 
-	// Proxy configuration with URL validation
-	if profile.ProxyEnabled && profile.ProxyServer != "" {
-		proxyURL, err := EnsureScheme(profile.ProxyServer)
-		if err != nil {
-			return contextOpts, fmt.Errorf("invalid proxy server URL: %w", err)
-		}
-		contextOpts.Proxy = &playwright.Proxy{
-			Server:   proxyURL,
-			Username: playwright.String(profile.ProxyUsername),
-			Password: playwright.String(profile.ProxyPassword),
-		}
-	}
-
 	return contextOpts, nil
 }
 
@@ -391,15 +365,6 @@ func BuildChromedpOptions(profile *models.BrowserProfile, headless bool) (Chrome
 	}
 	if profile.ScreenHeight > 0 {
 		opts.WindowHeight = profile.ScreenHeight
-	}
-
-	// Proxy with URL validation
-	if profile.ProxyEnabled && profile.ProxyServer != "" {
-		proxyURL, err := EnsureScheme(profile.ProxyServer)
-		if err != nil {
-			return opts, fmt.Errorf("invalid proxy server URL: %w", err)
-		}
-		opts.ProxyServer = proxyURL
 	}
 
 	// Executable path

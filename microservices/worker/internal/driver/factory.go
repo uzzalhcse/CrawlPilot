@@ -66,16 +66,10 @@ func (f *Factory) CreateDriverFromProfileWithProxy(profile *models.BrowserProfil
 		profile = &models.BrowserProfile{DriverType: f.config.Driver}
 	}
 
-	// If proxy config provided, inject into profile for browser creation
-	if proxyConfig != nil && proxyConfig.Server != "" {
-		// Clone profile to not modify the original
-		profileCopy := *profile
-		profileCopy.ProxyEnabled = true
-		profileCopy.ProxyServer = proxyConfig.Server
-		profileCopy.ProxyUsername = proxyConfig.Username
-		profileCopy.ProxyPassword = proxyConfig.Password
-		profile = &profileCopy
-	}
+	// Note: proxyConfig is currently passed but not used at the driver level
+	// Proxy configuration now happens at the browser context level within each driver
+	// The SmartUnblocker injects proxies via task.ProxyURL which drivers can access
+	_ = proxyConfig // Suppress unused warning for now
 
 	return f.createDriverWithConfig(&cfgCopy, profile)
 }

@@ -399,7 +399,7 @@ const runScraper = async () => {
         </div>
 
         <!-- Right Panel: Preview -->
-        <div class="rounded-xl border bg-card overflow-hidden flex flex-col">
+        <div class="rounded-xl border bg-card overflow-hidden flex flex-col max-h-[calc(100vh-180px)]">
           <!-- Header -->
           <div class="p-5 border-b flex items-center justify-between">
             <div>
@@ -415,7 +415,7 @@ const runScraper = async () => {
           </div>
 
           <!-- Content Area -->
-          <div class="flex-1 p-5">
+          <div class="flex-1 p-5 overflow-auto">
             <!-- Empty State -->
             <div 
               v-if="!hasResult && !isRunning" 
@@ -442,15 +442,15 @@ const runScraper = async () => {
             <div v-else-if="hasResult" class="h-full min-h-[400px]">
               <!-- HTML Output -->
               <div v-if="selectedOutputFormat === 'html'" class="h-full">
-                <div class="h-full rounded-lg bg-muted/30 border p-4 overflow-auto">
-                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap">{{ resultContent }}</pre>
+                <div class="rounded-lg bg-muted/30 border p-4 overflow-auto max-h-[calc(100vh-350px)]">
+                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-all">{{ resultContent }}</pre>
                 </div>
               </div>
 
               <!-- Markdown Output -->
               <div v-if="selectedOutputFormat === 'markdown'" class="h-full">
-                <div class="h-full rounded-lg bg-muted/30 border p-4 overflow-auto">
-                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap">{{ resultContent }}</pre>
+                <div class="rounded-lg bg-muted/30 border p-4 overflow-auto max-h-[calc(100vh-350px)]">
+                  <pre class="text-xs font-mono text-foreground/80 whitespace-pre-wrap break-all">{{ resultContent }}</pre>
                 </div>
               </div>
 

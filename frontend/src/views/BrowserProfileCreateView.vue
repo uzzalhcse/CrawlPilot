@@ -40,11 +40,6 @@ const formData = ref({
   languages: ['en-US', 'en'],
   do_not_track: false,
   disable_webrtc: false,
-  proxy_enabled: false,
-  proxy_type: 'http',
-  proxy_server: '',
-  proxy_username: '',
-  proxy_password: '',
   clear_on_close: true,
   // Camoufox-specific
   geo_ip: '',
@@ -471,51 +466,6 @@ const handleCancel = () => {
           <div class="flex items-center space-x-2 pt-2">
             <Switch id="disable_webrtc" v-model="formData.disable_webrtc" />
             <Label for="disable_webrtc" class="cursor-pointer">Disable WebRTC</Label>
-          </div>
-        </div>
-
-        <!-- Proxy Configuration -->
-        <div class="bg-card border rounded-lg p-6 space-y-4">
-          <h3 class="text-lg font-semibold mb-4">Proxy Configuration</h3>
-
-          <div class="flex items-center space-x-2">
-            <Switch id="proxy_enabled" v-model="formData.proxy_enabled" />
-            <Label for="proxy_enabled" class="cursor-pointer">Enable Proxy</Label>
-          </div>
-
-          <div v-if="formData.proxy_enabled" class="space-y-4 mt-4">
-            <div class="grid gap-4 md:grid-cols-2">
-              <div class="space-y-2">
-                <Label for="proxy_type">Proxy Type</Label>
-                <Select v-model="formData.proxy_type">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="http">HTTP</SelectItem>
-                    <SelectItem value="https">HTTPS</SelectItem>
-                    <SelectItem value="socks5">SOCKS5</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div class="space-y-2">
-                <Label for="proxy_server">Proxy Server</Label>
-                <Input id="proxy_server" v-model="formData.proxy_server" placeholder="proxy.example.com:8080" />
-              </div>
-            </div>
-
-            <div class="grid gap-4 md:grid-cols-2">
-              <div class="space-y-2">
-                <Label for="proxy_username">Username (Optional)</Label>
-                <Input id="proxy_username" v-model="formData.proxy_username" placeholder="username" />
-              </div>
-
-              <div class="space-y-2">
-                <Label for="proxy_password">Password (Optional)</Label>
-                <Input id="proxy_password" v-model="formData.proxy_password" type="password" placeholder="password" />
-              </div>
-            </div>
           </div>
         </div>
 
