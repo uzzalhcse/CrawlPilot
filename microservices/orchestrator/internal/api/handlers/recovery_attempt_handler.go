@@ -68,6 +68,7 @@ func (h *RecoveryAttemptHandler) GetAttemptStats(c *fiber.Ctx) error {
 
 // CreateAttemptRequest represents a request to create a recovery attempt
 type CreateAttemptRequest struct {
+	ID            string  `json:"id,omitempty"` // Worker-generated ID for correlation with updates
 	ExecutionID   string  `json:"execution_id"`
 	TaskID        string  `json:"task_id"`
 	WorkflowID    string  `json:"workflow_id"`
@@ -152,6 +153,7 @@ func (h *RecoveryAttemptHandler) CreateAttemptsBatch(c *fiber.Ctx) error {
 	attempts := make([]repository.RecoveryAttempt, len(req.Attempts))
 	for i, a := range req.Attempts {
 		attempts[i] = repository.RecoveryAttempt{
+			ID:            a.ID, // Worker-generated ID for correlation with updates
 			ExecutionID:   a.ExecutionID,
 			TaskID:        a.TaskID,
 			WorkflowID:    a.WorkflowID,

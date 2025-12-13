@@ -176,6 +176,7 @@ func (m *DistributedProxyManager) GetProxy(ctx context.Context, domain string) (
 
 // selectDomainAffinity selects a proxy that has worked for this domain before
 func (m *DistributedProxyManager) selectDomainAffinity(ctx context.Context, domain string) (string, error) {
+	domain = normalizeDomainName(domain)
 	domainKey := fmt.Sprintf(keyProxyDomain, domain)
 
 	// First, try domain-specific proxies (sorted by success rate)
@@ -222,7 +223,7 @@ func (m *DistributedProxyManager) selectRoundRobin(ctx context.Context, domain s
 	// 2. Race conditions between getAvailableFromSet calls
 	sort.Strings(proxies)
 
-	rotationKey := fmt.Sprintf(keyProxyRotation, domain)
+	rotationKey := fmt.Sprintf(keyProxyRotation, normalizeDomainName(domain))
 
 	// Atomically increment rotation counter
 	counter, err := m.cache.Increment(ctx, rotationKey)
@@ -346,6 +347,7 @@ func (m *DistributedProxyManager) releaseLease(ctx context.Context, proxyID stri
 // RecordSuccess records a successful request with a proxy
 // OPTIMIZED: Uses pipeline to batch 6 Redis calls into 1 round-trip
 func (m *DistributedProxyManager) RecordSuccess(ctx context.Context, proxyID, domain string) error {
+	domain = normalizeDomainName(domain)
 	// Release lease (separate call - needs SetNX check)
 	m.releaseLease(ctx, proxyID)
 
@@ -375,6 +377,7 @@ func (m *DistributedProxyManager) RecordSuccess(ctx context.Context, proxyID, do
 // RecordFailure records a failed request with a proxy
 // OPTIMIZED: Uses pipeline where possible to reduce round-trips
 func (m *DistributedProxyManager) RecordFailure(ctx context.Context, proxyID, domain string, pattern ErrorPattern) error {
+	domain = normalizeDomainName(domain)
 	// Release lease (separate call)
 	m.releaseLease(ctx, proxyID)
 

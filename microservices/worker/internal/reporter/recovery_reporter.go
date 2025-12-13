@@ -30,6 +30,7 @@ func NewRecoveryReporter(orchestratorURL string) *RecoveryReporter {
 
 // CreateAttemptRequest is the request body for creating a recovery attempt
 type CreateAttemptRequest struct {
+	ID            string  `json:"id,omitempty"` // Optional: worker-generated ID for correlation with updates
 	ExecutionID   string  `json:"execution_id"`
 	TaskID        string  `json:"task_id"`
 	WorkflowID    string  `json:"workflow_id"`

@@ -61,7 +61,7 @@ func NewErrorTracker(c *cache.Cache, config *TrackerConfig) *ErrorTracker {
 
 // keyFor returns the Redis key for a domain's stats
 func (t *ErrorTracker) keyFor(domain string) string {
-	return fmt.Sprintf("error:stats:%s", domain)
+	return fmt.Sprintf("error:stats:%s", normalizeDomainName(domain))
 }
 
 // RecordSuccess records a successful request - ATOMIC

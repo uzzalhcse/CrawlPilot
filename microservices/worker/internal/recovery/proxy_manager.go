@@ -148,6 +148,7 @@ func (pm *ProxyManager) GetNext(ctx context.Context) (*Proxy, error) {
 
 // GetForDomain returns a proxy that works well for a specific domain
 func (pm *ProxyManager) GetForDomain(ctx context.Context, domain string) (*Proxy, error) {
+	domain = normalizeDomainName(domain)
 	pm.mu.RLock()
 	workingIDs, hasSpecific := pm.domainProxies[domain]
 	pm.mu.RUnlock()
@@ -181,6 +182,7 @@ func (pm *ProxyManager) getByID(id string) *Proxy {
 
 // RecordSuccess records a successful request with a proxy
 func (pm *ProxyManager) RecordSuccess(ctx context.Context, proxyID, domain string) error {
+	domain = normalizeDomainName(domain)
 	// Update database
 	query := `
 		UPDATE proxies 
@@ -224,6 +226,7 @@ func (pm *ProxyManager) RecordSuccess(ctx context.Context, proxyID, domain strin
 
 // RecordFailure records a failed request with a proxy
 func (pm *ProxyManager) RecordFailure(ctx context.Context, proxyID, domain string, pattern ErrorPattern) error {
+	domain = normalizeDomainName(domain)
 	// Calculate if proxy should be marked unhealthy
 	// Block-related patterns are more serious
 	healthyUpdate := "is_healthy"

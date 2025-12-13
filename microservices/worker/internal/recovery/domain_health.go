@@ -42,7 +42,7 @@ func NewDomainHealth(c *cache.Cache) *DomainHealth {
 
 // keyFor returns the Redis key for a domain
 func (d *DomainHealth) keyFor(domain string) string {
-	return fmt.Sprintf("domain:health:%s", domain)
+	return fmt.Sprintf("domain:health:%s", normalizeDomainName(domain))
 }
 
 // Get retrieves the health status for a domain

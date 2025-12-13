@@ -220,6 +220,12 @@ type RecoveryAttempt struct {
 	Success       bool           `json:"success"`
 	Duration      time.Duration  `json:"duration"`
 	Timestamp     time.Time      `json:"timestamp"`
+	// Task-level fields (populated from task after execution for accurate reporting)
+	ProxyID    string `json:"proxy_id,omitempty"`
+	ProxyTier  int    `json:"proxy_tier,omitempty"`
+	TierFrom   int    `json:"tier_from,omitempty"`
+	TierTo     int    `json:"tier_to,omitempty"`
+	RetryCount int    `json:"retry_count,omitempty"`
 }
 
 // Manager is the main interface for the recovery system

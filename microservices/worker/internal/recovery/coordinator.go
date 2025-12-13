@@ -76,6 +76,16 @@ const (
 	keyRecoveryResult = "recovery:result:%s:%s" // domain:pattern
 )
 
+// lockKeyFor returns normalized lock key
+func lockKeyFor(domain string, pattern ErrorPattern) string {
+	return fmt.Sprintf(keyRecoveryLock, normalizeDomainName(domain), pattern)
+}
+
+// resultKeyFor returns normalized result key
+func resultKeyFor(domain string, pattern ErrorPattern) string {
+	return fmt.Sprintf(keyRecoveryResult, normalizeDomainName(domain), pattern)
+}
+
 // NewRecoveryCoordinator creates a new recovery coordinator
 func NewRecoveryCoordinator(c *cache.Cache, workerID string, config *CoordinatorConfig) *RecoveryCoordinator {
 	if config == nil {
@@ -96,8 +106,8 @@ func (c *RecoveryCoordinator) TryAcquireCoordination(ctx context.Context, domain
 		return RoleNone, nil, nil // No Redis, no coordination
 	}
 
-	lockKey := fmt.Sprintf(keyRecoveryLock, domain, pattern)
-	resultKey := fmt.Sprintf(keyRecoveryResult, domain, pattern)
+	lockKey := lockKeyFor(domain, pattern)
+	resultKey := resultKeyFor(domain, pattern)
 
 	// First, check if there's already a cached result (another worker completed recovery)
 	existingResult, err := c.getResult(ctx, resultKey)
@@ -143,8 +153,8 @@ func (c *RecoveryCoordinator) TryCoordinateNonBlocking(ctx context.Context, doma
 		return RoleNone, nil, true // No Redis, proceed independently
 	}
 
-	lockKey := fmt.Sprintf(keyRecoveryLock, domain, pattern)
-	resultKey := fmt.Sprintf(keyRecoveryResult, domain, pattern)
+	lockKey := lockKeyFor(domain, pattern)
+	resultKey := resultKeyFor(domain, pattern)
 
 	// Check for cached result first (very fast)
 	existingResult, err := c.getResult(ctx, resultKey)
@@ -184,7 +194,7 @@ func (c *RecoveryCoordinator) WaitForResult(ctx context.Context, domain string, 
 		return nil
 	}
 
-	resultKey := fmt.Sprintf(keyRecoveryResult, domain, pattern)
+	resultKey := resultKeyFor(domain, pattern)
 	deadline := time.Now().Add(c.config.WaitTimeout)
 
 	for time.Now().Before(deadline) {
@@ -220,8 +230,8 @@ func (c *RecoveryCoordinator) PublishResult(ctx context.Context, domain string, 
 		return nil
 	}
 
-	resultKey := fmt.Sprintf(keyRecoveryResult, domain, pattern)
-	lockKey := fmt.Sprintf(keyRecoveryLock, domain, pattern)
+	resultKey := resultKeyFor(domain, pattern)
+	lockKey := lockKeyFor(domain, pattern)
 
 	result := &RecoveryResult{
 		Plan:          plan,
@@ -261,7 +271,7 @@ func (c *RecoveryCoordinator) ReleaseLock(ctx context.Context, domain string, pa
 		return nil
 	}
 
-	lockKey := fmt.Sprintf(keyRecoveryLock, domain, pattern)
+	lockKey := lockKeyFor(domain, pattern)
 	return c.cache.Delete(ctx, lockKey)
 }
 
@@ -309,6 +319,6 @@ func (c *RecoveryCoordinator) InvalidateResult(ctx context.Context, domain strin
 		return nil
 	}
 
-	resultKey := fmt.Sprintf(keyRecoveryResult, domain, pattern)
+	resultKey := resultKeyFor(domain, pattern)
 	return c.cache.Delete(ctx, resultKey)
 }

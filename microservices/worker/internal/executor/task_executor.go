@@ -663,7 +663,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 				// Record the failure outcome for rule stats and AI learning
 				// before clearing history
 				failDuration := time.Since(startTime)
-				if err := e.recoveryManager.RecordRecoveryFailure(ctx, task.TaskID, failDuration); err != nil {
+				if err := e.recoveryManager.RecordRecoveryFailureWithTask(ctx, task.TaskID, failDuration, task.ProxyID, int(task.ProxyTier), task.RetryCount); err != nil {
 					logger.Warn("Failed to record recovery failure outcome", zap.Error(err))
 				}
 
@@ -687,13 +687,14 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 	if e.recoveryManager != nil {
 		e.recoveryManager.RecordSuccess(ctx, task.URL)
 
-		// If this was a recovery retry (tier escalated), persist the learned optimal tier
+		// If this was a recovery retry (tier escalated), persist the learned optimal tier to DB
 		if task.RetryCount > 0 && currentTier > models.TierDirect {
 			if tieredProxy := e.recoveryManager.GetTieredProxyManager(); tieredProxy != nil {
-				if err := tieredProxy.SetDomainTier(ctx, domain, currentTier); err != nil {
+				// Use SetDomainTierWithDB to persist to both Redis AND database
+				if err := tieredProxy.SetDomainTierWithDB(ctx, domain, currentTier, 0.8); err != nil {
 					logger.Warn("Failed to persist learned tier", zap.Error(err))
 				} else {
-					logger.Info("Recovery successful - persisted optimal tier",
+					logger.Info("Recovery successful - persisted optimal tier to DB",
 						zap.String("domain", domain),
 						zap.Int("tier", int(currentTier)),
 						zap.Int("retry_count", task.RetryCount),
@@ -705,7 +706,7 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 		// If this was a recovery retry, record the successful outcome
 		// This updates rule stats, AI learning, and domain health BEFORE clearing history
 		if task.RetryCount > 0 {
-			if err := e.recoveryManager.RecordRecoverySuccess(ctx, task.TaskID, duration); err != nil {
+			if err := e.recoveryManager.RecordRecoverySuccessWithTask(ctx, task.TaskID, duration, task.ProxyID, int(task.ProxyTier), task.RetryCount); err != nil {
 				logger.Warn("Failed to record recovery success",
 					zap.String("task_id", task.TaskID),
 					zap.Error(err),
@@ -1332,46 +1333,51 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 						// Execute the recovery plan (now tier-aware)
 						if execErr := e.recoveryManager.ExecutePlan(ctx, plan, task.URL); execErr != nil {
 							logger.Warn("Failed to execute recovery plan", zap.Error(execErr))
-						} else if plan.ShouldRetry {
-							// Proxy was switched - republish task to get fresh browser context with new proxy
-							if proxyURL, ok := plan.Params["proxy_url"].(string); ok {
-								task.ProxyURL = proxyURL
-							}
-							if proxyID, ok := plan.Params["proxy_id"].(string); ok {
-								task.ProxyID = proxyID
-							}
-							// Preserve proxy tier from recovery plan (may have escalated)
-							if proxyTier, ok := plan.Params["proxy_tier"].(models.ProxyTier); ok {
-								task.ProxyTier = proxyTier
-							}
+						} else {
+							// Sync plan.Params changes (tier_from, tier_to, proxy_id) back to history
+							e.recoveryManager.UpdateLastAttemptPlan(ctx, task.TaskID, plan)
 
-							// Republish task for fresh execution with new proxy
-							task.RetryCount++
-							if e.pubsubClient != nil && task.RetryCount <= e.retryConfig.MaxRetries {
-								// IMPORTANT: Increment queue counter BEFORE publishing to prevent race condition
-								// This ensures the retry task is counted before original task completes
-								if e.completionTracker != nil {
-									e.completionTracker.TaskQueued(ctx, task.ExecutionID, 1)
+							if plan.ShouldRetry {
+								// Proxy was switched - republish task to get fresh browser context with new proxy
+								if proxyURL, ok := plan.Params["proxy_url"].(string); ok {
+									task.ProxyURL = proxyURL
+								}
+								if proxyID, ok := plan.Params["proxy_id"].(string); ok {
+									task.ProxyID = proxyID
+								}
+								// Preserve proxy tier from recovery plan (may have escalated)
+								if proxyTier, ok := plan.Params["proxy_tier"].(int); ok {
+									task.ProxyTier = models.ProxyTier(proxyTier)
 								}
 
-								logger.Info("Republishing task with new proxy for retry",
-									zap.String("task_id", task.TaskID),
-									zap.String("node_id", node.ID),
-									zap.String("proxy_id", task.ProxyID),
-									zap.Int("proxy_tier", int(task.ProxyTier)),
-									zap.Int("retry_count", task.RetryCount),
-								)
-								if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
-									// Rollback the queue counter on publish failure
+								// Republish task for fresh execution with new proxy
+								task.RetryCount++
+								if e.pubsubClient != nil && task.RetryCount <= e.retryConfig.MaxRetries {
+									// IMPORTANT: Increment queue counter BEFORE publishing to prevent race condition
+									// This ensures the retry task is counted before original task completes
 									if e.completionTracker != nil {
-										e.completionTracker.TaskCompleted(ctx, task.ExecutionID)
+										e.completionTracker.TaskQueued(ctx, task.ExecutionID, 1)
 									}
-									logger.Error("Failed to republish task for proxy retry", zap.Error(pubErr))
-								} else {
-									// Record recovery success - task will be retried with new proxy
-									e.recoveryManager.RecordRecoverySuccess(ctx, task.TaskID, 0)
-									// Return early - a new task message will handle the retry
-									return execCtx.Page, result, nil
+
+									logger.Info("Republishing task with new proxy for retry",
+										zap.String("task_id", task.TaskID),
+										zap.String("node_id", node.ID),
+										zap.String("proxy_id", task.ProxyID),
+										zap.Int("proxy_tier", int(task.ProxyTier)),
+										zap.Int("retry_count", task.RetryCount),
+									)
+									if pubErr := e.pubsubClient.PublishTask(ctx, task); pubErr != nil {
+										// Rollback the queue counter on publish failure
+										if e.completionTracker != nil {
+											e.completionTracker.TaskCompleted(ctx, task.ExecutionID)
+										}
+										logger.Error("Failed to republish task for proxy retry", zap.Error(pubErr))
+									} else {
+										// Record recovery success - task will be retried with new proxy
+										e.recoveryManager.RecordRecoverySuccess(ctx, task.TaskID, 0)
+										// Return early - a new task message will handle the retry
+										return execCtx.Page, result, nil
+									}
 								}
 							}
 						}

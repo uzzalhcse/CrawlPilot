@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/microservices/shared/database"
 )
 
@@ -76,6 +77,7 @@ func (r *RecoveryAttemptRepository) CreateAttempt(ctx context.Context, attempt *
 
 // CreateAttemptsBatch creates multiple recovery attempts in a single transaction (high-throughput)
 // Uses multi-value INSERT for better performance than individual inserts
+// If attempt.ID is provided (worker-generated), use it; otherwise let DB generate UUID
 func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, attempts []RecoveryAttempt) (int, error) {
 	if len(attempts) == 0 {
 		return 0, nil
@@ -85,12 +87,12 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 	// Format: INSERT INTO table (...) VALUES ($1,$2,...), ($n+1,$n+2,...), ...
 	query := `
 		INSERT INTO recovery_attempts (
-			execution_id, task_id, workflow_id, url, domain,
+			id, execution_id, task_id, workflow_id, url, domain,
 			error_pattern, error_message, status_code, status, source,
 			confidence, trigger_reason
 		) VALUES `
 
-	paramsPerRow := 11 // Added status as dynamic parameter
+	paramsPerRow := 12 // Added id as parameter
 	args := make([]interface{}, 0, len(attempts)*paramsPerRow)
 	valueStrings := make([]string, 0, len(attempts))
 
@@ -101,10 +103,16 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 		if status == "" {
 			status = "detected"
 		}
+		// Use worker-provided ID if available, otherwise generate new UUID
+		id := attempt.ID
+		if id == "" {
+			id = uuid.New().String()
+		}
 		valueStrings = append(valueStrings,
-			fmt.Sprintf("($%d, $%d, NULLIF($%d, '')::uuid, $%d, $%d, $%d, $%d, $%d, $%d, 'pending', $%d, NULLIF($%d, ''))",
-				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11))
+			fmt.Sprintf("($%d, $%d, $%d, NULLIF($%d, '')::uuid, $%d, $%d, $%d, $%d, $%d, $%d, 'pending', $%d, NULLIF($%d, ''))",
+				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12))
 		args = append(args,
+			id,
 			attempt.ExecutionID,
 			attempt.TaskID,
 			attempt.WorkflowID,
@@ -176,7 +184,7 @@ func (r *RecoveryAttemptRepository) UpdateAttemptsBatch(ctx context.Context, upd
 		return 0, nil
 	}
 
-	// Build the VALUES clause with proper parameter indexing
+	// Build the VALUES clause with proper parameter indexing and explicit type casts
 	// Each row has 13 parameters
 	paramsPerRow := 13
 	valueStrings := make([]string, 0, len(updates))
@@ -184,8 +192,9 @@ func (r *RecoveryAttemptRepository) UpdateAttemptsBatch(ctx context.Context, upd
 
 	for i, u := range updates {
 		base := i * paramsPerRow
+		// Add explicit type casts to avoid "operator does not exist: text = integer" errors
 		valueStrings = append(valueStrings,
-			fmt.Sprintf("($%d::uuid, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			fmt.Sprintf("($%d::uuid, $%d::text, $%d::text, $%d::text, $%d::text, $%d::text, $%d::integer, $%d::integer, $%d::text, $%d::integer, $%d::integer, $%d::integer, $%d::integer)",
 				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12, base+13))
 		args = append(args,
 			u.ID,
@@ -217,7 +226,8 @@ func (r *RecoveryAttemptRepository) UpdateAttemptsBatch(ctx context.Context, upd
 			proxy_tier = COALESCE(NULLIF(v.proxy_tier, 0), t.proxy_tier),
 			tier_from = COALESCE(NULLIF(v.tier_from, 0), t.tier_from),
 			tier_to = COALESCE(NULLIF(v.tier_to, 0), t.tier_to),
-			retry_count = COALESCE(NULLIF(v.retry_count, 0), t.retry_count)
+			retry_count = COALESCE(NULLIF(v.retry_count, 0), t.retry_count),
+			updated_at = NOW()
 		FROM (VALUES %s) AS v(id, action, source, status, rule_id, ai_reasoning, retry_delay_ms, duration_ms, proxy_id, proxy_tier, tier_from, tier_to, retry_count)
 		WHERE t.id = v.id
 	`, strings.Join(valueStrings, ", "))

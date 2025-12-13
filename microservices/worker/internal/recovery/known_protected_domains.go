@@ -2,6 +2,7 @@ package recovery
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -55,9 +56,34 @@ func NewKnownProtectedDomainsFromDB(ctx context.Context, c *cache.Cache, pool *p
 			for rows.Next() {
 				var domain string
 				var tier int
-				if err := rows.Scan(&domain, &tier); err == nil && tier > 0 {
-					kpd.staticDomains[domain] = models.ProxyTier(tier)
-					loadedCount++
+				if err := rows.Scan(&domain, &tier); err == nil {
+					// Load ALL tiers from DB, including tier 0 (direct)
+					// tier >= 0 means we trust the DB value
+					if tier >= 0 {
+						// Normalize domain to match lookup normalization
+						normalizedDomain := normalizeDomainName(domain)
+						kpd.staticDomains[normalizedDomain] = models.ProxyTier(tier)
+						loadedCount++
+
+						// Clear any stale Redis cache for this domain so DB is the source of truth
+						// We need to clear BOTH Redis key namespaces:
+						// 1. protected:learned:<domain> - Used by KnownProtectedDomains
+						// 2. domain:tier:<domain> - Used by TieredProxyManager
+						if c != nil {
+							// Clear protected:learned key
+							key := kpd.learnedKey(normalizedDomain)
+							c.Delete(ctx, key)
+
+							// Clear domain:tier key (used by TieredProxyManager)
+							tierKey := fmt.Sprintf("domain:tier:%s", normalizedDomain)
+							c.Delete(ctx, tierKey)
+
+							logger.Debug("Cleared Redis cache for domain (DB is source of truth)",
+								zap.String("domain", normalizedDomain),
+								zap.Int("db_tier", tier),
+							)
+						}
+					}
 				}
 			}
 			if loadedCount > 0 {
@@ -72,6 +98,14 @@ func NewKnownProtectedDomainsFromDB(ctx context.Context, c *cache.Cache, pool *p
 // GetMinimumTier returns the minimum tier required for a domain.
 // Returns TierDirect (0) if the domain is not known to be protected.
 func (kpd *KnownProtectedDomains) GetMinimumTier(ctx context.Context, domain string) models.ProxyTier {
+	tier, _ := kpd.GetMinimumTierWithSource(ctx, domain)
+	return tier
+}
+
+// GetMinimumTierWithSource returns the minimum tier and whether it came from DB.
+// Second return value is true if the domain was found in DB (staticDomains), false otherwise.
+// This allows callers to skip other caches when DB has the authoritative answer.
+func (kpd *KnownProtectedDomains) GetMinimumTierWithSource(ctx context.Context, domain string) (models.ProxyTier, bool) {
 	// Normalize domain (remove www. prefix, lowercase)
 	domain = normalizeDomainName(domain)
 
@@ -80,17 +114,17 @@ func (kpd *KnownProtectedDomains) GetMinimumTier(ctx context.Context, domain str
 	tier, ok := kpd.staticDomains[domain]
 	kpd.staticDomainsMu.RUnlock()
 	if ok {
-		return tier
+		return tier, true // Found in DB - this is authoritative
 	}
 
 	// Check parent domain (e.g., "www.amazon.com" -> "amazon.com")
 	if parentTier, ok := kpd.checkParentDomain(domain); ok {
-		return parentTier
+		return parentTier, true // Found via parent in DB - also authoritative
 	}
 
 	// Check in-memory learned cache
 	if tier, ok := kpd.learnedCache.Load(domain); ok {
-		return tier.(models.ProxyTier)
+		return tier.(models.ProxyTier), false
 	}
 
 	// Check Redis for learned tier
@@ -102,13 +136,13 @@ func (kpd *KnownProtectedDomains) GetMinimumTier(ctx context.Context, domain str
 				modelTier := models.ProxyTier(tier)
 				// Cache in memory
 				kpd.learnedCache.Store(domain, modelTier)
-				return modelTier
+				return modelTier, false
 			}
 		}
 	}
 
 	// Not protected - use Tier 0 (direct)
-	return models.TierDirect
+	return models.TierDirect, false
 }
 
 // LearnMinimumTier learns that a domain requires at least the specified tier
@@ -223,12 +257,13 @@ func (kpd *KnownProtectedDomains) learnedKey(domain string) string {
 }
 
 // Helper functions
+// normalizeDomainName normalizes a domain for consistent lookups.
+// Keeps port intact since IP:port domains are valid distinct targets.
 func normalizeDomainName(domain string) string {
 	domain = strings.ToLower(domain)
 	domain = strings.TrimPrefix(domain, "www.")
-	if colonIdx := strings.Index(domain, ":"); colonIdx != -1 {
-		domain = domain[:colonIdx]
-	}
+	// NOTE: We deliberately do NOT strip port because IP:port (e.g., 34.85.113.40:8585)
+	// is a valid distinct target that may have different protection than port 80/443
 	return domain
 }
 

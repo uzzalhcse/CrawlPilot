@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/uzzalhcse/crawlify/microservices/shared/database"
@@ -11,6 +12,13 @@ import (
 // DomainStrategyRepository handles domain_strategies CRUD operations
 type DomainStrategyRepository struct {
 	db *database.DB
+}
+
+// normalizeDomain normalizes a domain for consistent DB lookups
+func normalizeDomain(domain string) string {
+	domain = strings.ToLower(domain)
+	domain = strings.TrimPrefix(domain, "www.")
+	return domain
 }
 
 // DomainStrategy represents a learned strategy from the domain_strategies table
@@ -116,6 +124,7 @@ func (r *DomainStrategyRepository) GetAll(ctx context.Context, status string, li
 
 // GetByDomain returns a single domain strategy
 func (r *DomainStrategyRepository) GetByDomain(ctx context.Context, domain string) (*DomainStrategy, error) {
+	domain = normalizeDomain(domain)
 	query := `SELECT 
 		id, domain, recommended_tier, tier_confidence,
 		session_requirement, detected_cookies,
@@ -149,6 +158,7 @@ func (r *DomainStrategyRepository) GetByDomain(ctx context.Context, domain strin
 
 // Delete removes a domain strategy (clears learning)
 func (r *DomainStrategyRepository) Delete(ctx context.Context, domain string) error {
+	domain = normalizeDomain(domain)
 	query := `DELETE FROM domain_strategies WHERE domain = $1`
 	result, err := r.db.Pool.Exec(ctx, query, domain)
 	if err != nil {

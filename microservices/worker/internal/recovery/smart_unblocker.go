@@ -168,6 +168,9 @@ func (u *SmartUnblocker) LoadStrategiesForExecution(ctx context.Context, domains
 // GetStrategy returns the strategy for a domain
 // OPTIMIZED: Uses 3-tier cache: in-memory → Redis → DB
 func (u *SmartUnblocker) GetStrategy(ctx context.Context, domain string) *models.DomainStrategy {
+	// Normalize domain for consistent lookups
+	domain = normalizeDomainName(domain)
+
 	// Tier 1: Check in-memory cache (fastest, no network)
 	if cached, ok := u.strategyCache.Load(domain); ok {
 		entry := cached.(*strategyCacheEntry)
@@ -283,6 +286,9 @@ func (u *SmartUnblocker) RecordResult(ctx context.Context, executionID, domain s
 	if u.cache == nil {
 		return
 	}
+
+	// Normalize domain for consistent Redis keys
+	domain = normalizeDomainName(domain)
 
 	// Pre-compute keys
 	statsKey := fmt.Sprintf(keyExecutionStats, executionID, domain)
@@ -600,6 +606,7 @@ func (u *SmartUnblocker) RecordSessionCookies(ctx context.Context, executionID, 
 	if u.cache == nil {
 		return
 	}
+	domain = normalizeDomainName(domain)
 
 	// Check for anti-bot cookies
 	detected := DetectAntiBotCookies(cookieNames)

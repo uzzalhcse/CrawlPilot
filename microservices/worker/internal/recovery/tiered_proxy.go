@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
@@ -19,6 +20,7 @@ type TieredProxyManager struct {
 	*DistributedProxyManager
 	config         *TieredProxyConfig
 	knownProtected *KnownProtectedDomains // Skip Tier 0 for known protected domains
+	dbPool         *pgxpool.Pool          // Database pool for tier persistence
 }
 
 // TieredProxyConfig configures the tiered proxy system
@@ -147,11 +149,23 @@ func (m *TieredProxyManager) selectProxyByTier(ctx context.Context, domain strin
 // GetOptimalTierForDomain returns the recommended tier for a domain
 // IMPROVED: Checks known protected domains to skip Tier 0 waste
 func (m *TieredProxyManager) GetOptimalTierForDomain(ctx context.Context, domain string) models.ProxyTier {
-	// First: Check if domain is known to require proxies (skip Tier 0)
+	// Normalize domain for consistent lookups
+	domain = normalizeDomainName(domain)
+
+	// First: Check if domain has a DB-defined strategy (authoritative source)
 	if m.knownProtected != nil {
-		minTier := m.knownProtected.GetMinimumTier(ctx, domain)
+		minTier, fromDB := m.knownProtected.GetMinimumTierWithSource(ctx, domain)
+		if fromDB {
+			// DB is the source of truth - use this tier, even if it's 0 (direct)
+			logger.Debug("Domain tier from DB (authoritative)",
+				zap.String("domain", domain),
+				zap.Int("tier", int(minTier)),
+			)
+			return minTier
+		}
+		// Not in DB, but knownProtected might have learned it from Redis
 		if minTier > models.TierDirect {
-			logger.Debug("Domain requires minimum tier (known protected)",
+			logger.Debug("Domain requires minimum tier (learned)",
 				zap.String("domain", domain),
 				zap.Int("min_tier", int(minTier)),
 			)
@@ -159,7 +173,7 @@ func (m *TieredProxyManager) GetOptimalTierForDomain(ctx context.Context, domain
 		}
 	}
 
-	// Second: Check cached/learned tier from previous requests
+	// Second: Check cached/learned tier from previous requests (only for domains NOT in DB)
 	tierKey := fmt.Sprintf(keyDomainTier, domain)
 	tierStr, err := m.cache.Get(ctx, tierKey)
 	if err == nil && tierStr != "" {
@@ -172,15 +186,77 @@ func (m *TieredProxyManager) GetOptimalTierForDomain(ctx context.Context, domain
 	return models.TierDirect
 }
 
-// SetDomainTier sets the recommended tier for a domain
+// SetDomainTier sets the recommended tier for a domain (Redis only - use SetDomainTierWithDB for persistence)
 func (m *TieredProxyManager) SetDomainTier(ctx context.Context, domain string, tier models.ProxyTier) error {
+	domain = normalizeDomainName(domain)
 	tierKey := fmt.Sprintf(keyDomainTier, domain)
 	return m.cache.Set(ctx, tierKey, fmt.Sprintf("%d", tier), 24*time.Hour)
+}
+
+// SetDBPool sets the database pool for tier persistence
+func (m *TieredProxyManager) SetDBPool(pool *pgxpool.Pool) {
+	m.dbPool = pool
+}
+
+// SetDomainTierWithDB sets the tier in Redis AND persists to domain_strategies table
+// This ensures learned tiers survive beyond the 24h Redis TTL
+func (m *TieredProxyManager) SetDomainTierWithDB(ctx context.Context, domain string, tier models.ProxyTier, confidence float64) error {
+	domain = normalizeDomainName(domain)
+
+	// 1. Set in Redis cache (fast path)
+	tierKey := fmt.Sprintf(keyDomainTier, domain)
+	if err := m.cache.Set(ctx, tierKey, fmt.Sprintf("%d", tier), 24*time.Hour); err != nil {
+		logger.Warn("Failed to set tier in Redis", zap.String("domain", domain), zap.Error(err))
+		// Continue to try DB persistence
+	}
+
+	// 2. Update in-memory cache (knownProtected)
+	if m.knownProtected != nil {
+		m.knownProtected.AddStaticDomain(domain, tier)
+	}
+
+	// 3. Persist to database (durable storage)
+	if m.dbPool != nil {
+		query := `
+			INSERT INTO domain_strategies (domain, recommended_tier, tier_confidence, learning_status, sample_size)
+			VALUES ($1, $2, $3, 'stable', 1)
+			ON CONFLICT (domain) DO UPDATE SET
+				recommended_tier = CASE 
+					-- De-escalate: Use new tier if it's lower
+					WHEN EXCLUDED.recommended_tier < domain_strategies.recommended_tier THEN EXCLUDED.recommended_tier
+					-- Escalate: Use new tier if it's higher and has better confidence
+					WHEN EXCLUDED.recommended_tier > domain_strategies.recommended_tier 
+						 AND EXCLUDED.tier_confidence >= domain_strategies.tier_confidence THEN EXCLUDED.recommended_tier
+					ELSE domain_strategies.recommended_tier
+				END,
+				tier_confidence = GREATEST(EXCLUDED.tier_confidence, domain_strategies.tier_confidence),
+				learning_status = 'stable',
+				sample_size = domain_strategies.sample_size + 1,
+				updated_at = NOW()
+		`
+		if _, err := m.dbPool.Exec(ctx, query, domain, tier, confidence); err != nil {
+			logger.Warn("Failed to persist tier to DB",
+				zap.String("domain", domain),
+				zap.Int("tier", int(tier)),
+				zap.Error(err),
+			)
+			// Don't fail - Redis write may have succeeded
+		} else {
+			logger.Info("Persisted domain tier to DB",
+				zap.String("domain", domain),
+				zap.Int("tier", int(tier)),
+				zap.Float64("confidence", confidence),
+			)
+		}
+	}
+
+	return nil
 }
 
 // RecordTierResult records success/failure for tier learning
 // Also triggers tier de-escalation if lower tier succeeds (with min sample check)
 func (m *TieredProxyManager) RecordTierResult(ctx context.Context, domain string, tier models.ProxyTier, success bool) error {
+	domain = normalizeDomainName(domain)
 	attemptKey := fmt.Sprintf(keyTierAttempts, domain, tier)
 
 	if success {
@@ -220,6 +296,7 @@ func (m *TieredProxyManager) RecordTierResult(ctx context.Context, domain string
 
 // ShouldEscalateTier determines if we should try a higher tier
 func (m *TieredProxyManager) ShouldEscalateTier(ctx context.Context, domain string, currentTier models.ProxyTier) (bool, models.ProxyTier) {
+	domain = normalizeDomainName(domain)
 	if currentTier >= models.TierMobile {
 		return false, currentTier // Already at highest tier
 	}
@@ -268,6 +345,7 @@ func (m *TieredProxyManager) ShouldEscalateTier(ctx context.Context, domain stri
 
 // GetTierStats returns statistics for all tiers for a domain
 func (m *TieredProxyManager) GetTierStats(ctx context.Context, domain string) map[models.ProxyTier]*models.TierStats {
+	domain = normalizeDomainName(domain)
 	stats := make(map[models.ProxyTier]*models.TierStats)
 
 	for tier := models.TierDirect; tier <= models.TierMobile; tier++ {

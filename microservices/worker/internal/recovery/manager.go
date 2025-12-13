@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uzzalhcse/crawlify/microservices/shared/cache"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
@@ -159,6 +160,11 @@ func NewRecoveryManager(
 	// Initialize tiered proxy manager with configurable settings
 	tieredProxyConfig := configManager.GetTieredProxyConfig(ctx)
 	tieredProxy := NewTieredProxyManager(cache, DefaultProxyRotationConfig(), tieredProxyConfig)
+
+	// Wire up database pool for tier persistence (so SetDomainTierWithDB can update domain_strategies)
+	if tieredProxy != nil && pool != nil {
+		tieredProxy.SetDBPool(pool)
+	}
 
 	// Configure known protected domains - load from domain_strategies table (single source of truth)
 	// This replaces the old config-based approach with DB-based learning
@@ -386,12 +392,19 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 	// Record ALL error detections for tracking/debugging
 	// Status: 'detected' if below threshold, 'pending' if recovery triggered
 	// =====================================================
+	// Generate attempt ID early so we can use it for both create and update
+	var attemptID string
+	if shouldTrigger {
+		attemptID = uuid.New().String()
+	}
+
 	if m.recoveryReporter != nil {
 		status := "detected" // Below threshold - just logging the error
 		if shouldTrigger {
 			status = "pending" // Recovery will be attempted
 		}
 		createReq := &reporter.CreateAttemptRequest{
+			ID:            attemptID, // Worker-generated ID for correlation with updates
 			ExecutionID:   executionID,
 			TaskID:        taskID,
 			WorkflowID:    workflowID,
@@ -406,6 +419,7 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 		}
 		logger.Debug("Queueing recovery attempt for reporting",
 			zap.String("task_id", taskID),
+			zap.String("attempt_id", attemptID),
 			zap.String("domain", detected.Domain),
 			zap.String("pattern", string(detected.Pattern)),
 			zap.String("status", status),
@@ -424,9 +438,7 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 		return nil, nil
 	}
 
-	// For high-throughput, we skip individual attempt tracking via attemptID
-	// The orchestrator aggregates stats from the async batched inserts
-	var attemptID string // Empty - we don't track individual attempts at this scale
+	// attemptID is already set above when shouldTrigger is true
 
 	// Check recovery attempt limit for this specific task
 	history := m.getHistory(taskID)
@@ -479,6 +491,8 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 						zap.String("coordinator", cachedResult.CoordinatorID),
 						zap.String("action", string(cachedResult.Plan.Action)),
 					)
+					// Set our attemptID on the cached plan so we can update our own attempt record
+					cachedResult.Plan.AttemptID = attemptID
 					m.recordAttempt(taskID, executionID, detected, cachedResult.Plan)
 					return cachedResult.Plan, nil
 				}
@@ -497,6 +511,8 @@ func (m *RecoveryManager) TryRecover(ctx context.Context, taskID, executionID, w
 					m.coordinator.ReleaseLock(ctx, detected.Domain, detected.Pattern)
 					return nil, err
 				}
+				// Set attemptID for our own record updates
+				plan.AttemptID = attemptID
 				// Publish result for other workers (async to not block)
 				go func() {
 					pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -607,22 +623,55 @@ func (m *RecoveryManager) RecordOutcome(ctx context.Context, attempt *RecoveryAt
 		if reasoning, ok := attempt.Plan.Params["ai_reasoning"].(string); ok {
 			updateReq.AIReasoning = reasoning
 		}
-		// Add proxy and tier info if available
-		if proxyID, ok := attempt.Plan.Params["proxy_id"].(string); ok {
+		// Prefer task-level fields (populated after execution) over Plan.Params (from before execution)
+		if attempt.ProxyID != "" {
+			updateReq.ProxyID = attempt.ProxyID
+		} else if proxyID, ok := attempt.Plan.Params["proxy_id"].(string); ok {
 			updateReq.ProxyID = proxyID
 		}
-		if proxyTier, ok := attempt.Plan.Params["proxy_tier"].(int); ok {
+		if attempt.ProxyTier > 0 {
+			updateReq.ProxyTier = attempt.ProxyTier
+		} else if proxyTier, ok := attempt.Plan.Params["proxy_tier"].(int); ok {
 			updateReq.ProxyTier = proxyTier
+		} else if proxyTier, ok := attempt.Plan.Params["proxy_tier"].(float64); ok {
+			updateReq.ProxyTier = int(proxyTier)
 		}
-		if tierFrom, ok := attempt.Plan.Params["tier_from"].(int); ok {
+		if attempt.TierFrom > 0 {
+			updateReq.TierFrom = attempt.TierFrom
+		} else if tierFrom, ok := attempt.Plan.Params["tier_from"].(int); ok {
 			updateReq.TierFrom = tierFrom
+		} else if tierFrom, ok := attempt.Plan.Params["tier_from"].(float64); ok {
+			updateReq.TierFrom = int(tierFrom)
 		}
-		if tierTo, ok := attempt.Plan.Params["tier_to"].(int); ok {
+		if attempt.TierTo > 0 {
+			updateReq.TierTo = attempt.TierTo
+		} else if tierTo, ok := attempt.Plan.Params["tier_to"].(int); ok {
 			updateReq.TierTo = tierTo
+		} else if tierTo, ok := attempt.Plan.Params["tier_to"].(float64); ok {
+			updateReq.TierTo = int(tierTo)
 		}
-		if retryCount, ok := attempt.Plan.Params["retry_count"].(int); ok {
+		if attempt.RetryCount > 0 {
+			updateReq.RetryCount = attempt.RetryCount
+		} else if retryCount, ok := attempt.Plan.Params["retry_count"].(int); ok {
 			updateReq.RetryCount = retryCount
+		} else if retryCount, ok := attempt.Plan.Params["retry_count"].(float64); ok {
+			updateReq.RetryCount = int(retryCount)
 		}
+
+		// Log recovery attempt update for debugging
+		logger.Info("Sending recovery attempt update to orchestrator",
+			zap.String("attempt_id", attempt.Plan.AttemptID),
+			zap.String("task_id", attempt.TaskID),
+			zap.String("status", updateReq.Status),
+			zap.String("action", updateReq.Action),
+			zap.String("proxy_id", updateReq.ProxyID),
+			zap.Int("proxy_tier", updateReq.ProxyTier),
+			zap.Int("tier_from", updateReq.TierFrom),
+			zap.Int("tier_to", updateReq.TierTo),
+			zap.Int("retry_count", updateReq.RetryCount),
+			zap.Int("duration_ms", updateReq.DurationMs),
+		)
+
 		m.recoveryReporter.UpdateAttemptAsync(ctx, attempt.Plan.AttemptID, updateReq)
 	}
 
@@ -670,6 +719,17 @@ func (m *RecoveryManager) ExecutePlan(ctx context.Context, plan *RecoveryPlan, t
 					zap.Int("from_tier", int(originalTier)),
 					zap.Int("to_tier", int(nextTier)),
 				)
+
+				// Persist to DB during escalation to ensure durability
+				// Even if retry fails, we want to remember the learned tier
+				// Redis handles fast coordination, DB provides durability
+				if err := m.tieredProxy.SetDomainTierWithDB(ctx, domain, nextTier, 0.7); err != nil {
+					logger.Warn("Failed to persist escalated tier to DB",
+						zap.String("domain", domain),
+						zap.Int("tier", int(nextTier)),
+						zap.Error(err),
+					)
+				}
 			}
 
 			// Get proxy from the appropriate tier
@@ -982,6 +1042,46 @@ func (m *RecoveryManager) ClearHistory(taskID string) {
 	m.cache.Delete(ctx, key)
 }
 
+// UpdateLastAttemptPlan updates the last recovery attempt's plan in history
+// This should be called after ExecutePlan to sync plan.Params changes (tier_from, tier_to, proxy_id, etc.)
+func (m *RecoveryManager) UpdateLastAttemptPlan(ctx context.Context, taskID string, plan *RecoveryPlan) {
+	if m.cache == nil || plan == nil {
+		return
+	}
+
+	// Get the current history
+	history := m.getHistory(taskID)
+	if len(history) == 0 {
+		return
+	}
+
+	// Update the last attempt's plan
+	lastAttempt := history[len(history)-1]
+	lastAttempt.Plan = plan
+
+	// Rebuild the history JSON and overwrite
+	key := m.historyKeyFor(taskID)
+	// Delete and re-push all attempts
+	m.cache.Delete(ctx, key)
+	for _, attempt := range history {
+		data, err := json.Marshal(attempt)
+		if err != nil {
+			continue
+		}
+		m.cache.RPush(ctx, key, string(data))
+	}
+	m.cache.Expire(ctx, key, 1*time.Hour)
+
+	proxyID := ""
+	if pid, ok := plan.Params["proxy_id"].(string); ok {
+		proxyID = pid
+	}
+	logger.Debug("Updated last attempt plan in history",
+		zap.String("task_id", taskID),
+		zap.String("proxy_id", proxyID),
+	)
+}
+
 // RecordRecoverySuccess should be called when a task that was previously retried
 // via recovery now succeeds. This updates rule success stats, AI learning outcomes,
 // and domain health to help the system learn which recovery strategies work.
@@ -1035,6 +1135,96 @@ func (m *RecoveryManager) RecordRecoveryFailure(ctx context.Context, taskID stri
 	// Update the attempt with failure outcome
 	lastAttempt.Success = false
 	lastAttempt.Duration = duration
+
+	// Call RecordOutcome to update rule stats, AI learning, and domain health
+	return m.RecordOutcome(ctx, lastAttempt)
+}
+
+// RecordRecoverySuccessWithTask should be called when a task that was previously retried
+// via recovery now succeeds. This version accepts task-level info (proxy, tier, retry count)
+// to ensure accurate updates to the recovery_attempts table.
+func (m *RecoveryManager) RecordRecoverySuccessWithTask(ctx context.Context, taskID string, duration time.Duration, proxyID string, proxyTier, retryCount int) error {
+	if !m.config.Enabled {
+		return nil
+	}
+
+	// Get the last recovery attempt from history
+	history := m.getHistory(taskID)
+	if len(history) == 0 {
+		// No recovery history - nothing to update
+		return nil
+	}
+
+	// Get the most recent attempt
+	lastAttempt := history[len(history)-1]
+	if lastAttempt.Plan == nil {
+		return nil
+	}
+
+	// Update the attempt with success outcome AND task-level fields
+	lastAttempt.Success = true
+	lastAttempt.Duration = duration
+	lastAttempt.ProxyID = proxyID
+	lastAttempt.ProxyTier = proxyTier
+	lastAttempt.RetryCount = retryCount
+
+	// Get tier escalation info from Plan.Params if available
+	// Note: JSON unmarshaling may produce float64 instead of int, so check both
+	if tierFrom, ok := lastAttempt.Plan.Params["tier_from"].(int); ok {
+		lastAttempt.TierFrom = tierFrom
+	} else if tierFrom, ok := lastAttempt.Plan.Params["tier_from"].(float64); ok {
+		lastAttempt.TierFrom = int(tierFrom)
+	}
+	if tierTo, ok := lastAttempt.Plan.Params["tier_to"].(int); ok {
+		lastAttempt.TierTo = tierTo
+	} else if tierTo, ok := lastAttempt.Plan.Params["tier_to"].(float64); ok {
+		lastAttempt.TierTo = int(tierTo)
+	}
+
+	// Call RecordOutcome to update rule stats, AI learning, and domain health
+	return m.RecordOutcome(ctx, lastAttempt)
+}
+
+// RecordRecoveryFailureWithTask should be called when a task that was retried via recovery
+// has exhausted all retries and is going to DLQ. This version accepts task-level info
+// (proxy, tier, retry count) to ensure accurate updates to the recovery_attempts table.
+func (m *RecoveryManager) RecordRecoveryFailureWithTask(ctx context.Context, taskID string, duration time.Duration, proxyID string, proxyTier, retryCount int) error {
+	if !m.config.Enabled {
+		return nil
+	}
+
+	// Get the last recovery attempt from history
+	history := m.getHistory(taskID)
+	if len(history) == 0 {
+		// No recovery history - nothing to update
+		return nil
+	}
+
+	// Get the most recent attempt
+	lastAttempt := history[len(history)-1]
+	if lastAttempt.Plan == nil {
+		return nil
+	}
+
+	// Update the attempt with failure outcome AND task-level fields
+	lastAttempt.Success = false
+	lastAttempt.Duration = duration
+	lastAttempt.ProxyID = proxyID
+	lastAttempt.ProxyTier = proxyTier
+	lastAttempt.RetryCount = retryCount
+
+	// Get tier escalation info from Plan.Params if available
+	// Note: JSON unmarshaling may produce float64 instead of int, so check both
+	if tierFrom, ok := lastAttempt.Plan.Params["tier_from"].(int); ok {
+		lastAttempt.TierFrom = tierFrom
+	} else if tierFrom, ok := lastAttempt.Plan.Params["tier_from"].(float64); ok {
+		lastAttempt.TierFrom = int(tierFrom)
+	}
+	if tierTo, ok := lastAttempt.Plan.Params["tier_to"].(int); ok {
+		lastAttempt.TierTo = tierTo
+	} else if tierTo, ok := lastAttempt.Plan.Params["tier_to"].(float64); ok {
+		lastAttempt.TierTo = int(tierTo)
+	}
 
 	// Call RecordOutcome to update rule stats, AI learning, and domain health
 	return m.RecordOutcome(ctx, lastAttempt)
