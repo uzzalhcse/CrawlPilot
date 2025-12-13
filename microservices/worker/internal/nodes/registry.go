@@ -56,6 +56,9 @@ func NewRegistry() *Registry {
 	registry.Register(NewLoopNode())
 	registry.Register(NewInfiniteScrollNode())
 
+	// Universal Scraper nodes
+	registry.Register(NewExtractContentNode())
+
 	return registry
 }
 

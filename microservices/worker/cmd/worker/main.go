@@ -142,13 +142,8 @@ func main() {
 	if pubsubMode == "pull" {
 		logger.Info("Starting to pull tasks from Pub/Sub")
 
-		// Start scrape handler subscription in a separate goroutine
-		scrapeHandler := handler.NewScrapeHandler(taskExecutor.DriverFactory(), orchestratorURL)
-		go func() {
-			if err := scrapeHandler.StartSubscription(shutdownCtx, &cfg.GCP); err != nil && err != context.Canceled {
-				logger.Error("Scrape subscription error", zap.Error(err))
-			}
-		}()
+		// NOTE: ScrapeHandler removed - scrape tasks now flow through regular task queue
+		// with full recovery support via synthetic Tasks created from ScrapeRequest.ToTask()
 
 		err = pubsubClient.Subscribe(shutdownCtx, func(ctx context.Context, task *models.Task) error {
 			logger.Info("Processing task",

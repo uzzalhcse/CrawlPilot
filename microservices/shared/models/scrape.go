@@ -85,3 +85,90 @@ const (
 	DriverPlaywright = "playwright"
 	DriverCamoufox   = "camoufox"
 )
+
+// UniversalScraperWorkflowID is the synthetic workflow ID for scrape tasks
+const UniversalScraperWorkflowID = "universal-scraper"
+
+// ToTask converts a ScrapeRequest into a synthetic Task
+// This allows Universal Scraper to reuse workflow infrastructure (recovery, proxy rotation, etc.)
+func (r *ScrapeRequest) ToTask() *Task {
+	// Build navigate node params
+	navigateParams := map[string]interface{}{
+		"url": r.URL,
+	}
+	if r.WaitForSelector != "" {
+		navigateParams["wait_selector"] = r.WaitForSelector
+	}
+	if r.Timeout > 0 {
+		navigateParams["timeout"] = r.Timeout * 1000 // Convert seconds to ms
+	}
+	// Set driver override in node params (this is how getDriverForTask selects driver)
+	if r.Driver != "" {
+		navigateParams["driver"] = r.Driver
+	}
+
+	// Build extract_content node params
+	extractParams := map[string]interface{}{
+		"output_format": r.OutputFormat,
+	}
+
+	// Create nodes
+	nodes := []Node{
+		{
+			ID:     "navigate",
+			Type:   "navigate",
+			Name:   "Navigate",
+			Params: navigateParams,
+		},
+		{
+			ID:     "extract_content",
+			Type:   "extract_content",
+			Name:   "Extract Content",
+			Params: extractParams,
+		},
+	}
+
+	// Create phase with nodes embedded
+	phase := WorkflowPhase{
+		ID:    "scrape",
+		Name:  "Scrape",
+		Nodes: nodes,
+	}
+
+	// Create synthetic workflow config
+	workflowConfig := &WorkflowConfig{
+		StartURLs:     []string{r.URL},
+		DefaultDriver: r.Driver,
+		Phases:        []WorkflowPhase{phase},
+	}
+
+	// Build task metadata
+	metadata := map[string]interface{}{
+		"is_scrape":     true,
+		"scrape_id":     r.ID,
+		"output_format": r.OutputFormat,
+		"driver":        r.Driver,
+		"headless":      r.Headless,
+	}
+
+	// Set BrowserProfileID on Task struct if profile is provided
+	// This is required for getDriverForTask() to use the profile
+	var browserProfileID *string
+	if r.Profile != nil && r.ProfileID != "" {
+		browserProfileID = &r.ProfileID
+		metadata["browser_profile"] = r.Profile
+	}
+
+	return &Task{
+		TaskID:           r.ID,
+		ExecutionID:      r.ID, // Use same ID for easy result lookup
+		WorkflowID:       UniversalScraperWorkflowID,
+		URL:              r.URL,
+		PhaseID:          "scrape",
+		PhaseConfig:      phase,            // Current phase config
+		BrowserProfileID: browserProfileID, // Set profile ID for driver selection
+		Depth:            0,
+		Metadata:         metadata,
+		WorkflowConfig:   workflowConfig,
+	}
+}

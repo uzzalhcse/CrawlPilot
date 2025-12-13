@@ -49,6 +49,7 @@ type TaskExecutor struct {
 	recoveryCfg          *config.RecoveryConfig            // Recovery configuration (for feature toggles)
 	probeReporter        *reporter.ProbeReporter           // Reports probe results to orchestrator
 	captchaCookieCache   nodes.CaptchaCookieCacheInterface // Cookie cache for CAPTCHA bypass sharing
+	redisCache           *cache.Cache                      // Redis cache for Universal Scraper results
 
 	// Probe auto-fix components
 	probeAgent       *recovery.ProbeAgent       // AI agent for probe fix analysis
@@ -283,6 +284,7 @@ func NewTaskExecutor(
 		recoveryCfg:          recoveryCfg,
 		probeReporter:        probeReporter,
 		captchaCookieCache:   captchaCookieCache,
+		redisCache:           redisCache,
 		probeAgent:           probeAgent,
 		probeBaseline:        probeBaseline,
 		incidentReporter:     incidentReporter,
@@ -302,7 +304,12 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 
 	// Check if task passes URL filter for this phase
 	// Skip filter for probe mode - probe_urls are explicitly defined sample URLs
-	if !task.IsProbe && !e.passesURLFilter(task) {
+	// Skip filter for scrape tasks - they are simple single-page scrapes
+	isScrapeTask := false
+	if s, ok := task.Metadata["is_scrape"].(bool); ok {
+		isScrapeTask = s
+	}
+	if !task.IsProbe && !isScrapeTask && !e.passesURLFilter(task) {
 		logger.Info("Task filtered out by URL filter",
 			zap.String("url", task.URL),
 			zap.String("phase_id", task.PhaseID),
@@ -315,11 +322,16 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 
 	// Check for duplicate URL
 	// Skip dedup for recovery retries - these need to actually run with new proxy
+	// Skip dedup for scrape tasks - each API request is unique
 	isRecoveryRetry := task.RetryCount > 0 && task.ProxyURL != ""
+	isScrape := false
+	if s, ok := task.Metadata["is_scrape"].(bool); ok {
+		isScrape = s
+	}
 	isDuplicate, err := e.deduplicator.IsDuplicate(ctx, task.ExecutionID, task.PhaseID, task.URL)
 	if err != nil {
 		logger.Warn("Deduplication check failed", zap.Error(err))
-	} else if isDuplicate && !isRecoveryRetry {
+	} else if isDuplicate && !isRecoveryRetry && !isScrape {
 		logger.Info("Skipping duplicate URL",
 			zap.String("url", task.URL),
 		)
@@ -780,6 +792,12 @@ func (e *TaskExecutor) Execute(ctx context.Context, task *models.Task) error {
 				}
 			}()
 		}
+	}
+
+	// Universal Scraper: Store result in Redis for API polling
+	// Check if this is a scrape task (has is_scrape metadata)
+	if isScrape, ok := task.Metadata["is_scrape"].(bool); ok && isScrape {
+		e.storeScrapeResult(ctx, task, result, duration)
 	}
 
 	// Process discovered URLs with marker propagation
@@ -1730,6 +1748,13 @@ func (e *TaskExecutor) getDriverForTask(task *models.Task) (driver.Driver, bool,
 				return e.defaultDriver, false, nil
 			}
 			return playwrightDriver, true, nil // shouldClose=true to clean up after task
+
+		case "camoufox":
+			// Camoufox requires a profile, skip direct driver creation
+			// Fall through to BrowserProfileID check below
+			logger.Debug("Camoufox driver requested, checking for profile",
+				zap.String("task_id", task.TaskID),
+			)
 		}
 	}
 
@@ -1811,7 +1836,15 @@ func (e *TaskExecutor) getDriverForTask(task *models.Task) (driver.Driver, bool,
 	}
 
 	// Create driver from profile (standard path)
-	profileDriver, err := e.driverFactory.CreateDriverFromProfile(profile)
+	// For scrape tasks, respect the headless parameter from metadata
+	var profileDriver driver.Driver
+	if headless, ok := task.Metadata["headless"].(bool); ok {
+		// Scrape task with explicit headless setting
+		profileDriver, err = e.driverFactory.CreateDriverFromProfileWithHeadless(profile, headless)
+	} else {
+		// Standard path - use profile's default headless setting
+		profileDriver, err = e.driverFactory.CreateDriverFromProfile(profile)
+	}
 	if err != nil {
 		logger.Warn("Failed to create profile driver, using default",
 			zap.String("profile_id", profileID),
@@ -2164,4 +2197,78 @@ func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task
 			)
 		}
 	}
+}
+
+// storeScrapeResult stores Universal Scraper result in Redis for API polling
+// This is called when a task has is_scrape metadata set to true
+func (e *TaskExecutor) storeScrapeResult(ctx context.Context, task *models.Task, result *TaskResult, duration time.Duration) {
+	if e.redisCache == nil {
+		logger.Warn("Redis cache not available for scrape result storage",
+			zap.String("task_id", task.TaskID),
+		)
+		return
+	}
+
+	// Get scrape ID from metadata
+	scrapeID, ok := task.Metadata["scrape_id"].(string)
+	if !ok || scrapeID == "" {
+		scrapeID = task.TaskID
+	}
+
+	// Build ScrapeResult
+	scrapeResult := &models.ScrapeResult{
+		ID:       scrapeID,
+		Status:   models.ScrapeStatusCompleted,
+		URL:      task.URL,
+		Duration: duration.Milliseconds(),
+	}
+
+	// Extract content from ExtractedItems
+	if len(result.ExtractedItems) > 0 {
+		item := result.ExtractedItems[0]
+
+		// Get content type
+		if contentType, ok := item["content_type"].(string); ok {
+			scrapeResult.ContentType = contentType
+		}
+
+		// Get content or screenshot based on type
+		if content, ok := item["content"].(string); ok {
+			scrapeResult.Content = content
+		}
+		if screenshot, ok := item["screenshot"].(string); ok {
+			scrapeResult.Screenshot = screenshot
+		}
+	}
+
+	// Handle errors
+	if len(result.Errors) > 0 {
+		scrapeResult.Status = models.ScrapeStatusFailed
+		scrapeResult.Error = result.Errors[0].Error()
+	}
+
+	// Store in Redis with 10-minute TTL
+	data, err := json.Marshal(scrapeResult)
+	if err != nil {
+		logger.Error("Failed to marshal scrape result",
+			zap.String("scrape_id", scrapeID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	key := "scrape:" + scrapeID
+	if err := e.redisCache.Set(ctx, key, string(data), 10*time.Minute); err != nil {
+		logger.Error("Failed to store scrape result in Redis",
+			zap.String("scrape_id", scrapeID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	logger.Info("Scrape result stored in Redis",
+		zap.String("scrape_id", scrapeID),
+		zap.String("status", scrapeResult.Status),
+		zap.Int64("duration_ms", scrapeResult.Duration),
+	)
 }

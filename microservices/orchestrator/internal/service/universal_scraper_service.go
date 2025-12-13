@@ -21,8 +21,9 @@ const (
 )
 
 // UniversalScraperService handles universal scraper operations
+// Uses the regular task queue for processing, enabling reuse of recovery infrastructure
 type UniversalScraperService struct {
-	scrapeTopic *pubsub.Topic
+	taskTopic   *pubsub.Topic // Regular workflow-tasks topic
 	profileRepo repository.BrowserProfileRepository
 	cache       *cache.Cache
 }
@@ -34,16 +35,17 @@ func NewUniversalScraperService(
 	profileRepo repository.BrowserProfileRepository,
 	cache *cache.Cache,
 ) (*UniversalScraperService, error) {
-	// Create Pub/Sub client for scrape topic
+	// Create Pub/Sub client
 	client, err := pubsub.NewClient(ctx, cfg.ProjectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pubsub client: %w", err)
 	}
 
-	// Get or create scrape topic
-	topicName := cfg.ScrapeTopic
+	// Use regular workflow-tasks topic (same as workflows)
+	// This enables reuse of recovery, proxy rotation, tier escalation
+	topicName := cfg.PubSubTopic
 	if topicName == "" {
-		topicName = "scrape-tasks"
+		topicName = "workflow-tasks"
 	}
 
 	topic := client.Topic(topicName)
@@ -53,26 +55,22 @@ func NewUniversalScraperService(
 	}
 
 	if !exists {
-		// Create the topic if it doesn't exist
-		topic, err = client.CreateTopic(ctx, topicName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scrape topic: %w", err)
-		}
-		logger.Info("Created scrape topic", zap.String("topic", topicName))
+		return nil, fmt.Errorf("task topic %s does not exist", topicName)
 	}
 
-	logger.Info("Universal scraper service initialized",
+	logger.Info("Universal scraper service initialized (using workflow task queue)",
 		zap.String("topic", topicName),
 	)
 
 	return &UniversalScraperService{
-		scrapeTopic: topic,
+		taskTopic:   topic,
 		profileRepo: profileRepo,
 		cache:       cache,
 	}, nil
 }
 
-// SubmitScrape publishes a scrape request to the queue and stores initial status in cache
+// SubmitScrape converts scrape request to a synthetic Task and publishes to task queue
+// This allows Universal Scraper to reuse all workflow infrastructure (recovery, proxy rotation, etc.)
 func (s *UniversalScraperService) SubmitScrape(ctx context.Context, req *models.ScrapeRequest) error {
 	// If profile ID is provided, fetch and embed the profile
 	if req.ProfileID != "" && s.profileRepo != nil {
@@ -109,30 +107,35 @@ func (s *UniversalScraperService) SubmitScrape(ctx context.Context, req *models.
 		)
 	}
 
-	// Serialize request
-	data, err := json.Marshal(req)
+	// Convert ScrapeRequest to synthetic Task
+	// This is the key change - reuses workflow infrastructure
+	task := req.ToTask()
+
+	// Serialize task (not raw request)
+	data, err := json.Marshal(task)
 	if err != nil {
-		return fmt.Errorf("failed to marshal scrape request: %w", err)
+		return fmt.Errorf("failed to marshal task: %w", err)
 	}
 
-	// Publish to scrape topic
-	result2 := s.scrapeTopic.Publish(ctx, &pubsub.Message{
+	// Publish to regular task topic (same as workflows!)
+	pubResult := s.taskTopic.Publish(ctx, &pubsub.Message{
 		Data: data,
 		Attributes: map[string]string{
-			"scrape_id": req.ID,
-			"driver":    req.Driver,
-			"format":    req.OutputFormat,
+			"execution_id": task.ExecutionID,
+			"workflow_id":  task.WorkflowID,
+			"scrape_id":    req.ID,
 		},
 	})
 
 	// Wait for publish to complete
-	_, err = result2.Get(ctx)
+	_, err = pubResult.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to publish scrape request: %w", err)
+		return fmt.Errorf("failed to publish task: %w", err)
 	}
 
-	logger.Info("Scrape request published",
+	logger.Info("Scrape request submitted as synthetic task",
 		zap.String("scrape_id", req.ID),
+		zap.String("task_id", task.TaskID),
 		zap.String("url", req.URL),
 		zap.String("driver", req.Driver),
 	)
@@ -211,7 +214,7 @@ func (s *UniversalScraperService) ListProfiles(ctx context.Context) ([]map[strin
 
 // Close cleans up resources
 func (s *UniversalScraperService) Close() {
-	if s.scrapeTopic != nil {
-		s.scrapeTopic.Stop()
+	if s.taskTopic != nil {
+		s.taskTopic.Stop()
 	}
 }
