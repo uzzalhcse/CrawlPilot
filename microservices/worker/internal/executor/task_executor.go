@@ -950,6 +950,12 @@ func (e *TaskExecutor) executePhase(ctx context.Context, task *models.Task, page
 				unblocker.RecordSessionCookies(ctx, task.ExecutionID, domain, cookieNames)
 			}
 		}
+
+		// Wire up CAPTCHA solve attempt callback for recovery tracking
+		// This records CAPTCHA encounters (success or failure) in the recovery_attempts table
+		execCtx.OnCaptchaSolveAttempt = func(domain, challengeType string, solved bool, solveErr error) {
+			e.recoveryManager.RecordCaptchaSolve(ctx, task.ExecutionID, task.TaskID, task.WorkflowID, task.URL, domain, challengeType, solved, solveErr)
+		}
 	}
 
 	// Track profile-based drivers created during execution for cleanup

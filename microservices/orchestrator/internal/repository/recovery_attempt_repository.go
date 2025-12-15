@@ -56,21 +56,26 @@ func (r *RecoveryAttemptRepository) CreateAttempt(ctx context.Context, attempt *
 	if status == "" {
 		status = "pending"
 	}
+	// Default to 'pending' if no source provided
+	source := attempt.Source
+	if source == "" {
+		source = "pending"
+	}
 	query := `
 		INSERT INTO recovery_attempts (
 			execution_id, task_id, workflow_id, url, domain,
-			error_pattern, error_message, status_code, status, source,
+			error_pattern, error_message, status_code, status, action, source,
 			confidence, trigger_reason
 		) VALUES (
 			$1, $2, NULLIF($3, '')::uuid, $4, $5,
-			$6, $7, $8, $9, 'pending',
-			$10, NULLIF($11, '')
+			$6, $7, $8, $9, NULLIF($10, ''), $11,
+			$12, NULLIF($13, '')
 		) RETURNING id, created_at
 	`
 
 	return r.db.Pool.QueryRow(ctx, query,
 		attempt.ExecutionID, attempt.TaskID, attempt.WorkflowID, attempt.URL, attempt.Domain,
-		attempt.ErrorPattern, attempt.ErrorMessage, attempt.StatusCode, status,
+		attempt.ErrorPattern, attempt.ErrorMessage, attempt.StatusCode, status, attempt.Action, source,
 		attempt.Confidence, attempt.TriggerReason,
 	).Scan(&attempt.ID, &attempt.CreatedAt)
 }
@@ -88,11 +93,11 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 	query := `
 		INSERT INTO recovery_attempts (
 			id, execution_id, task_id, workflow_id, url, domain,
-			error_pattern, error_message, status_code, status, source,
+			error_pattern, error_message, status_code, status, action, source,
 			confidence, trigger_reason
 		) VALUES `
 
-	paramsPerRow := 12 // Added id as parameter
+	paramsPerRow := 14 // Added action and source as parameters
 	args := make([]interface{}, 0, len(attempts)*paramsPerRow)
 	valueStrings := make([]string, 0, len(attempts))
 
@@ -103,14 +108,19 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 		if status == "" {
 			status = "detected"
 		}
+		// Default to 'pending' if no source provided
+		source := attempt.Source
+		if source == "" {
+			source = "pending"
+		}
 		// Use worker-provided ID if available, otherwise generate new UUID
 		id := attempt.ID
 		if id == "" {
 			id = uuid.New().String()
 		}
 		valueStrings = append(valueStrings,
-			fmt.Sprintf("($%d, $%d, $%d, NULLIF($%d, '')::uuid, $%d, $%d, $%d, $%d, $%d, $%d, 'pending', $%d, NULLIF($%d, ''))",
-				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12))
+			fmt.Sprintf("($%d, $%d, $%d, NULLIF($%d, '')::uuid, $%d, $%d, $%d, $%d, $%d, $%d, NULLIF($%d, ''), $%d, $%d, NULLIF($%d, ''))",
+				base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10, base+11, base+12, base+13, base+14))
 		args = append(args,
 			id,
 			attempt.ExecutionID,
@@ -122,6 +132,8 @@ func (r *RecoveryAttemptRepository) CreateAttemptsBatch(ctx context.Context, att
 			attempt.ErrorMessage,
 			attempt.StatusCode,
 			status,
+			attempt.Action,
+			source,
 			attempt.Confidence,
 			attempt.TriggerReason,
 		)

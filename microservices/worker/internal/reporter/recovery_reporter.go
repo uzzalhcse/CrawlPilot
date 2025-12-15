@@ -42,6 +42,8 @@ type CreateAttemptRequest struct {
 	Confidence    float64 `json:"confidence,omitempty"`
 	TriggerReason string  `json:"trigger_reason,omitempty"`
 	Status        string  `json:"status,omitempty"` // 'detected' (below threshold) or 'pending' (recovery triggered)
+	Action        string  `json:"action,omitempty"` // For immediate actions like captcha_solve
+	Source        string  `json:"source,omitempty"` // Source of the action (e.g., "browser", "rule", "ai")
 }
 
 // CreateAttemptResponse is the response from creating a recovery attempt

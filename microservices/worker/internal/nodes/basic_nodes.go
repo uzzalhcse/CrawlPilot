@@ -125,6 +125,11 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 	// Get wait_selector for content verification (used for both CAPTCHA and normal wait)
 	waitSelector, hasWaitSelector := node.Params["wait_selector"].(string)
 
+	// Track whether CAPTCHA was solved - used to skip status code check later
+	// When CAPTCHA is solved, the page content changes but StatusCode() still reflects
+	// the original response (e.g., 403 from Cloudflare challenge page)
+	captchaSolved := false
+
 	// Automatic CAPTCHA solving: Check if driver supports CAPTCHA solving
 	// This handles Cloudflare challenges transparently without workflow changes
 	if captchaSolver, ok := execCtx.Page.(driver.CaptchaSolver); ok && captchaSolver.SupportsCaptchaSolving() {
@@ -184,6 +189,14 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 
 		if shouldSolve {
 			solved, solveErr := captchaSolver.SolveCaptcha(captchaOpts)
+
+			// Report CAPTCHA solve attempt for recovery tracking
+			// This enables visibility into CAPTCHA encounters in the recovery_attempts table
+			if execCtx.OnCaptchaSolveAttempt != nil {
+				challengeType := "cloudflare" // Default for now, could be enhanced
+				execCtx.OnCaptchaSolveAttempt(domain, challengeType, solved && solveErr == nil, solveErr)
+			}
+
 			if solveErr != nil {
 				logger.Warn("CAPTCHA solving encountered an error (continuing anyway)",
 					zap.Error(solveErr),
@@ -191,6 +204,7 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 				)
 				// Don't fail navigation on CAPTCHA errors - might not be a CAPTCHA page
 			} else if solved {
+				captchaSolved = true
 				logger.Info("Page accessible (CAPTCHA not present or auto-solved)",
 					zap.String("url", targetURL),
 				)
@@ -263,7 +277,11 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 	// Content-based block detection: detect soft blocks that return HTTP 200
 	// but with block page content (Access Denied, Rate Limited, etc.)
 	statusCode := execCtx.Page.StatusCode()
-	if statusCode == 403 || statusCode == 429 {
+
+	// Skip status code check if CAPTCHA was solved - the StatusCode() still reflects
+	// the original response (e.g., 403 from Cloudflare challenge), but the CAPTCHA
+	// solving already verified the page is now accessible
+	if !captchaSolved && (statusCode == 403 || statusCode == 429) {
 		// Hard block/rate limit based on status code
 		if statusCode == 429 {
 			logger.Warn("Rate limited by server",
@@ -277,6 +295,12 @@ func (n *NavigateNode) Execute(ctx context.Context, execCtx *ExecutionContext, n
 			zap.String("url", targetURL),
 		)
 		return fmt.Errorf("blocked: HTTP %d", statusCode)
+	} else if captchaSolved && (statusCode == 403 || statusCode == 429) {
+		// Log that we're skipping the status code check because CAPTCHA was solved
+		logger.Debug("Skipping status code check (CAPTCHA was solved)",
+			zap.Int("original_status_code", statusCode),
+			zap.String("url", targetURL),
+		)
 	}
 
 	// Check page content for soft blocks (HTTP 200 but block page content)

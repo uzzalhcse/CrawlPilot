@@ -692,6 +692,61 @@ func (m *RecoveryManager) UpdateRecoveryAttempt(ctx context.Context, attemptID s
 	m.recoveryReporter.UpdateAttemptAsync(ctx, attemptID, updateReq)
 }
 
+// RecordCaptchaSolve records a CAPTCHA solve attempt (success or failure) for tracking
+// This provides visibility into Cloudflare/CAPTCHA encounters in the recovery_attempts table
+func (m *RecoveryManager) RecordCaptchaSolve(ctx context.Context, executionID, taskID, workflowID, url, domain, challengeType string, solved bool, solveErr error) {
+	if m.recoveryReporter == nil {
+		return
+	}
+
+	// Build error message if solve failed
+	errMsg := ""
+	if solveErr != nil {
+		errMsg = solveErr.Error()
+	} else if !solved {
+		errMsg = "CAPTCHA detected but not solved (page may not have required CAPTCHA)"
+	}
+
+	// Determine status based on solve result
+	status := "success"
+	if solveErr != nil {
+		status = "failed"
+	} else if !solved {
+		status = "skipped" // CAPTCHA not detected or not needed
+	}
+
+	// Only record if CAPTCHA was actually detected (solved or solve error)
+	// Skip recording for cases where no CAPTCHA was present
+	if !solved && solveErr == nil {
+		return // No CAPTCHA detected, don't create noise in the table
+	}
+
+	createReq := &reporter.CreateAttemptRequest{
+		ExecutionID:   executionID,
+		TaskID:        taskID,
+		WorkflowID:    workflowID,
+		URL:           url,
+		Domain:        domain,
+		ErrorPattern:  "captcha_solve", // Special pattern for CAPTCHA solves (not an error)
+		ErrorMessage:  errMsg,
+		Confidence:    1.0, // CAPTCHA was definitely detected
+		TriggerReason: fmt.Sprintf("CAPTCHA challenge type: %s", challengeType),
+		Status:        status,
+		Action:        "captcha_solve", // The action taken was solving the CAPTCHA
+		Source:        "browser",       // Source is browser-based automatic solving
+	}
+
+	logger.Debug("Recording CAPTCHA solve attempt",
+		zap.String("execution_id", executionID),
+		zap.String("domain", domain),
+		zap.String("challenge_type", challengeType),
+		zap.Bool("solved", solved),
+		zap.String("status", status),
+	)
+
+	m.recoveryReporter.CreateAttemptAsync(ctx, createReq)
+}
+
 // ExecutePlan executes a recovery plan
 func (m *RecoveryManager) ExecutePlan(ctx context.Context, plan *RecoveryPlan, taskURL string) error {
 	domain := extractDomain(taskURL)

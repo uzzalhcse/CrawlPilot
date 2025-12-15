@@ -80,6 +80,8 @@ type CreateAttemptRequest struct {
 	Confidence    float64 `json:"confidence,omitempty"`
 	TriggerReason string  `json:"trigger_reason,omitempty"`
 	Status        string  `json:"status,omitempty"` // 'detected' (below threshold) or 'pending' (recovery triggered)
+	Action        string  `json:"action,omitempty"` // For immediate actions like captcha_solve
+	Source        string  `json:"source,omitempty"` // Source of the action (e.g., "browser", "rule", "ai")
 }
 
 // CreateAttempt handles POST /api/v1/internal/recovery/attempt
@@ -109,6 +111,9 @@ func (h *RecoveryAttemptHandler) CreateAttempt(c *fiber.Ctx) error {
 		StatusCode:    req.StatusCode,
 		Confidence:    req.Confidence,
 		TriggerReason: req.TriggerReason,
+		Status:        req.Status,
+		Action:        req.Action,
+		Source:        req.Source,
 	}
 
 	if err := h.attemptRepo.CreateAttempt(c.Context(), attempt); err != nil {
@@ -165,6 +170,8 @@ func (h *RecoveryAttemptHandler) CreateAttemptsBatch(c *fiber.Ctx) error {
 			Confidence:    a.Confidence,
 			TriggerReason: a.TriggerReason,
 			Status:        a.Status,
+			Action:        a.Action,
+			Source:        a.Source,
 		}
 	}
 

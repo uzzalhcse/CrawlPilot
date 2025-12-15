@@ -28,6 +28,11 @@ type ExecutionContext struct {
 	// Session detection callback for SmartUnblocker integration
 	// Called when anti-bot cookies (Cloudflare, Datadome, etc.) are detected after navigation
 	OnAntiBotCookiesDetected func(domain string, cookieNames []string)
+
+	// CAPTCHA solve attempt callback for recovery tracking
+	// Called when a CAPTCHA is encountered and solve is attempted (success or failure)
+	// This enables tracking of CAPTCHA encounters in recovery_attempts table
+	OnCaptchaSolveAttempt func(domain string, challengeType string, solved bool, err error)
 }
 
 // CaptchaCookieCacheInterface defines the interface for CAPTCHA cookie/session caching
