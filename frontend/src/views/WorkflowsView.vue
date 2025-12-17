@@ -122,8 +122,6 @@ onMounted(async () => {
       :show-help-icon="true"
     >
       <template #actions>
-        <Button variant="outline" size="default">Go to Store</Button>
-        <Button variant="outline" size="default">Develop new</Button>
         <Button @click="handleCreateWorkflow" variant="default" class="bg-primary hover:bg-primary/90">Create Workflow</Button>
       </template>
     </PageHeader>
