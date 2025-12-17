@@ -302,6 +302,7 @@ func main() {
 	probes.Get("/auto-fixes", probeHandler.GetAutoFixes)
 	probes.Post("/auto-fixes/:id/approve", probeHandler.ApproveAutoFix)
 	probes.Post("/auto-fixes/:id/reject", probeHandler.RejectAutoFix)
+	probes.Post("/preview-selector", probeHandler.PreviewSelector)
 
 	// Snapshot file serving endpoint
 	snapshots := api.Group("/snapshots")

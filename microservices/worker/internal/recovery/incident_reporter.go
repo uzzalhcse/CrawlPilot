@@ -550,6 +550,7 @@ func (r *IncidentReporter) CreateFromProbeFailure(
 	fixPlan interface{}, // *ProbeFixPlan or nil
 	deviations interface{}, // *DeviationSummary or nil
 	reason string, // "low_confidence", "ai_error", "escalated", "no_fix"
+	errorDetail string, // Optional detailed error message
 ) (*IncidentReport, error) {
 
 	// Extract failed nodes, snapshots, and URLs from probe result
@@ -635,7 +636,11 @@ func (r *IncidentReporter) CreateFromProbeFailure(
 		incident.AIFailureReason = fmt.Sprintf("AI confidence (%.2f) below threshold", aiConfidence)
 		incident.Priority = PriorityMedium
 	case "ai_error":
-		incident.AIFailureReason = "AI agent encountered an error"
+		if errorDetail != "" {
+			incident.AIFailureReason = fmt.Sprintf("AI agent error: %s", errorDetail)
+		} else {
+			incident.AIFailureReason = "AI agent encountered an error"
+		}
 		incident.Priority = PriorityHigh
 	case "escalated":
 		incident.AIFailureReason = "AI explicitly requested human review"

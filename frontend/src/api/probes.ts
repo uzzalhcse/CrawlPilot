@@ -5,10 +5,11 @@ export interface ProbeResult {
     id: string
     execution_id: string
     workflow_id: string
-    status: 'healthy' | 'degraded' | 'broken'
+    status: 'healthy' | 'degraded' | 'broken' | 'fixed'
     duration_ms: number
     phases: PhaseProbeResult[]
     created_at: string
+    auto_fix?: AutoFix
 }
 
 export interface PhaseProbeResult {
@@ -68,6 +69,7 @@ export interface ProbeStats {
 export interface AutoFix {
     id: string
     workflow_id: string
+    execution_id?: string
     node_id: string
     fix_type: 'update_selector' | 'update_field_selector' | 'skip_node'
     old_selector?: string
@@ -129,9 +131,18 @@ export const probesApi = {
         )
     },
 
-    // Approve an auto-fix
-    approveAutoFix(fixId: string) {
-        return apiClient.post<{ success: boolean }>(`/probes/auto-fixes/${fixId}/approve`)
+    // Approve an auto-fix with optional overrides
+    approveAutoFix(fixId: string, overrides?: { new_selector?: string }) {
+        return apiClient.post<{ success: boolean }>(`/probes/auto-fixes/${fixId}/approve`, overrides)
+    },
+
+    // Preview a selector against a snapshot
+    previewSelector(executionId: string, nodeId: string, selector: string) {
+        return apiClient.post<{ match_count: number; matches: string[]; error?: string }>('/probes/preview-selector', {
+            execution_id: executionId,
+            node_id: nodeId,
+            selector
+        })
     },
 
     // Reject an auto-fix

@@ -203,6 +203,7 @@ func (r *ProbeReporter) GetBaseline(ctx context.Context, workflowID string) (*mo
 // WorkflowFixRequest is the request body for applying workflow fixes
 type WorkflowFixRequest struct {
 	WorkflowID  string  `json:"workflow_id"`
+	ExecutionID string  `json:"execution_id"`
 	NodeID      string  `json:"node_id"`
 	FieldName   string  `json:"field_name,omitempty"` // For update_field_selector
 	FixType     string  `json:"fix_type"`             // "update_selector", "update_field_selector", "skip_node"

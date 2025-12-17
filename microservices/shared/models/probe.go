@@ -11,6 +11,24 @@ type ProbeResult struct {
 	Duration    int64              `json:"duration_ms"`
 	Phases      []PhaseProbeResult `json:"phases"`
 	CreatedAt   time.Time          `json:"created_at"`
+	AutoFix     *AutoFixRecord     `json:"auto_fix,omitempty"`
+}
+
+// AutoFixRecord represents an auto-fix record
+type AutoFixRecord struct {
+	ID          string  `json:"id"`
+	WorkflowID  string  `json:"workflow_id"`
+	ExecutionID string  `json:"execution_id"`
+	NodeID      string  `json:"node_id"`
+	FieldName   string  `json:"field_name,omitempty"` // For field-level fixes
+	FixType     string  `json:"fix_type"`
+	OldSelector string  `json:"old_selector,omitempty"`
+	NewSelector string  `json:"new_selector,omitempty"`
+	Reasoning   string  `json:"reasoning"`
+	Confidence  float64 `json:"confidence"`
+	Status      string  `json:"status"`
+	AutoApplied bool    `json:"auto_applied"`
+	CreatedAt   string  `json:"created_at"`
 }
 
 // PhaseProbeResult holds probe results for one phase

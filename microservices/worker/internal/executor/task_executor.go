@@ -2110,7 +2110,7 @@ func (e *TaskExecutor) reportProbeResults(ctx context.Context, task *models.Task
 			go func() {
 				_, _ = e.incidentReporter.CreateFromProbeFailure(
 					ctx, task.WorkflowID, task.ExecutionID,
-					fullResult, nil, nil, "ai_disabled",
+					fullResult, nil, nil, "ai_disabled", "",
 				)
 			}()
 		}
@@ -2163,7 +2163,7 @@ func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task
 		if e.incidentReporter != nil {
 			_, _ = e.incidentReporter.CreateFromProbeFailure(
 				ctx, task.WorkflowID, task.ExecutionID,
-				fullResult, nil, deviations, "ai_error",
+				fullResult, nil, deviations, "ai_error", err.Error(),
 			)
 		}
 		return
@@ -2186,7 +2186,7 @@ func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task
 		if e.incidentReporter != nil {
 			incident, err := e.incidentReporter.CreateFromProbeFailure(
 				ctx, task.WorkflowID, task.ExecutionID,
-				fullResult, fixPlan, deviations, reason,
+				fullResult, fixPlan, deviations, reason, "",
 			)
 			if err != nil {
 				logger.Warn("Failed to create probe incident", zap.Error(err))
@@ -2211,6 +2211,7 @@ func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task
 	if e.probeReporter != nil {
 		fixReq := &reporter.WorkflowFixRequest{
 			WorkflowID:  task.WorkflowID,
+			ExecutionID: task.ExecutionID,
 			NodeID:      fixPlan.NodeID,
 			FieldName:   fixPlan.FieldName,
 			FixType:     fixPlan.FixType,
@@ -2218,7 +2219,7 @@ func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task
 			NewSelector: fixPlan.NewSelector,
 			Reasoning:   fixPlan.Reasoning,
 			Confidence:  fixPlan.Confidence,
-			AutoApplied: true,
+			AutoApplied: fixPlan.Confidence >= 0.8,
 		}
 
 		if err := e.probeReporter.ApplyWorkflowFix(ctx, fixReq); err != nil {
@@ -2230,7 +2231,7 @@ func (e *TaskExecutor) handleProbeAutoFix(ctx context.Context, task *models.Task
 			if e.incidentReporter != nil {
 				_, _ = e.incidentReporter.CreateFromProbeFailure(
 					ctx, task.WorkflowID, task.ExecutionID,
-					fullResult, fixPlan, deviations, "fix_failed",
+					fullResult, fixPlan, deviations, "fix_failed", err.Error(),
 				)
 			}
 		} else {

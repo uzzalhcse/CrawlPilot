@@ -53,11 +53,7 @@ const router = createRouter({
           name: 'schedules',
           component: () => import('@/views/SchedulesView.vue')
         },
-        {
-          path: 'auto-fixes',
-          name: 'auto-fixes',
-          component: () => import('@/views/AutoFixesView.vue')
-        },
+
         {
           path: 'analytics',
           name: 'analytics',

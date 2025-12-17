@@ -1,11 +1,15 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/microservices/orchestrator/internal/repository"
 	"github.com/uzzalhcse/crawlify/microservices/shared/logger"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
@@ -211,6 +215,7 @@ func (h *ProbeHandler) GetBaseline(c *fiber.Ctx) error {
 // WorkflowFixRequest is the request body for applying workflow fixes
 type WorkflowFixRequest struct {
 	WorkflowID  string  `json:"workflow_id"`
+	ExecutionID string  `json:"execution_id"`
 	NodeID      string  `json:"node_id"`
 	FieldName   string  `json:"field_name,omitempty"` // For update_field_selector
 	FixType     string  `json:"fix_type"`             // "update_selector", "update_field_selector", "skip_node"
@@ -219,6 +224,50 @@ type WorkflowFixRequest struct {
 	Reasoning   string  `json:"reasoning"`
 	Confidence  float64 `json:"confidence"`
 	AutoApplied bool    `json:"auto_applied"`
+}
+
+// applyFixToWorkflow applies the fix logic to the workflow configuration
+func (h *ProbeHandler) applyFixToWorkflow(ctx context.Context, fix *models.AutoFixRecord) error {
+	switch fix.FixType {
+	case "update_selector":
+		// Apply selector update to workflow node
+		if err := h.probeRepo.UpdateNodeSelector(ctx, fix.WorkflowID, fix.NodeID, fix.NewSelector, fix.Reasoning); err != nil {
+			return fmt.Errorf("failed to apply selector update: %w", err)
+		}
+		logger.Info("Selector update applied",
+			zap.String("workflow_id", fix.WorkflowID),
+			zap.String("node_id", fix.NodeID),
+			zap.String("new_selector", fix.NewSelector),
+		)
+
+	case "update_field_selector":
+		if fix.FieldName == "" {
+			return fmt.Errorf("missing field_name for update_field_selector fix")
+		}
+		if err := h.probeRepo.UpdateFieldSelector(ctx, fix.WorkflowID, fix.NodeID, fix.FieldName, fix.NewSelector, fix.Reasoning); err != nil {
+			return fmt.Errorf("failed to apply field selector update: %w", err)
+		}
+		logger.Info("Field selector update applied",
+			zap.String("workflow_id", fix.WorkflowID),
+			zap.String("node_id", fix.NodeID),
+			zap.String("field_name", fix.FieldName),
+			zap.String("new_selector", fix.NewSelector),
+		)
+
+	case "skip_node":
+		// Mark node as skipped/disabled
+		if err := h.probeRepo.DisableNode(ctx, fix.WorkflowID, fix.NodeID, fix.Reasoning); err != nil {
+			return fmt.Errorf("failed to skip node: %w", err)
+		}
+		logger.Info("Node disabled",
+			zap.String("workflow_id", fix.WorkflowID),
+			zap.String("node_id", fix.NodeID),
+		)
+
+	default:
+		return fmt.Errorf("unknown fix type: %s", fix.FixType)
+	}
+	return nil
 }
 
 // ApplyWorkflowFix handles POST /api/v1/internal/probes/fix
@@ -236,110 +285,67 @@ func (h *ProbeHandler) ApplyWorkflowFix(c *fiber.Ctx) error {
 		zap.String("node_id", req.NodeID),
 		zap.String("fix_type", req.FixType),
 		zap.Float64("confidence", req.Confidence),
+		zap.Bool("auto_applied", req.AutoApplied),
 	)
 
 	// Create auto-fix record
-	autoFix := &repository.AutoFixRecord{
+	autoFix := &models.AutoFixRecord{
+		ID:          uuid.New().String(),
 		WorkflowID:  req.WorkflowID,
+		ExecutionID: req.ExecutionID,
 		NodeID:      req.NodeID,
+		FieldName:   req.FieldName,
 		FixType:     req.FixType,
 		OldSelector: req.OldSelector,
 		NewSelector: req.NewSelector,
 		Reasoning:   req.Reasoning,
 		Confidence:  req.Confidence,
-		Status:      "applied",
-		AutoApplied: true,
+		Status:      "pending", // Default to pending
+		AutoApplied: req.AutoApplied,
 	}
 
-	switch req.FixType {
-	case "update_selector":
-		// Apply selector update to workflow node
-		if err := h.probeRepo.UpdateNodeSelector(c.Context(), req.WorkflowID, req.NodeID, req.NewSelector, req.Reasoning); err != nil {
-			logger.Error("Failed to update node selector",
-				zap.String("workflow_id", req.WorkflowID),
-				zap.String("node_id", req.NodeID),
-				zap.Error(err),
-			)
-			autoFix.Status = "failed"
-			h.probeRepo.CreateAutoFix(c.Context(), autoFix) // Record failure
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "failed to apply selector update",
-			})
+	// If auto-applied is true, try to apply immediately
+	if req.AutoApplied {
+		// Special handling for field selector since we have the field name in request
+		if req.FixType == "update_field_selector" {
+			if err := h.probeRepo.UpdateFieldSelector(c.Context(), req.WorkflowID, req.NodeID, req.FieldName, req.NewSelector, req.Reasoning); err != nil {
+				logger.Error("Failed to update field selector", zap.Error(err))
+				autoFix.Status = "failed"
+			} else {
+				autoFix.Status = "applied"
+				logger.Info("Field selector update applied immediately")
+			}
+		} else {
+			// Use helper for other types
+			if err := h.applyFixToWorkflow(c.Context(), autoFix); err != nil {
+				logger.Error("Failed to auto-apply fix", zap.Error(err))
+				autoFix.Status = "failed"
+			} else {
+				autoFix.Status = "applied"
+			}
 		}
-
-		logger.Info("Selector update applied",
-			zap.String("workflow_id", req.WorkflowID),
-			zap.String("node_id", req.NodeID),
-			zap.String("new_selector", req.NewSelector),
-		)
-
-	case "update_field_selector":
-		// Apply field selector update within an extract node
-		if err := h.probeRepo.UpdateFieldSelector(c.Context(), req.WorkflowID, req.NodeID, req.FieldName, req.NewSelector, req.Reasoning); err != nil {
-			logger.Error("Failed to update field selector",
-				zap.String("workflow_id", req.WorkflowID),
-				zap.String("node_id", req.NodeID),
-				zap.String("field_name", req.FieldName),
-				zap.Error(err),
-			)
-			autoFix.Status = "failed"
-			h.probeRepo.CreateAutoFix(c.Context(), autoFix) // Record failure
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "failed to apply field selector update",
-			})
-		}
-
-		logger.Info("Field selector update applied",
-			zap.String("workflow_id", req.WorkflowID),
-			zap.String("node_id", req.NodeID),
-			zap.String("field_name", req.FieldName),
-			zap.String("new_selector", req.NewSelector),
-		)
-
-	case "skip_node":
-		// Mark node as skipped/disabled
-		if err := h.probeRepo.DisableNode(c.Context(), req.WorkflowID, req.NodeID, req.Reasoning); err != nil {
-			logger.Error("Failed to skip node",
-				zap.String("workflow_id", req.WorkflowID),
-				zap.String("node_id", req.NodeID),
-				zap.Error(err),
-			)
-			autoFix.Status = "failed"
-			h.probeRepo.CreateAutoFix(c.Context(), autoFix) // Record failure
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": "failed to skip node",
-			})
-		}
-
-		logger.Info("Node disabled",
-			zap.String("workflow_id", req.WorkflowID),
-			zap.String("node_id", req.NodeID),
-		)
-
-	default:
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "unknown fix type",
-		})
 	}
 
-	// Record successful auto-fix
+	// Record the fix (whether pending, applied, or failed)
 	if err := h.probeRepo.CreateAutoFix(c.Context(), autoFix); err != nil {
-		logger.Warn("Failed to record auto-fix (fix was still applied)",
-			zap.String("workflow_id", req.WorkflowID),
-			zap.Error(err),
-		)
+		logger.Warn("Failed to record auto-fix", zap.Error(err))
+		// If it was applied but failed to record, we still return success but log error
 	} else {
 		logger.Info("Auto-fix recorded",
 			zap.String("fix_id", autoFix.ID),
-			zap.String("workflow_id", req.WorkflowID),
-			zap.String("fix_type", req.FixType),
+			zap.String("status", autoFix.Status),
 		)
+
+		// Update probe status if applied
+		if autoFix.Status == "applied" && req.ExecutionID != "" {
+			h.probeRepo.UpdateProbeStatus(c.Context(), req.ExecutionID, "fixed")
+		}
 	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"applied": req.FixType,
-		"node_id": req.NodeID,
+		"applied": autoFix.Status == "applied",
+		"status":  autoFix.Status,
 		"fix_id":  autoFix.ID,
 	})
 }
@@ -390,6 +396,7 @@ func (h *ProbeHandler) GetProbeStats(c *fiber.Ctx) error {
 type AutoFix struct {
 	ID          string  `json:"id"`
 	WorkflowID  string  `json:"workflow_id"`
+	ExecutionID string  `json:"execution_id"`
 	NodeID      string  `json:"node_id"`
 	FixType     string  `json:"fix_type"`
 	OldSelector string  `json:"old_selector,omitempty"`
@@ -421,22 +428,153 @@ func (h *ProbeHandler) GetAutoFixes(c *fiber.Ctx) error {
 	})
 }
 
-// ApproveAutoFix handles POST /api/v1/probes/auto-fixes/:id/approve
-// Approves a pending auto-fix
-func (h *ProbeHandler) ApproveAutoFix(c *fiber.Ctx) error {
-	fixID := c.Params("id")
+// ApproveAutoFixRequest is the request body for approving an auto-fix
+type ApproveAutoFixRequest struct {
+	NewSelector string `json:"new_selector,omitempty"`
+}
 
-	if err := h.probeRepo.UpdateAutoFixStatus(c.Context(), fixID, "applied"); err != nil {
-		logger.Error("Failed to approve auto-fix",
-			zap.String("fix_id", fixID),
-			zap.Error(err),
-		)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "failed to approve auto-fix",
+// PreviewSelectorRequest is the request body for previewing a selector
+type PreviewSelectorRequest struct {
+	ExecutionID string `json:"execution_id"`
+	NodeID      string `json:"node_id"`
+	Selector    string `json:"selector"`
+}
+
+// PreviewSelectorResponse is the response for selector preview
+type PreviewSelectorResponse struct {
+	MatchCount int      `json:"match_count"`
+	Matches    []string `json:"matches"`
+	Error      string   `json:"error,omitempty"`
+}
+
+// PreviewSelector handles POST /api/v1/probes/preview-selector
+// Previews what a selector would extract from the stored DOM snapshot
+func (h *ProbeHandler) PreviewSelector(c *fiber.Ctx) error {
+	var req PreviewSelectorRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
 		})
 	}
 
-	logger.Info("Auto-fix approved", zap.String("fix_id", fixID))
+	if req.ExecutionID == "" || req.NodeID == "" || req.Selector == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "execution_id, node_id, and selector are required",
+		})
+	}
+
+	// 1. Get snapshot path
+	domPath, err := h.probeRepo.GetSnapshotPath(c.Context(), req.ExecutionID, req.NodeID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "snapshot not found: " + err.Error(),
+		})
+	}
+
+	// 2. Read DOM file
+	// Note: This assumes local file access. For GCS, we'd need to download it.
+	// Since we are in dev/local mode, this works.
+	// In prod, we might need to handle GCS paths (download via storage client).
+	// For now, we check if it's a local file.
+	f, err := os.Open(domPath)
+	if err != nil {
+		logger.Error("Failed to open DOM file", zap.String("path", domPath), zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": fmt.Sprintf("failed to read snapshot file at %s: %v", domPath, err),
+		})
+	}
+	defer f.Close()
+
+	// 3. Parse HTML
+	doc, err := goquery.NewDocumentFromReader(f)
+	if err != nil {
+		logger.Error("Failed to parse DOM", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to parse snapshot HTML",
+		})
+	}
+
+	// 4. Run selector
+	var matches []string
+	doc.Find(req.Selector).Each(func(i int, s *goquery.Selection) {
+		if len(matches) < 5 { // Limit to first 5 matches
+			text := strings.TrimSpace(s.Text())
+			if text != "" {
+				// Truncate long text
+				if len(text) > 100 {
+					text = text[:97] + "..."
+				}
+				matches = append(matches, text)
+			}
+		}
+	})
+
+	return c.JSON(PreviewSelectorResponse{
+		MatchCount: doc.Find(req.Selector).Length(),
+		Matches:    matches,
+	})
+}
+
+// ApproveAutoFix handles POST /api/v1/probes/auto-fixes/:id/approve
+// Approves a pending auto-fix, optionally overriding the selector
+func (h *ProbeHandler) ApproveAutoFix(c *fiber.Ctx) error {
+	fixID := c.Params("id")
+
+	// Parse optional body for overrides
+	var req ApproveAutoFixRequest
+	if err := c.BodyParser(&req); err != nil {
+		// Ignore error as body is optional
+	}
+
+	// 1. Get the fix record
+	fix, err := h.probeRepo.GetAutoFixByID(c.Context(), fixID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "auto-fix not found",
+		})
+	}
+
+	if fix.Status == "applied" {
+		return c.JSON(fiber.Map{"success": true, "status": "applied", "message": "already applied"})
+	}
+
+	// 2. Apply overrides if provided
+	if req.NewSelector != "" && req.NewSelector != fix.NewSelector {
+		logger.Info("Applying manual override to auto-fix",
+			zap.String("fix_id", fixID),
+			zap.String("old_new_selector", fix.NewSelector),
+			zap.String("manual_selector", req.NewSelector),
+		)
+		fix.NewSelector = req.NewSelector
+		fix.Reasoning += " (Manually modified by user)"
+		fix.Confidence = 1.0
+		fix.AutoApplied = false // It was manually approved/modified
+	}
+
+	// 3. Apply the fix
+	if err := h.applyFixToWorkflow(c.Context(), fix); err != nil {
+		logger.Error("Failed to apply approved fix", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to apply fix: " + err.Error(),
+		})
+	}
+
+	// 4. Update status and record changes in DB
+	// We use UpdateAutoFix to persist any manual overrides (new selector, reasoning) and set status to applied
+	fix.Status = "applied"
+	if err := h.probeRepo.UpdateAutoFix(c.Context(), fix); err != nil {
+		logger.Error("Failed to update auto-fix record", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "failed to update fix record",
+		})
+	}
+
+	// 5. Update probe status
+	if fix.ExecutionID != "" {
+		h.probeRepo.UpdateProbeStatus(c.Context(), fix.ExecutionID, "fixed")
+	}
+
+	logger.Info("Auto-fix approved and applied", zap.String("fix_id", fixID))
 
 	return c.JSON(fiber.Map{
 		"success": true,

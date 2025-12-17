@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/uzzalhcse/crawlify/microservices/shared/database"
 	"github.com/uzzalhcse/crawlify/microservices/shared/models"
 )
@@ -51,13 +52,20 @@ type ProbeRepository interface {
 	GetProbeStats(ctx context.Context) (*ProbeStatsResult, error)
 
 	// GetAutoFixes retrieves auto-fix records with optional status filter
-	GetAutoFixes(ctx context.Context, status string, limit int) ([]*AutoFixRecord, int, error)
+	GetAutoFixes(ctx context.Context, status string, limit int) ([]*models.AutoFixRecord, int, error)
 
 	// UpdateAutoFixStatus updates the status of an auto-fix record
 	UpdateAutoFixStatus(ctx context.Context, fixID, status string) error
 
 	// CreateAutoFix records an AI-applied workflow fix
-	CreateAutoFix(ctx context.Context, fix *AutoFixRecord) error
+	CreateAutoFix(ctx context.Context, fix *models.AutoFixRecord) error
+
+	// GetAutoFixByID retrieves a single auto-fix record by ID
+	GetAutoFixByID(ctx context.Context, fixID string) (*models.AutoFixRecord, error)
+
+	// GetSnapshotPath retrieves the DOM snapshot path for a specific node execution
+	GetSnapshotPath(ctx context.Context, executionID, nodeID string) (string, error)
+	UpdateAutoFix(ctx context.Context, fix *models.AutoFixRecord) error
 }
 
 // probeRepository implements ProbeRepository
@@ -429,28 +437,22 @@ type ProbeStatsResult struct {
 	ByWorkflow map[string]int `json:"by_workflow"`
 }
 
-// AutoFixRecord represents an auto-fix record in the database
-type AutoFixRecord struct {
-	ID          string  `json:"id"`
-	WorkflowID  string  `json:"workflow_id"`
-	NodeID      string  `json:"node_id"`
-	FixType     string  `json:"fix_type"`
-	OldSelector string  `json:"old_selector,omitempty"`
-	NewSelector string  `json:"new_selector,omitempty"`
-	Reasoning   string  `json:"reasoning"`
-	Confidence  float64 `json:"confidence"`
-	Status      string  `json:"status"`
-	AutoApplied bool    `json:"auto_applied"`
-	CreatedAt   string  `json:"created_at"`
-}
-
 // GetRecentProbes gets all recent probe executions sorted by date
 func (r *probeRepository) GetRecentProbes(ctx context.Context, limit int) ([]*models.ProbeResult, int, error) {
-	// Get all probe executions sorted by most recent first
+	// Get all probe executions sorted by most recent first, joined with latest auto-fix
 	query := `
-		SELECT id, execution_id, workflow_id, status, duration_ms, phases, created_at
-		FROM probe_results
-		ORDER BY created_at DESC
+		SELECT 
+			p.id, p.execution_id, p.workflow_id, p.status, p.duration_ms, p.phases, p.created_at,
+			f.id, f.workflow_id, f.execution_id, f.node_id, f.fix_type, f.old_selector, f.new_selector,
+			f.reasoning, f.confidence, f.status, f.auto_applied, f.created_at
+		FROM probe_results p
+		LEFT JOIN LATERAL (
+			SELECT * FROM workflow_auto_fixes 
+			WHERE execution_id = p.execution_id
+			ORDER BY created_at DESC
+			LIMIT 1
+		) f ON true
+		ORDER BY p.created_at DESC
 		LIMIT $1
 	`
 
@@ -464,12 +466,42 @@ func (r *probeRepository) GetRecentProbes(ctx context.Context, limit int) ([]*mo
 	for rows.Next() {
 		var result models.ProbeResult
 		var phasesJSON []byte
-		if err := rows.Scan(&result.ID, &result.ExecutionID, &result.WorkflowID, &result.Status, &result.Duration, &phasesJSON, &result.CreatedAt); err != nil {
+
+		// AutoFix fields (nullable)
+		var fID, fWorkflowID, fExecutionID, fNodeID, fFixType, fOldSelector, fNewSelector, fReasoning, fStatus, fCreatedAt *string
+		var fConfidence *float64
+		var fAutoApplied *bool
+
+		if err := rows.Scan(
+			&result.ID, &result.ExecutionID, &result.WorkflowID, &result.Status, &result.Duration, &phasesJSON, &result.CreatedAt,
+			&fID, &fWorkflowID, &fExecutionID, &fNodeID, &fFixType, &fOldSelector, &fNewSelector,
+			&fReasoning, &fConfidence, &fStatus, &fAutoApplied, &fCreatedAt,
+		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan probe result: %w", err)
 		}
+
 		if len(phasesJSON) > 0 {
 			json.Unmarshal(phasesJSON, &result.Phases)
 		}
+
+		// Populate AutoFix if present
+		if fID != nil {
+			result.AutoFix = &models.AutoFixRecord{
+				ID:          *fID,
+				WorkflowID:  *fWorkflowID,
+				ExecutionID: *fExecutionID,
+				NodeID:      *fNodeID,
+				FixType:     *fFixType,
+				OldSelector: *fOldSelector,
+				NewSelector: *fNewSelector,
+				Reasoning:   *fReasoning,
+				Confidence:  *fConfidence,
+				Status:      *fStatus,
+				AutoApplied: *fAutoApplied,
+				CreatedAt:   *fCreatedAt,
+			}
+		}
+
 		results = append(results, &result)
 	}
 
@@ -528,14 +560,14 @@ func (r *probeRepository) GetProbeStats(ctx context.Context) (*ProbeStatsResult,
 }
 
 // GetAutoFixes retrieves auto-fix records with optional status filter
-func (r *probeRepository) GetAutoFixes(ctx context.Context, status string, limit int) ([]*AutoFixRecord, int, error) {
+func (r *probeRepository) GetAutoFixes(ctx context.Context, status string, limit int) ([]*models.AutoFixRecord, int, error) {
 	var query string
 	var rows interface{ Close() }
 	var err error
 
 	if status == "" {
 		query = `
-			SELECT id, workflow_id, node_id, fix_type, old_selector, new_selector, 
+			SELECT id, workflow_id, execution_id, node_id, field_name, fix_type, old_selector, new_selector, 
 			       reasoning, confidence, status, auto_applied, created_at
 			FROM workflow_auto_fixes
 			ORDER BY created_at DESC
@@ -544,7 +576,7 @@ func (r *probeRepository) GetAutoFixes(ctx context.Context, status string, limit
 		rows, err = r.db.Pool.Query(ctx, query, limit)
 	} else {
 		query = `
-			SELECT id, workflow_id, node_id, fix_type, old_selector, new_selector, 
+			SELECT id, workflow_id, execution_id, node_id, field_name, fix_type, old_selector, new_selector, 
 			       reasoning, confidence, status, auto_applied, created_at
 			FROM workflow_auto_fixes
 			WHERE status = $1
@@ -559,17 +591,22 @@ func (r *probeRepository) GetAutoFixes(ctx context.Context, status string, limit
 	}
 	defer rows.Close()
 
-	var fixes []*AutoFixRecord
+	var fixes []*models.AutoFixRecord
 	pgRows := rows.(interface {
 		Next() bool
 		Scan(...interface{}) error
 	})
 	for pgRows.Next() {
-		var fix AutoFixRecord
-		if err := pgRows.Scan(&fix.ID, &fix.WorkflowID, &fix.NodeID, &fix.FixType,
+		var fix models.AutoFixRecord
+		// Handle nullable field_name
+		var fieldName *string
+		if err := pgRows.Scan(&fix.ID, &fix.WorkflowID, &fix.ExecutionID, &fix.NodeID, &fieldName, &fix.FixType,
 			&fix.OldSelector, &fix.NewSelector, &fix.Reasoning, &fix.Confidence,
 			&fix.Status, &fix.AutoApplied, &fix.CreatedAt); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan auto-fix: %w", err)
+		}
+		if fieldName != nil {
+			fix.FieldName = *fieldName
 		}
 		fixes = append(fixes, &fix)
 	}
@@ -591,23 +628,99 @@ func (r *probeRepository) UpdateAutoFixStatus(ctx context.Context, fixID, status
 	return nil
 }
 
+// UpdateAutoFix updates the details of an auto-fix record (e.g. manual override)
+func (r *probeRepository) UpdateAutoFix(ctx context.Context, fix *models.AutoFixRecord) error {
+	query := `
+		UPDATE workflow_auto_fixes 
+		SET new_selector = $1, reasoning = $2, confidence = $3, auto_applied = $4, status = $5, updated_at = NOW()
+		WHERE id = $6
+	`
+	_, err := r.db.Pool.Exec(ctx, query,
+		fix.NewSelector, fix.Reasoning, fix.Confidence, fix.AutoApplied, fix.Status, fix.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update auto-fix record: %w", err)
+	}
+	return nil
+}
+
 // CreateAutoFix records an AI-applied workflow fix
-func (r *probeRepository) CreateAutoFix(ctx context.Context, fix *AutoFixRecord) error {
+func (r *probeRepository) CreateAutoFix(ctx context.Context, fix *models.AutoFixRecord) error {
 	query := `
 		INSERT INTO workflow_auto_fixes (
-			workflow_id, node_id, fix_type, old_selector, new_selector, 
+			id, workflow_id, execution_id, node_id, field_name, fix_type, old_selector, new_selector, 
 			reasoning, confidence, status, auto_applied
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING created_at
 	`
 
+	// Handle empty ID (should be generated by caller, but safe fallback)
+	if fix.ID == "" {
+		fix.ID = uuid.New().String()
+	}
+
 	err := r.db.Pool.QueryRow(ctx, query,
-		fix.WorkflowID, fix.NodeID, fix.FixType, fix.OldSelector, fix.NewSelector,
+		fix.ID, fix.WorkflowID, fix.ExecutionID, fix.NodeID, fix.FieldName, fix.FixType, fix.OldSelector, fix.NewSelector,
 		fix.Reasoning, fix.Confidence, fix.Status, fix.AutoApplied,
-	).Scan(&fix.ID, &fix.CreatedAt)
+	).Scan(&fix.CreatedAt)
 
 	if err != nil {
 		return fmt.Errorf("failed to create auto-fix record: %w", err)
 	}
 	return nil
+}
+
+// GetAutoFixByID retrieves a single auto-fix record by ID
+func (r *probeRepository) GetAutoFixByID(ctx context.Context, fixID string) (*models.AutoFixRecord, error) {
+	query := `
+		SELECT id, workflow_id, execution_id, node_id, field_name, fix_type, old_selector, new_selector, 
+		       reasoning, confidence, status, auto_applied, created_at
+		FROM workflow_auto_fixes
+		WHERE id = $1
+	`
+
+	var fix models.AutoFixRecord
+	var fieldName *string
+	err := r.db.Pool.QueryRow(ctx, query, fixID).Scan(
+		&fix.ID, &fix.WorkflowID, &fix.ExecutionID, &fix.NodeID, &fieldName, &fix.FixType,
+		&fix.OldSelector, &fix.NewSelector, &fix.Reasoning, &fix.Confidence,
+		&fix.Status, &fix.AutoApplied, &fix.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auto-fix: %w", err)
+	}
+	if fieldName != nil {
+		fix.FieldName = *fieldName
+	}
+	return &fix, nil
+}
+
+// GetSnapshotPath retrieves the DOM snapshot path for a specific node execution
+func (r *probeRepository) GetSnapshotPath(ctx context.Context, executionID, nodeID string) (string, error) {
+	query := `SELECT phases FROM probe_results WHERE execution_id = $1`
+
+	var phasesJSON []byte
+	err := r.db.Pool.QueryRow(ctx, query, executionID).Scan(&phasesJSON)
+	if err != nil {
+		return "", fmt.Errorf("failed to get probe phases: %w", err)
+	}
+
+	var phases []models.PhaseProbeResult
+	if err := json.Unmarshal(phasesJSON, &phases); err != nil {
+		return "", fmt.Errorf("failed to unmarshal phases: %w", err)
+	}
+
+	for _, phase := range phases {
+		for _, node := range phase.Nodes {
+			if node.NodeID == nodeID {
+				if node.Snapshot != nil && node.Snapshot.DOMPath != "" {
+					return node.Snapshot.DOMPath, nil
+				}
+				return "", fmt.Errorf("snapshot not found for node %s", nodeID)
+			}
+		}
+	}
+
+	return "", fmt.Errorf("node %s not found in execution %s", nodeID, executionID)
 }
