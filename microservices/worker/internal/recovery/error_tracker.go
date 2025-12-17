@@ -85,6 +85,7 @@ func (t *ErrorTracker) RecordSuccess(ctx context.Context, domain string) error {
 }
 
 // RecordFailure records a failed request and returns whether recovery should trigger - ATOMIC
+// OPTIMIZED: Uses pipeline to batch 4 Redis calls into 1 round-trip (HIncrBy for consecutive needs return value)
 func (t *ErrorTracker) RecordFailure(ctx context.Context, domain string, pattern ErrorPattern) (shouldRecover bool, reason string) {
 	if t.cache == nil {
 		return false, ""
@@ -92,21 +93,19 @@ func (t *ErrorTracker) RecordFailure(ctx context.Context, domain string, pattern
 
 	key := t.keyFor(domain)
 
-	// Atomic increment failure count
-	t.cache.HIncrBy(ctx, key, fieldFailureCount, 1)
-
-	// Atomic increment consecutive errors
+	// Get consecutive error count (need return value for threshold check)
 	consecutiveErrs, err := t.cache.HIncrBy(ctx, key, fieldConsecutiveErrs, 1)
 	if err != nil {
 		consecutiveErrs = 1
 	}
 
-	// Update pattern and timestamp
-	t.cache.HSet(ctx, key, fieldLastPattern, string(pattern))
-	t.cache.HSet(ctx, key, fieldLastUpdated, time.Now().Format(time.RFC3339))
-
-	// Set TTL
-	t.cache.Expire(ctx, key, t.config.WindowTTL)
+	// PIPELINE: Batch remaining 4 operations into single round-trip
+	pipe := t.cache.Pipeline()
+	pipe.HIncrBy(ctx, key, fieldFailureCount, 1)
+	pipe.HSet(ctx, key, fieldLastPattern, string(pattern))
+	pipe.HSet(ctx, key, fieldLastUpdated, time.Now().Format(time.RFC3339))
+	pipe.Expire(ctx, key, t.config.WindowTTL)
+	pipe.Exec(ctx)
 
 	// Check if recovery should trigger
 	return t.shouldTriggerRecovery(ctx, key, int(consecutiveErrs), pattern)

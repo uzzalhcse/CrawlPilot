@@ -368,6 +368,7 @@ func (u *SmartUnblocker) ShouldEscalate(ctx context.Context, domain string, curr
 
 // PersistLearnedStrategies persists learned strategies to DB at end of execution
 // OPTIMIZED: Uses SMEMBERS instead of pattern SCAN for O(1) domain iteration
+// OPTIMIZED: Uses pgx.Batch to batch all DB writes into single round-trip
 func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, executionID string) error {
 	if u.pool == nil || u.cache == nil {
 		return nil
@@ -380,7 +381,22 @@ func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, execution
 		return err
 	}
 
+	// Collect all strategy data to persist
+	type strategyData struct {
+		domain           string
+		recommendedTier  models.ProxyTier
+		tierConfidence   float64
+		sessionRequired  models.SessionRequirement
+		detectedCookies  []string
+		totalRequests    int64
+		successes        int64
+		failures         int64
+		learningStatus   models.LearningStatus
+		tierAttemptsJSON string
+	}
+	var strategiesToPersist []strategyData
 	var statsKeysToDelete []string
+
 	for _, domain := range domains {
 		// Get stats key for this domain
 		statsKey := fmt.Sprintf(keyExecutionStats, executionID, domain)
@@ -436,7 +452,7 @@ func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, execution
 			learningStatus = models.StatusStable
 		}
 
-		// Upsert to DB
+		// Prepare tier attempts JSON
 		ds := &models.DomainStrategy{TierAttempts: tierAttempts}
 		tierAttemptsBytes, err := ds.TierAttemptsJSON()
 		tierAttemptsJSON := "{}" // Default valid JSON
@@ -444,6 +460,23 @@ func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, execution
 			tierAttemptsJSON = string(tierAttemptsBytes)
 		}
 
+		strategiesToPersist = append(strategiesToPersist, strategyData{
+			domain:           domain,
+			recommendedTier:  recommendedTier,
+			tierConfidence:   tierConfidence,
+			sessionRequired:  sessionRequired,
+			detectedCookies:  detectedCookies,
+			totalRequests:    totalRequests,
+			successes:        successes,
+			failures:         failures,
+			learningStatus:   learningStatus,
+			tierAttemptsJSON: tierAttemptsJSON,
+		})
+	}
+
+	// BATCH: Execute all DB writes in a single round-trip
+	if len(strategiesToPersist) > 0 {
+		batch := &pgx.Batch{}
 		query := `
 			INSERT INTO domain_strategies 
 				(domain, recommended_tier, tier_confidence, 
@@ -483,26 +516,43 @@ func (u *SmartUnblocker) PersistLearnedStrategies(ctx context.Context, execution
 				updated_at = NOW()
 		`
 
-		_, err = u.pool.Exec(ctx, query,
-			domain, recommendedTier, tierConfidence,
-			sessionRequired, detectedCookies,
-			totalRequests, successes, failures,
-			totalRequests, learningStatus, tierAttemptsJSON,
-			u.config.MinSamplesForStable,
-			u.config.DeescalationConfidenceThreshold,
-		)
-		if err != nil {
-			logger.Error("Failed to persist domain strategy",
-				zap.String("domain", domain),
-				zap.Error(err),
-			)
-		} else {
-			logger.Info("Persisted domain strategy",
-				zap.String("domain", domain),
-				zap.Int("recommended_tier", int(recommendedTier)),
-				zap.String("status", string(learningStatus)),
+		for _, s := range strategiesToPersist {
+			batch.Queue(query,
+				s.domain, s.recommendedTier, s.tierConfidence,
+				s.sessionRequired, s.detectedCookies,
+				s.totalRequests, s.successes, s.failures,
+				s.totalRequests, s.learningStatus, s.tierAttemptsJSON,
+				u.config.MinSamplesForStable,
+				u.config.DeescalationConfidenceThreshold,
 			)
 		}
+
+		// Execute batch
+		results := u.pool.SendBatch(ctx, batch)
+		defer results.Close()
+
+		// Check results and log
+		for i, s := range strategiesToPersist {
+			_, err := results.Exec()
+			if err != nil {
+				logger.Error("Failed to persist domain strategy",
+					zap.String("domain", s.domain),
+					zap.Int("batch_index", i),
+					zap.Error(err),
+				)
+			} else {
+				logger.Info("Persisted domain strategy",
+					zap.String("domain", s.domain),
+					zap.Int("recommended_tier", int(s.recommendedTier)),
+					zap.String("status", string(s.learningStatus)),
+				)
+			}
+		}
+
+		logger.Info("Batch persisted domain strategies",
+			zap.Int("count", len(strategiesToPersist)),
+			zap.String("execution_id", executionID),
+		)
 	}
 
 	// Cleanup execution stats keys from Redis

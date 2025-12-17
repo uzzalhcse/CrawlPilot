@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/uzzalhcse/crawlify/microservices/shared/config"
@@ -252,6 +253,7 @@ func (c *PubSubClient) Subscribe(ctx context.Context, handler func(context.Conte
 
 	sub.ReceiveSettings.MaxOutstandingMessages = maxOutstanding
 	sub.ReceiveSettings.NumGoroutines = numGoroutines
+	sub.ReceiveSettings.MaxExtension = 10 * time.Minute // Allow long-running browser scraping tasks
 
 	logger.Info("Starting to receive messages from subscription",
 		zap.String("subscription", c.cfg.PubSubSubscription),
